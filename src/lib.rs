@@ -1,3 +1,6 @@
+mod mlx90640;
+mod mlx90641;
+
 #[cfg(test)]
 mod tests {
     #[test]
