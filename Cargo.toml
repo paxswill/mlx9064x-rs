@@ -1,8 +1,15 @@
 [package]
+authors = ["Will Ross <paxswill@paxswill.com>"]
+categories = ["embedded", "hardware-support"]
+description = "Library for interfacing with Melexis MLX9064* thermal cameras"
+edition = "2018"
+keywords = ["embedded-hal", "thermal-camera", "thermopile", "mlx90640", "mlx90641"]
+license = "Apache-2.0"
 name = "mlx9064x"
 version = "0.1.0"
-edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+
+[features]
+default = ["std"]
+std = []
