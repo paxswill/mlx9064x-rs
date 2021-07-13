@@ -111,37 +111,45 @@ pub trait MelexisEeprom {
     /// Offset<sub>reference<sub>pixel</sub></sub>, for all pixels.
     ///
     /// The returned slice covers all pixels.
-    fn offset_reference_pixels(&self, subpage: u8) -> &[i16];
+    fn offset_reference_pixels(&self, subpage: Subpage) -> &[i16];
 
     // Offset<sub>reference<sub>CP</sub></sub>
-    fn offset_reference_cp(&self, subpage: u8) -> i16;
+    fn offset_reference_cp(&self, subpage: Subpage) -> i16;
 
     /// α<sub>pixel</sub>
     ///
     /// The returned slice covers all pixels.
-    fn alpha_pixels(&self, subpage: u8) -> &[f32];
+    fn alpha_pixels(&self, subpage: Subpage) -> &[f32];
 
     /// α<sub>CP</sub>
-    fn alpha_cp(&self, subpage: u8) -> f32;
+    fn alpha_cp(&self, subpage: Subpage) -> f32;
 
     /// K<sub>V<sub>pixel</sub></sub>
     ///
     /// The returned slice covers all pixels.
-    fn k_v_pixels(&self, subpage: u8) -> &[f32];
+    fn k_v_pixels(&self, subpage: Subpage) -> &[f32];
 
     /// K<sub>V<sub>CP</sub></sub>
-    fn k_v_cp(&self, subpage: u8) -> f32;
+    fn k_v_cp(&self, subpage: Subpage) -> f32;
 
     /// K<sub>T<sub>a</sub>pixel</sub>
     ///
     /// The returned slice covers all pixels.
-    fn k_ta_pixels(&self, subpage: u8) -> &[f32];
+    fn k_ta_pixels(&self, subpage: Subpage) -> &[f32];
 
     /// K<sub>T<sub>a</sub>CP</sub>
-    fn k_ta_cp(&self, subpage: u8) -> f32;
+    fn k_ta_cp(&self, subpage: Subpage) -> f32;
 
     /// Temperature Gradient Coefficient
     ///
     /// Some devices do not support a TGC (it can also be disabled manually on other devices).
     fn temperature_gradient_coefficient(&self) -> Option<f32>;
+}
+
+/// Identify which subpage to access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(usize)]
+pub enum Subpage {
+    Zero = 0,
+    One = 1,
 }
