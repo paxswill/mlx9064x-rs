@@ -1,3 +1,4 @@
+mod camera;
 mod mlx90640;
 mod mlx90641;
 
