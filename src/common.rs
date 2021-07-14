@@ -164,6 +164,16 @@ pub enum Subpage {
     One = 1,
 }
 
+/// The pixel access pattern used by a camera.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum AccessPattern {
+    /// Pixels alternate between subpages, resulting in a chess or checker board pattern.
+    Chess,
+
+    /// Each row of pixels is in the same subpage, with the rows alternating between subpages.
+    Interleave,
+}
+
 /// A helper function for calculating the sensitivity correction coefficients
 /// (Alpha<sub>corr<sub>range<sub>n</sub></sub></sub>) for the different temperature ranges.
 ///
