@@ -62,9 +62,116 @@ pub(crate) struct Mlx90640Eeprom {
 }
 
 impl Mlx90640Eeprom {
+    /// Calculate pixel calibration values based off of the row and column data. The remainder data
+    /// will be added in afterwards. This function is used for both offset and sensitivity (alpha)
+    /// arrays. The given buffer must be at the word containing the column, row and remainder
+    /// scaling factors.
+    /// The calculated array, the remainder scaling factor, and the value occupying the 4 bits
+    /// preceding the scaling factors are returned (in that order).
+    fn calculate_bulk_pixel_calibration<B: Buf>(data: &mut B) -> ([i16; NUM_PIXELS], u8, u8) {
+        let (extra_value, row_scale, column_scale, remainder_scale) = {
+            let scales = word_to_u4s(data);
+            (scales[0], scales[1], scales[2], scales[3])
+        };
+        let offset_average = data.get_i16();
+        let mut pixel_calibration = [offset_average; NUM_PIXELS];
+        const VALUES_PER_DATA_ROW: usize = 4;
+        // Add row offsets
+        for row_chunks in pixel_calibration.chunks_exact_mut(WIDTH * VALUES_PER_DATA_ROW) {
+            let rows_coefficients = word_to_i4s(data);
+            // Create a nice lazy iterator that converts the values to i16, scales them, and
+            // reverses that order of the data (because the data is laid out backwards in the EEPROM).
+            let rows_coefficients = core::array::IntoIter::new(rows_coefficients)
+                .map(i16::from)
+                .map(|coeff| coeff << row_scale)
+                .rev();
+            for (row, coefficient) in row_chunks.chunks_exact_mut(WIDTH).zip(rows_coefficients) {
+                row.iter_mut().for_each(|element| *element += coefficient);
+            }
+        }
+        // Add column offsets. Slightly more involved as the offsets are in row-major order.
+        for column_chunk_index in 0..(WIDTH / VALUES_PER_DATA_ROW) {
+            // TODO: This could probably be optimized better
+            let column_coefficients = word_to_i4s(data);
+            // Same deal as the row coefficients, except cycle so that the same iterator can be
+            // re-used multiple times.
+            let column_coefficients = column_coefficients
+                .iter()
+                .copied()
+                .map(i16::from)
+                .map(|coeff| coeff << column_scale)
+                .rev();
+            for row in pixel_calibration.chunks_exact_mut(WIDTH) {
+                let start_index = column_chunk_index * VALUES_PER_DATA_ROW;
+                let row_range = start_index..(start_index + VALUES_PER_DATA_ROW);
+                row[row_range]
+                    .iter_mut()
+                    .zip(column_coefficients.clone())
+                    .for_each(|(element, coefficient)| *element += coefficient);
+            }
+        }
+        (pixel_calibration, remainder_scale, extra_value)
+    }
+
+    /// Generate an interator from a set of four `i8` values. The given values are ordered:
+    ///
+    /// 1. even row, even column
+    /// 2. odd row, even column
+    /// 3. even row, odd column
+    /// 4. odd row, odd column
+    ///
+    /// This order is the same order the MLX90640 stores this calibration data in its EEPROM. Also
+    /// note that the naming scheme in this library is 0-indexed, while the datasheet is 1-indexed,
+    /// meaning even and odd are swapped between the two.
+    ///
+    /// The returned iterator yields values in row-major order.
+    fn repeat_chessboard<T>(source_values: [i8; 4]) -> impl Iterator<Item = T>
+    where
+        T: From<i8> + core::fmt::Debug,
+    {
+        let row_even_col_even = source_values[0];
+        let row_odd_col_even = source_values[1];
+        let row_even_col_odd = source_values[2];
+        let row_odd_col_odd = source_values[3];
+        // Create a pattern for even or odd rows, starting from column 0
+        let even_row_pattern = core::array::IntoIter::new([row_even_col_even, row_even_col_odd]);
+        let odd_row_pattern = core::array::IntoIter::new([row_odd_col_even, row_odd_col_odd]);
+        // Repeat the pattern across the row
+        let even_row = even_row_pattern.cycle().take(WIDTH).map(|v| T::from(v));
+        let odd_row = odd_row_pattern.cycle().take(WIDTH).map(|v| T::from(v));
+        // Then chain the two rows together, repeating to fill the array
+        let repeating_rows = even_row.chain(odd_row).cycle();
+        repeating_rows.take(NUM_PIXELS)
+    }
+
+    /// Similar to the offset and sensitivity values, the K<sub>T<sub>A</sub></sub> values have a
+    /// per-pixel calibration value that is added to an average value shared by multiple pixels.
+    /// Where the offset and sensitivity averages are calculated on a per row and column basis,
+    /// this value is one of four values, determined by if the row and column indices are even or
+    /// odd. The rest of the calculation is performed later, with the rest of the per-pixel
+    /// calculations.
+    fn generate_k_ta_pixels<B: Buf>(data: &mut B) -> impl Iterator<Item = i16> {
+        let source_data: ArrayVec<i8, 4> = (0..4).map(|_| data.get_i8()).collect();
+        let source_data = source_data.into_inner().unwrap();
+        Self::repeat_chessboard(source_data)
+    }
+
+    /// Unlike the other per-pixel calibration values, K<sub>V is just a repeated sequence. Other
+    /// camera models *do* have per-pixel values, so to keep the interface the same/factor out
+    /// shared functionality a full array is being generated.
+    fn generate_k_v_pixels<'a>(
+        k_v_avg: [i8; 4],
+        k_v_scale: &'a f32,
+    ) -> impl Iterator<Item = f32> + 'a {
+        let k_v_pixels = Self::repeat_chessboard(k_v_avg);
+        k_v_pixels.map(move |v: f32| v / *k_v_scale)
+    }
+}
+
+impl MelexisEeprom for Mlx90640Eeprom {
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
     /// EEPROM. The buffer must cover *all* of the EEPROM.
-    pub(crate) fn from_data<B: Buf>(data: &mut B) -> Result<Self, &'static str> {
+    fn from_data<B: Buf>(data: &mut B) -> Result<Self, &'static str> {
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
         if data.remaining() < eeprom_length {
             return Err("Not enough space left in buffer to be a full EEPROM dump");
@@ -214,113 +321,6 @@ impl Mlx90640Eeprom {
         })
     }
 
-    /// Calculate pixel calibration values based off of the row and column data. The remainder data
-    /// will be added in afterwards. This function is used for both offset and sensitivity (alpha)
-    /// arrays. The given buffer must be at the word containing the column, row and remainder
-    /// scaling factors.
-    /// The calculated array, the remainder scaling factor, and the value occupying the 4 bits
-    /// preceding the scaling factors are returned (in that order).
-    fn calculate_bulk_pixel_calibration<B: Buf>(data: &mut B) -> ([i16; NUM_PIXELS], u8, u8) {
-        let (extra_value, row_scale, column_scale, remainder_scale) = {
-            let scales = word_to_u4s(data);
-            (scales[0], scales[1], scales[2], scales[3])
-        };
-        let offset_average = data.get_i16();
-        let mut pixel_calibration = [offset_average; NUM_PIXELS];
-        const VALUES_PER_DATA_ROW: usize = 4;
-        // Add row offsets
-        for row_chunks in pixel_calibration.chunks_exact_mut(WIDTH * VALUES_PER_DATA_ROW) {
-            let rows_coefficients = word_to_i4s(data);
-            // Create a nice lazy iterator that converts the values to i16, scales them, and
-            // reverses that order of the data (because the data is laid out backwards in the EEPROM).
-            let rows_coefficients = core::array::IntoIter::new(rows_coefficients)
-                .map(i16::from)
-                .map(|coeff| coeff << row_scale)
-                .rev();
-            for (row, coefficient) in row_chunks.chunks_exact_mut(WIDTH).zip(rows_coefficients) {
-                row.iter_mut().for_each(|element| *element += coefficient);
-            }
-        }
-        // Add column offsets. Slightly more involved as the offsets are in row-major order.
-        for column_chunk_index in 0..(WIDTH / VALUES_PER_DATA_ROW) {
-            // TODO: This could probably be optimized better
-            let column_coefficients = word_to_i4s(data);
-            // Same deal as the row coefficients, except cycle so that the same iterator can be
-            // re-used multiple times.
-            let column_coefficients = column_coefficients
-                .iter()
-                .copied()
-                .map(i16::from)
-                .map(|coeff| coeff << column_scale)
-                .rev();
-            for row in pixel_calibration.chunks_exact_mut(WIDTH) {
-                let start_index = column_chunk_index * VALUES_PER_DATA_ROW;
-                let row_range = start_index..(start_index + VALUES_PER_DATA_ROW);
-                row[row_range]
-                    .iter_mut()
-                    .zip(column_coefficients.clone())
-                    .for_each(|(element, coefficient)| *element += coefficient);
-            }
-        }
-        (pixel_calibration, remainder_scale, extra_value)
-    }
-
-    /// Generate an interator from a set of four `i8` values. The given values are ordered:
-    ///
-    /// 1. even row, even column
-    /// 2. odd row, even column
-    /// 3. even row, odd column
-    /// 4. odd row, odd column
-    ///
-    /// This order is the same order the MLX90640 stores this calibration data in its EEPROM. Also
-    /// note that the naming scheme in this library is 0-indexed, while the datasheet is 1-indexed,
-    /// meaning even and odd are swapped between the two.
-    ///
-    /// The returned iterator yields values in row-major order.
-    fn repeat_chessboard<T>(source_values: [i8; 4]) -> impl Iterator<Item = T>
-    where
-        T: From<i8> + core::fmt::Debug,
-    {
-        let row_even_col_even = source_values[0];
-        let row_odd_col_even = source_values[1];
-        let row_even_col_odd = source_values[2];
-        let row_odd_col_odd = source_values[3];
-        // Create a pattern for even or odd rows, starting from column 0
-        let even_row_pattern = core::array::IntoIter::new([row_even_col_even, row_even_col_odd]);
-        let odd_row_pattern = core::array::IntoIter::new([row_odd_col_even, row_odd_col_odd]);
-        // Repeat the pattern across the row
-        let even_row = even_row_pattern.cycle().take(WIDTH).map(|v| T::from(v));
-        let odd_row = odd_row_pattern.cycle().take(WIDTH).map(|v| T::from(v));
-        // Then chain the two rows together, repeating to fill the array
-        let repeating_rows = even_row.chain(odd_row).cycle();
-        repeating_rows.take(NUM_PIXELS)
-    }
-
-    /// Similar to the offset and sensitivity values, the K<sub>T<sub>A</sub></sub> values have a
-    /// per-pixel calibration value that is added to an average value shared by multiple pixels.
-    /// Where the offset and sensitivity averages are calculated on a per row and column basis,
-    /// this value is one of four values, determined by if the row and column indices are even or
-    /// odd. The rest of the calculation is performed later, with the rest of the per-pixel
-    /// calculations.
-    fn generate_k_ta_pixels<B: Buf>(data: &mut B) -> impl Iterator<Item = i16> {
-        let source_data: ArrayVec<i8, 4> = (0..4).map(|_| data.get_i8()).collect();
-        let source_data = source_data.into_inner().unwrap();
-        Self::repeat_chessboard(source_data)
-    }
-
-    /// Unlike the other per-pixel calibration values, K<sub>V is just a repeated sequence. Other
-    /// camera models *do* have per-pixel values, so to keep the interface the same/factor out
-    /// shared functionality a full array is being generated.
-    fn generate_k_v_pixels<'a>(
-        k_v_avg: [i8; 4],
-        k_v_scale: &'a f32,
-    ) -> impl Iterator<Item = f32> + 'a {
-        let k_v_pixels = Self::repeat_chessboard(k_v_avg);
-        k_v_pixels.map(move |v: f32| v / *k_v_scale)
-    }
-}
-
-impl MelexisEeprom for Mlx90640Eeprom {
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);

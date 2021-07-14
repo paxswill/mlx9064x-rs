@@ -32,6 +32,7 @@
 //! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
 
 use arrayvec::ArrayVec;
+use bytes::Buf;
 
 /// The MLX9064\* modules store a large amount of calibration data in a built-in EEPROM. This trait
 /// defines methods exposing the values needed for generating thermal images from the camera.
@@ -47,7 +48,9 @@ use arrayvec::ArrayVec;
 ///   subpage selected. In that case just ignore that argument.
 /// * Slices covering all pixels are laid out in row-major order, with the X-axis increasing from
 ///   left to right, and the Y-axis increasing from top to bottom.
-pub trait MelexisEeprom {
+pub trait MelexisEeprom: Sized {
+    fn from_data<B: Buf>(data: &mut B) -> Result<Self, &'static str>;
+
     /// K<sub>V<sub>DD</sub></sub>
     fn k_v_dd(&self) -> i16;
 
