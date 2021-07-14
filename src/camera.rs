@@ -30,6 +30,8 @@
 //! * V<sub>DD</sub>: Pixel supply voltage
 //! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
 
+use arrayvec::ArrayVec;
+
 /// The MLX9064\* modules store a large amount of calibration data in a built-in EEPROM. This trait
 /// defines methods exposing the values needed for generating thermal images from the camera.
 /// Without context, the method names are almost useless, but they make much more sense when read
@@ -152,4 +154,40 @@ pub trait MelexisEeprom {
 pub enum Subpage {
     Zero = 0,
     One = 1,
+}
+
+/// A helper function for calculating the sensitivity correction coefficients
+/// (Alpha<sub>corr<sub>range<sub>n</sub></sub></sub>) for the different temperature ranges.
+///
+/// This function will `panic` if the passed in slices both do not have exactly `N` elements.
+pub(crate) fn alpha_correction_coefficients<const NUM_RANGES: usize>(
+    native_range: usize,
+    corner_temperatures: &[i16],
+    k_s_to: &[f32],
+) -> [f32; NUM_RANGES] {
+    // This is the actual calculation. The values are built up recursively from the base case of
+    // the native range (which doesn't need correcting, so it's 1).
+    // Memoizing would be nice here, but these calculations are done only once, at start up, so the
+    // impact isn't that big.
+    let results: ArrayVec<f32, NUM_RANGES> = (0..NUM_RANGES)
+        .map(|n| alpha_corr_n(n, native_range, corner_temperatures, k_s_to))
+        .collect();
+    results
+        .into_inner()
+        .expect("The Rust-range 0..NUM_RANGES should fill an array of NUM_RANGES elements")
+}
+
+/// The actual calculations for [alpha_correction_coefficients] as a recursive function. Memoizing
+/// would be nice, but these calculations are only performed once, at start up.
+fn alpha_corr_n(n: usize, native_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32 {
+    if n < native_range {
+        (1f32 + k_s_to[n] * f32::from(ct[n + 1] - ct[n])).recip()
+            * alpha_corr_n(n + 1, native_range, ct, k_s_to)
+    } else if n > native_range {
+        (1f32 + k_s_to[n - 1] * f32::from(ct[n] - ct[n - 1]))
+            * alpha_corr_n(n - 1, native_range, ct, k_s_to)
+    } else {
+        // The base case, when n == native_range
+        1f32
+    }
 }
