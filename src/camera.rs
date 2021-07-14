@@ -152,6 +152,9 @@ pub trait MelexisEeprom: Sized {
     /// Some devices do not support a TGC (it can also be disabled manually on other devices).
     fn temperature_gradient_coefficient(&self) -> Option<f32>;
 }
+/// Marker newtype for addresses accessible over I<sup>2</sup>C.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct Address(pub u16);
 
 /// Identify which subpage to access.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
