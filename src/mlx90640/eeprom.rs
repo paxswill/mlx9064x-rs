@@ -5,15 +5,7 @@ use crate::camera::*;
 use crate::expose_member;
 
 use super::address::EepromAddress;
-
-/// The height of the image captured by sensor in pixels.
-const HEIGHT: usize = 24;
-
-/// The width of the image captured by the sensor in pixels.
-const WIDTH: usize = 32;
-
-/// The total number of pixels an MLX90640 has.
-const NUM_PIXELS: usize = HEIGHT * WIDTH;
+use super::{NUM_PIXELS, WIDTH};
 
 /// The number of corner temperatures an MLX90640 has.
 const NUM_CORNER_TEMPERATURES: usize = 4;
@@ -444,8 +436,9 @@ mod test {
     use bytes::{Bytes, BytesMut};
 
     use crate::camera::{MelexisEeprom, Subpage};
+    use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
 
-    use super::{Mlx90640Eeprom, HEIGHT, NUM_PIXELS, WIDTH};
+    use super::Mlx90640Eeprom;
 
     /// Example EEPROM data from the datasheet (from the worked example)
     // Each line is 8 bytes. The first two lines are empty, as that data is ignored for calibration
