@@ -20,12 +20,13 @@
 //! * α, alpha: Sensitivity coefficient
 //! * CP: Compensation pixel
 //! * ε, emissivity: This is a bit beyond a glossary entry, but basically how much IR radiation a
-//!   surface emits relative to it's temperature.
+//!   surface emits relative to its temperature.
 //! * K: Prefix for constants.
 //! * PTAT: Proportional to ambient temperature
 //! * T<sub>a</sub>: Ambient temperature
-//! * T<sub>a<sub>0</sub></sub>: Ambient temperature reference, 25.0 ℃
-//! * T<sub>o</sub>: Object temperature (meaning the temperature an individual pixel has detected
+//! * T<sub>a<sub>0</sub></sub>: Ambient temperature reference, 25.0 ℃. If it looks like 0, it's
+//!   probably "o" as this value is really only used in one place.
+//! * T<sub>o</sub>: Object temperature, meaning the temperature an individual pixel has detected
 //!   for an object.
 //! * V<sub>DD</sub>: Pixel supply voltage
 //! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
@@ -35,8 +36,9 @@ use arrayvec::ArrayVec;
 /// The MLX9064\* modules store a large amount of calibration data in a built-in EEPROM. This trait
 /// defines methods exposing the values needed for generating thermal images from the camera.
 /// Without context, the method names are almost useless, but they make much more sense when read
-/// in context of the MLX90640 and MLX90641 datasheets, and using more descritptive names would
-/// make comparing the implementation to the datasheet more difficult.
+/// in context of the MLX90640 and MLX90641 datasheets, and using more descriptive names would
+/// make comparing the implementation to the datasheet more difficult (and the names would get
+/// incredibly long).
 ///
 /// A couple of conventions:
 ///
