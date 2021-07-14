@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
 use bytes::Buf;
 
-use crate::camera::*;
+use crate::common::*;
 use crate::expose_member;
 
 use super::address::EepromAddress;
@@ -435,7 +435,7 @@ mod test {
     use arrayvec::ArrayVec;
     use bytes::{Bytes, BytesMut};
 
-    use crate::camera::{MelexisEeprom, Subpage};
+    use crate::common::{MelexisEeprom, Subpage};
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
 
     use super::Mlx90640Eeprom;

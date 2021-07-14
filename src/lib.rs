@@ -1,8 +1,8 @@
 #![no_std]
 
-mod camera;
 mod mlx90640;
 mod mlx90641;
+mod common;
 mod util;
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ use core::convert::TryFrom;
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 
 use crate::address_enum_ops;
-use crate::camera::Address;
+use crate::common::Address;
 
 /// EEPROM addresses for th MLX90640
 
