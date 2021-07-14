@@ -156,6 +156,28 @@ pub trait MelexisEeprom: Sized {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Address(pub u16);
 
+/// Define common addresses accessible within the camera's RAM.
+pub trait MelexisRamAddress {
+    /// The address for a particular pixel in a device's memory. An implementation should only
+    /// return values for pixel coordinates it supports.
+    fn pixel(&self, row: u8, column: u8, subpage: Subpage) -> Option<Address>;
+
+    /// The address for T<sub>a<sub>V<sub>BE</sub></sub></sub>.
+    fn t_a_v_be(&self) -> Address;
+
+    /// The address for T<sub>a<sub>PTAT</sub></sub>
+    fn t_a_ptat(&self) -> Address;
+
+    /// The address of the compensation pixel for the given subpage.
+    fn compensation_pixel(&self, subpage: Subpage) -> Address;
+
+    /// The address of the current gain.
+    fn gain(&self) -> Address;
+
+    /// The address for V<sub>DD<sub>pixel</sub></sub>.
+    fn v_dd_pixel(&self) -> Address;
+}
+
 /// Identify which subpage to access.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(usize)]

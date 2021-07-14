@@ -1,5 +1,6 @@
 mod address;
 mod eeprom;
+mod ram;
 
 /// The height of the image captured by sensor in pixels.
 pub(crate) const HEIGHT: usize = 24;

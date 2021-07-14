@@ -113,3 +113,48 @@ impl From<EepromAddress> for Address {
         Address(raw_address)
     }
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
+#[repr(u16)]
+pub(super) enum RamAddress {
+    /// The start of RAM in the MLX90640 address space. This is also the start of the pixel
+    /// addresses, which are laid out in row-major order like the EEPROM.
+    Base = 0x0400,
+
+    /// Labelled V<sub>BE</sub> and Ta<sub>V<sub>BE</sub></sub> in the datasheet, I'm not entirely
+    /// sure what "BE" stands for.
+    AmbientTemperatureVoltageBe = 0x0700,
+
+    /// The compensation pixel for subpage 0.
+    CompensationPixelZero = 0x0708,
+
+    /// The current (in the temporal sense, not electrical) gain.
+    Gain = 0x070A,
+
+    /// Ambient temperature voltage, labelled T<sub>a<sub>PTAT</sub></sub> in the datasheet.
+    AmbientTemperatureVoltage = 0x0720,
+
+    /// The compensation pixel for subpage 1.
+    CompensationPixelOne = 0x0728,
+
+    /// The pixel supply voltage, labelled V<sub>DD<sub>pix</sub></sub> in the datasheet.
+    PixelSupplyVoltage = 0x072A,
+
+    /// The last valid RAM address for the MLX90640.
+    End = 0x073F,
+}
+
+impl TryFrom<Address> for RamAddress {
+    type Error = TryFromPrimitiveError<RamAddress>;
+
+    fn try_from(value: Address) -> Result<Self, Self::Error> {
+        Self::try_from(value.0)
+    }
+}
+
+impl From<RamAddress> for Address {
+    fn from(ram_address: RamAddress) -> Self {
+        let raw_address: u16 = ram_address.into();
+        Address(raw_address)
+    }
+}
