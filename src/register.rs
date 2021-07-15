@@ -25,11 +25,21 @@ pub(crate) struct StatusRegister {
 
     /// Whether data in RAM can be overwritten.
     pub(crate) overwrite_enabled: bool,
+
+    /// Start a measurement in step mode.
+    ///
+    /// This value must be enabled by the controller, and will then be reset by the camera once the
+    /// measurement is complete. Each measurement covers one subpage, so if you want to retrieve
+    /// both subpages you will need to trigger two measurements.
+    /// This value is only applicable in step mode, and the documentation has been removed from the
+    /// more recent datasheets. See `ControlRegister::step_mode` for more details.
+    pub(crate) start_measurement: bool,
 }
 
 impl Register for StatusRegister {
     fn write_mask() -> u16 {
-        0x001F
+        // Note that the three least significant bits are read-only.
+        0x0038
     }
 }
 
@@ -40,12 +50,14 @@ impl From<u16> for StatusRegister {
         let subpage = 0x0001 & raw;
         let new_data = is_bit_set(raw, 3);
         let overwrite_enabled = is_bit_set(raw, 4);
+        let start_measurement = is_bit_set(raw, 5);
         Self {
             // Safe to unwrap, as there are only two possible values, 0 or 1, as above we're
             // masking off all but the first bit.
             last_updated_subpage: Subpage::try_from_primitive(subpage as usize).unwrap(),
             new_data,
             overwrite_enabled,
+            start_measurement,
         }
     }
 }
@@ -75,7 +87,13 @@ pub(crate) struct ControlRegister {
     /// If subpages are disabled, only one page will be updated. The default is enabled
     pub(crate) use_subpages: bool,
 
-    // The second bit is reserved, and should be kept 0.
+    /// Enable "step mode".
+    ///
+    /// This mode is documented in older versions of the datasheet, but was later removed. In "step
+    /// mode", the camera is idle until signalled, then a single measurement is taken.
+    ///
+    /// The default is continuous mode (ie "step mode" disabled).
+    pub(crate) step_mode: bool,
 
     /// Enabled data hold.
     ///
@@ -125,6 +143,7 @@ impl ControlRegister {
     pub(crate) fn default_mlx90640() -> Self {
         Self {
             use_subpages: true,
+            step_mode: false,
             data_hold: false,
             subpage_repeat: false,
             subpage: Subpage::Zero,
@@ -139,6 +158,7 @@ impl ControlRegister {
     pub(crate) fn default_mlx90641() -> Self {
         Self {
             use_subpages: true,
+            step_mode: false,
             data_hold: false,
             subpage_repeat: false,
             subpage: Subpage::Zero,
@@ -160,6 +180,7 @@ impl Register for ControlRegister {
 impl From<u16> for ControlRegister {
     fn from(raw: u16) -> Self {
         let use_subpages = is_bit_set(raw, 0);
+        let step_mode = is_bit_set(raw, 1);
         let data_hold = is_bit_set(raw, 2);
         let subpage_repeat = is_bit_set(raw, 3);
         let subpage = if is_bit_set(raw, 4) {
@@ -180,6 +201,7 @@ impl From<u16> for ControlRegister {
         };
         Self {
             use_subpages,
+            step_mode,
             data_hold,
             subpage_repeat,
             subpage,
@@ -194,7 +216,7 @@ impl From<ControlRegister> for u16 {
     fn from(register: ControlRegister) -> Self {
         let mut raw = 0u16;
         raw |= register.use_subpages as u16;
-        // second bit is always kept at 0
+        raw |= (register.step_mode as u16) << 1;
         raw |= (register.data_hold as u16) << 2;
         raw |= (register.subpage_repeat as u16) << 3;
         let subpage_int: usize = register.subpage.into();
@@ -243,8 +265,7 @@ impl Default for I2cRegister {
 impl Register for I2cRegister {
     fn write_mask() -> u16 {
         // the fourth bit is documented, but it is "reserved" at 0. It *isn't* documented to always
-        // be 0 though, so I'm not including it in the mask (unlike the documented reserved bit in
-        // ControlRegister).
+        // be 0 though, so I'm not including it in the mask.
         0x0007
     }
 }
@@ -404,8 +425,10 @@ mod test {
 
     #[test]
     fn status_register_masked() {
-        let all_on = StatusRegister::from(0xFFFF);
-        // The write mask is also a mask for which bits are relevant to the structure.
+        // The write mask is not quite a mask for all relevant bits for the status register: the
+        // last updated subpage is a read-only field, so the three least significant bits aren't in
+        // the write mask.
+        let all_on = StatusRegister::from(0xFFF8);
         let masked_on = StatusRegister::from(StatusRegister::write_mask());
         assert_eq!(all_on, masked_on);
     }
@@ -429,17 +452,6 @@ mod test {
     }
 
     #[test]
-    fn control_register_reserved_0() {
-        // The second bit is reserved, but needs to be kept at 0
-        // Round-trip the values through ControlRegister, and make sure the second bit isn't set in
-        // both.
-        let all_on = ControlRegister::from(0xFFFF).into();
-        let all_off = ControlRegister::from(0x0000).into();
-        assert!(!super::is_bit_set(all_on, 1));
-        assert!(!super::is_bit_set(all_off, 1));
-    }
-
-    #[test]
     fn control_register_masked() {
         let all_on = ControlRegister::from(0xFFFF);
         // The write mask is also a mask for which bits are relevant to the structure.
@@ -451,6 +463,12 @@ mod test {
     fn control_register_use_subpages() {
         assert_register_field!(ControlRegister, 0x0001, use_subpages, true);
         assert_register_field!(ControlRegister, 0x0000, use_subpages, false);
+    }
+
+    #[test]
+    fn control_register_step_mode() {
+        assert_register_field!(ControlRegister, 0x0002, step_mode, true);
+        assert_register_field!(ControlRegister, 0x0000, step_mode, false);
     }
 
     #[test]
