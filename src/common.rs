@@ -190,9 +190,15 @@ pub enum Subpage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum AccessPattern {
     /// Pixels alternate between subpages, resulting in a chess or checker board pattern.
+    ///
+    /// This is the default (and strongly recommended value) for the MLX909640. While the MLX909641
+    /// datasheet mentions this mode in the register section, no further mention is made in the
+    /// datasheet, so I'm not sure it's actually supported.
     Chess,
 
     /// Each row of pixels is in the same subpage, with the rows alternating between subpages.
+    ///
+    /// This is the default mode for the MLX90641.
     Interleave,
 }
 
