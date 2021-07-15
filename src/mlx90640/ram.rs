@@ -1,4 +1,5 @@
 use crate::common::*;
+use crate::register::{AccessPattern, Subpage};
 
 use super::address::RamAddress;
 

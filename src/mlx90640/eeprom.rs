@@ -3,6 +3,7 @@ use bytes::Buf;
 
 use crate::common::*;
 use crate::expose_member;
+use crate::register::Subpage;
 
 use super::address::EepromAddress;
 use super::{NUM_PIXELS, WIDTH};
@@ -435,8 +436,9 @@ mod test {
     use arrayvec::ArrayVec;
     use bytes::{Bytes, BytesMut};
 
-    use crate::common::{MelexisEeprom, Subpage};
+    use crate::common::MelexisEeprom;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
+    use crate::register::Subpage;
 
     use super::Mlx90640Eeprom;
 

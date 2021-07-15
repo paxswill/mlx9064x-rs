@@ -33,7 +33,8 @@
 
 use arrayvec::ArrayVec;
 use bytes::Buf;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+
+use crate::register::Subpage;
 
 /// The MLX9064\* modules store a large amount of calibration data in a built-in EEPROM. This trait
 /// defines methods exposing the values needed for generating thermal images from the camera.
@@ -177,33 +178,6 @@ pub trait MelexisRamAddress {
 
     /// The address for V<sub>DD<sub>pixel</sub></sub>.
     fn v_dd_pixel(&self) -> Address;
-}
-
-/// Identify which subpage to access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[derive(IntoPrimitive, TryFromPrimitive)]
-#[repr(usize)]
-pub enum Subpage {
-    Zero = 0,
-    One = 1,
-}
-
-/// The pixel access pattern used by a camera.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[derive(IntoPrimitive, TryFromPrimitive)]
-#[repr(u8)]
-pub enum AccessPattern {
-    /// Pixels alternate between subpages, resulting in a chess or checker board pattern.
-    ///
-    /// This is the default (and strongly recommended value) for the MLX909640. While the MLX909641
-    /// datasheet mentions this mode in the register section, no further mention is made in the
-    /// datasheet, so I'm not sure it's actually supported.
-    Chess,
-
-    /// Each row of pixels is in the same subpage, with the rows alternating between subpages.
-    ///
-    /// This is the default mode for the MLX90641.
-    Interleave,
 }
 
 /// A helper function for calculating the sensitivity correction coefficients
