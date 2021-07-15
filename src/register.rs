@@ -1,5 +1,7 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+use crate::common::Address;
+
 // TODO: Investigate using bitvec to make the bit twiddling easier.
 
 /// Trait for common register functionality.
@@ -10,6 +12,8 @@ pub(crate) trait Register: From<u16> + Into<u16> {
     /// bitwise-ANDed with the complement of this mask, then bitwise-ORd with the new value. This
     /// preserves the values of any reserved bits in the registers.
     fn write_mask() -> u16;
+
+    fn address() -> Address;
 }
 
 /// Represents the possible states of the status register (0x8000).
@@ -40,6 +44,10 @@ impl Register for StatusRegister {
     fn write_mask() -> u16 {
         // Note that the three least significant bits are read-only.
         0x0038
+    }
+
+    fn address() -> Address {
+        Address(0x8000)
     }
 }
 
@@ -175,6 +183,10 @@ impl Register for ControlRegister {
         // *Technically* it's 0x1FFD, but the second bit is documented to always be 0
         0x1FFF
     }
+
+    fn address() -> Address {
+        Address(0x800D)
+    }
 }
 
 impl From<u16> for ControlRegister {
@@ -267,6 +279,10 @@ impl Register for I2cRegister {
         // the fourth bit is documented, but it is "reserved" at 0. It *isn't* documented to always
         // be 0 though, so I'm not including it in the mask.
         0x0007
+    }
+
+    fn address() -> Address {
+        Address(0x800F)
     }
 }
 
