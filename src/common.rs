@@ -33,6 +33,7 @@
 
 use arrayvec::ArrayVec;
 use bytes::Buf;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 /// The MLX9064\* modules store a large amount of calibration data in a built-in EEPROM. This trait
 /// defines methods exposing the values needed for generating thermal images from the camera.
@@ -180,6 +181,7 @@ pub trait MelexisRamAddress {
 
 /// Identify which subpage to access.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(IntoPrimitive, TryFromPrimitive)]
 #[repr(usize)]
 pub enum Subpage {
     Zero = 0,
@@ -188,6 +190,8 @@ pub enum Subpage {
 
 /// The pixel access pattern used by a camera.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(IntoPrimitive, TryFromPrimitive)]
+#[repr(u8)]
 pub enum AccessPattern {
     /// Pixels alternate between subpages, resulting in a chess or checker board pattern.
     ///
