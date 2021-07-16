@@ -160,6 +160,12 @@ pub trait MelexisEeprom: Sized {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Address(pub u16);
 
+impl From<Address> for [u8; 2] {
+    fn from(address: Address) -> Self {
+        address.0.to_be_bytes()
+    }
+}
+
 /// Define common addresses accessible within the camera's RAM.
 pub trait MelexisRamAddress {
     /// The address for a particular pixel in a device's memory. An implementation should only
