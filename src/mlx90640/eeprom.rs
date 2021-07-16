@@ -428,7 +428,7 @@ fn word_to_i4s<B: Buf>(data: &mut B) -> [i8; 4] {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     #[cfg(feature = "std")]
     extern crate std;
     #[cfg(feature = "std")]
@@ -456,7 +456,7 @@ mod test {
         \x18\xef\x2f\xf1\x59\x52\x9d\x68\x54\x54\x09\x94\x69\x56\x53\x54\
         \x23\x63\xe4\x46\xfb\xb5\x04\x4b\xf0\x20\x97\x97\x97\x97\x28\x89";
 
-    fn eeprom_data() -> Bytes {
+    pub(crate) fn eeprom_data() -> Bytes {
         let mut eeprom = BytesMut::from(EEPROM_HEADER);
         // 0x08a0 is the data used in the datasheet's worked example. The example only covers one
         // pixel, but I'm just going to repeat it to fill the rest of the space>

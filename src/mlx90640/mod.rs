@@ -1,6 +1,10 @@
 mod address;
 mod eeprom;
 
+// When testing, open up access to the EEPROM data test fixture
+#[cfg(test)]
+pub(crate) use eeprom::test::eeprom_data;
+
 use crate::common::{Address, CalibrationData, MelexisCamera};
 use crate::error::Error;
 use crate::register::{AccessPattern, ControlRegister, Subpage};

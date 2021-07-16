@@ -13,9 +13,11 @@ arrayvec = { version = "0.7", default-features = false }
 bytes = { version = "1", default-features = false }
 embedded-hal = "0.2.5"
 num_enum = "0.5"
+paste = "1"
 
 [dev-dependencies]
 float-cmp = "0.8.0"
+embedded-hal-mock = "0.7"
 
 [features]
 default = ["std"]
