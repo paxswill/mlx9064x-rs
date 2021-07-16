@@ -5,7 +5,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use crate::common::Address;
 
 /// Trait for common register functionality.
-pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
+pub trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
     /// A bit mask of which bits can be modified by the controller.
     ///
     /// When changing register values on the device, the current value should be read, then
@@ -18,7 +18,7 @@ pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
 
 /// Represents the possible states of the status register (0x8000).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub(crate) struct StatusRegister {
+pub struct StatusRegister {
     /// The subpage which was last updated by the camera. Read-only.
     pub(crate) last_updated_subpage: Subpage,
 
@@ -93,7 +93,7 @@ impl From<StatusRegister> for [u8; 2] {
 // skip formatting in here as rustfmt will remove the extra blank lines around the "extra" bit
 // comments.
 #[rustfmt::skip]
-pub(crate) struct ControlRegister {
+pub struct ControlRegister {
     // The fields in this struct are laid out in least to most significant bits they occupy in the
     // control register.
 
@@ -156,7 +156,7 @@ pub(crate) struct ControlRegister {
 
 impl ControlRegister {
     /// The default settings (as documented in the datasheet) for the MLX90640.
-    pub(crate) fn default_mlx90640() -> Self {
+    pub fn default_mlx90640() -> Self {
         Self {
             use_subpages: true,
             step_mode: false,
@@ -171,7 +171,7 @@ impl ControlRegister {
     }
 
     /// The default settings (as documented in the datasheet) for the MLX90641.
-    pub(crate) fn default_mlx90641() -> Self {
+    pub fn default_mlx90641() -> Self {
         Self {
             use_subpages: true,
             step_mode: false,
@@ -259,7 +259,7 @@ impl From<ControlRegister> for [u8; 2] {
 
 /// Represents the possible states of the I²C configuration register (0x800F).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub(crate) struct I2cRegister {
+pub struct I2cRegister {
     /// Is Fast Mode+ (FM+) enabled?
     ///
     /// Defaults to enabled.
