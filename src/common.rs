@@ -32,7 +32,6 @@
 //! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
 
 use arrayvec::ArrayVec;
-use bytes::Buf;
 
 use crate::register::Subpage;
 
@@ -54,7 +53,7 @@ pub trait MelexisEeprom: Sized {
     /// Generate the calibration data from the constants store in the camera's EEPROM.
     ///
     /// The given buffer *must* cover all of the EEPROM.
-    fn from_data<B: Buf>(data: &mut B) -> Result<Self, &'static str>;
+    fn from_data(data: &[u8]) -> Result<Self, &'static str>;
 
     /// K<sub>V<sub>DD</sub></sub>
     fn k_v_dd(&self) -> i16;

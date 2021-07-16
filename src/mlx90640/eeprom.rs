@@ -172,19 +172,20 @@ impl Mlx90640Eeprom {
 impl MelexisEeprom for Mlx90640Eeprom {
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
     /// EEPROM. The buffer must cover *all* of the EEPROM.
-    fn from_data<B: Buf>(data: &mut B) -> Result<Self, &'static str> {
+    fn from_data(data: &[u8]) -> Result<Self, &'static str> {
+        let mut buf = &data[..];
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
-        if data.remaining() < eeprom_length {
+        if buf.remaining() < eeprom_length {
             return Err("Not enough space left in buffer to be a full EEPROM dump");
         }
         // Skip the first 16 words, they're irrelevant
-        data.advance(WORD_SIZE * 16);
+        buf.advance(WORD_SIZE * 16);
         // alpha_PTAT and offset compensation correction scales
         let (mut offset_reference_pixels, offset_correction_remainder_scale, alpha_ptat) =
-            Self::calculate_bulk_pixel_calibration(data);
+            Self::calculate_bulk_pixel_calibration(&mut buf);
         let alpha_ptat = alpha_ptat / 4 + 8;
         let (alpha_pixels, alpha_correction_remainder_scale, alpha_scale_exp) =
-            Self::calculate_bulk_pixel_calibration(data);
+            Self::calculate_bulk_pixel_calibration(&mut buf);
         let alpha_pixels: ArrayVec<f32, NUM_PIXELS> = core::array::IntoIter::new(alpha_pixels)
             .map(f32::from)
             .collect();
@@ -193,21 +194,21 @@ impl MelexisEeprom for Mlx90640Eeprom {
         // Calculate the actual alpha scaling value from the exponent value. The alpha scaling
         // exponenet also has 30 added to it (not 27 like alpha_scale_cp).
         let alpha_scale = f32::from(alpha_scale_exp + 30).exp2();
-        let gain = data.get_i16();
-        let v_ptat_25 = data.get_i16();
-        let (k_v_ptat, mut kt_ptat_bytes) = word_6_10_split(data);
+        let gain = buf.get_i16();
+        let v_ptat_25 = buf.get_i16();
+        let (k_v_ptat, mut kt_ptat_bytes) = word_6_10_split(&mut buf);
         let k_t_ptat = i16_from_bits(&mut kt_ptat_bytes, 10);
-        let k_v_dd = (data.get_i8() as i16) << 5;
+        let k_v_dd = (buf.get_i8() as i16) << 5;
         // The data in EEPROM is unsigned, so we upgrade to a signed type as it's immediately sent
         // negative (by subtracting 256), then multipled by 2^5, and finally has 2^13 subtracted
         // from it.
-        let v_dd_25 = ((data.get_u8() as i16) - 256) * (1 << 5) - (1 << 13);
+        let v_dd_25 = ((buf.get_u8() as i16) - 256) * (1 << 5) - (1 << 13);
         // Keep this value around for actual processing once we have kv_scale.
-        let k_v_avg = word_to_i4s(data);
+        let k_v_avg = word_to_i4s(&mut buf);
         // TODO: Add interleaved mode compensation. Until then, skip that data
-        data.advance(WORD_SIZE);
-        let lazy_k_ta_pixels = Self::generate_k_ta_pixels(data);
-        let unpacked_scales = word_to_u4s(data);
+        buf.advance(WORD_SIZE);
+        let lazy_k_ta_pixels = Self::generate_k_ta_pixels(&mut buf);
+        let unpacked_scales = word_to_u4s(&mut buf);
         // The resolution control calibration value is just two bits in the high half of the byte.
         // The two other two bits are reserved, so we just drop them.
         let resolution = unpacked_scales[0] & 0x3;
@@ -225,7 +226,7 @@ impl MelexisEeprom for Mlx90640Eeprom {
         let k_v_pixels = k_v_pixels.into_inner().unwrap();
         // Compensation pixel parameters
         let alpha_cp = {
-            let (alpha_cp_ratio, alpha_cp_bytes) = word_6_10_split(data);
+            let (alpha_cp_ratio, alpha_cp_bytes) = word_6_10_split(&mut buf);
             let alpha_cp_ratio = f32::from(alpha_cp_ratio) / 7f32.exp2();
             // NOTE: the alpha scale value read from EEPROM has 27 added to get alpha_scale_cp, but
             // 30 added for alpha_scale_pixel
@@ -234,27 +235,26 @@ impl MelexisEeprom for Mlx90640Eeprom {
             [alpha_cp0, alpha_cp0 * (1f32 + alpha_cp_ratio)]
         };
         let offset_reference_cp = {
-            let (offset_cp_delta, mut offset_cp_bytes) = word_6_10_split(data);
+            let (offset_cp_delta, mut offset_cp_bytes) = word_6_10_split(&mut buf);
             let offset_cp0 = i16_from_bits(&mut offset_cp_bytes, 10);
             [offset_cp0, offset_cp0 + i16::from(offset_cp_delta)]
         };
-        let k_v_cp = f32::from(data.get_i8()) / k_v_scale;
-        let k_ta_cp = f32::from(data.get_i8()) / k_ta_scale1;
-        let k_s_ta = f32::from(data.get_i8()) / 13f32.exp2();
-        let temperature_gradient_coefficient = match data.get_i8() {
+        let k_v_cp = f32::from(buf.get_i8()) / k_v_scale;
+        let k_ta_cp = f32::from(buf.get_i8()) / k_ta_scale1;
+        let k_s_ta = f32::from(buf.get_i8()) / 13f32.exp2();
+        let temperature_gradient_coefficient = match buf.get_i8() {
             0 => None,
             n => Some(f32::from(n) / 5f32.exp2()),
         };
         // k_s_to is unscaled until k_s_to_scale is unpacked.
-        let mut k_s_to_ranges: ArrayVec<f32, 4> =
-            (0..4).map(|_| f32::from(data.get_i8())).collect();
+        let mut k_s_to_ranges: ArrayVec<f32, 4> = (0..4).map(|_| f32::from(buf.get_i8())).collect();
         // Fix the ordering of the elements from the EEPROM
         k_s_to_ranges.swap(0, 1);
         k_s_to_ranges.swap(2, 3);
         // Safe to unwrap as I'm just using ArrayVec to collect into an array.
         let mut k_s_to = k_s_to_ranges.into_inner().unwrap();
         // Very similar to the resolution and k_*_scale word a few lines above.
-        let unpacked_corner_temps = word_to_u4s(data);
+        let unpacked_corner_temps = word_to_u4s(&mut buf);
         // Like before, the top two bits are reserved. This time though, the temperature step
         // is multipled by 10. Also convert to i16 for use in calculations.
         let corner_temperature_step = i16::from(unpacked_corner_temps[0] & 0x3) * 10;
@@ -279,8 +279,8 @@ impl MelexisEeprom for Mlx90640Eeprom {
             .for_each(|(((offset, alpha), k_ta_numerator), k_ta)| {
                 // TODO: handle failed pixels (where the pixel data is 0x0000)
                 // TODO: outlier/deviant pixels
-                let high = data.get_u8();
-                let low = data.get_u8();
+                let high = buf.get_u8();
+                let low = buf.get_u8();
                 // Normal dance to extend the sign bit from an i6 to an i8
                 let offset_remainder = i16::from(i8::from_ne_bytes([high & 0xFC]) >> 2);
                 *offset += offset_remainder << offset_correction_remainder_scale;
