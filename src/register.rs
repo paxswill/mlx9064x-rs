@@ -1,17 +1,17 @@
+use core::convert::TryInto;
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::common::Address;
 
-// TODO: Investigate using bitvec to make the bit twiddling easier.
-
 /// Trait for common register functionality.
-pub(crate) trait Register: From<u16> + Into<u16> {
+pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
     /// A bit mask of which bits can be modified by the controller.
     ///
     /// When changing register values on the device, the current value should be read, then
     /// bitwise-ANDed with the complement of this mask, then bitwise-ORd with the new value. This
     /// preserves the values of any reserved bits in the registers.
-    fn write_mask() -> u16;
+    fn write_mask() -> [u8; 2];
 
     fn address() -> Address;
 }
@@ -41,9 +41,9 @@ pub(crate) struct StatusRegister {
 }
 
 impl Register for StatusRegister {
-    fn write_mask() -> u16 {
+    fn write_mask() -> [u8; 2] {
         // Note that the three least significant bits are read-only.
-        0x0038
+        [0x00, 0x38]
     }
 
     fn address() -> Address {
@@ -51,9 +51,16 @@ impl Register for StatusRegister {
     }
 }
 
-impl From<u16> for StatusRegister {
+impl<'a> From<&'a [u8]> for StatusRegister {
     /// Create a `StatusRegister` from the raw `u16` read from the camera.
-    fn from(raw: u16) -> Self {
+    ///
+    /// This method will `panic` if there aren't enough bytes in the slice.
+    fn from(buf: &'a [u8]) -> Self {
+        let (int_bytes, _) = buf.split_at(core::mem::size_of::<u16>());
+        let int_bytes: [u8; 2] = int_bytes
+            .try_into()
+            .expect("Not enough bytes in status register buffer");
+        let raw = u16::from_be_bytes(int_bytes);
         // Only the first bit is used, the other two bits for this value are "Melxis" reserved
         let subpage = 0x0001 & raw;
         let new_data = is_bit_set(raw, 3);
@@ -70,14 +77,14 @@ impl From<u16> for StatusRegister {
     }
 }
 
-impl From<StatusRegister> for u16 {
+impl From<StatusRegister> for [u8; 2] {
     fn from(status: StatusRegister) -> Self {
         let mut register = 0u16;
         let subpage_int: usize = status.last_updated_subpage.into();
         register |= subpage_int as u16;
         register |= (status.new_data as u16) << 3;
         register |= (status.overwrite_enabled as u16) << 4;
-        register
+        register.to_be_bytes()
     }
 }
 
@@ -179,9 +186,9 @@ impl ControlRegister {
 }
 
 impl Register for ControlRegister {
-    fn write_mask() -> u16 {
+    fn write_mask() -> [u8; 2] {
         // *Technically* it's 0x1FFD, but the second bit is documented to always be 0
-        0x1FFF
+        [0x1F, 0xFF]
     }
 
     fn address() -> Address {
@@ -189,8 +196,13 @@ impl Register for ControlRegister {
     }
 }
 
-impl From<u16> for ControlRegister {
-    fn from(raw: u16) -> Self {
+impl<'a> From<&'a [u8]> for ControlRegister {
+    fn from(buf: &'a [u8]) -> Self {
+        let (int_bytes, _) = buf.split_at(core::mem::size_of::<u16>());
+        let int_bytes: [u8; 2] = int_bytes
+            .try_into()
+            .expect("Not enough bytes in control register buffer");
+        let raw = u16::from_be_bytes(int_bytes);
         let use_subpages = is_bit_set(raw, 0);
         let step_mode = is_bit_set(raw, 1);
         let data_hold = is_bit_set(raw, 2);
@@ -224,7 +236,7 @@ impl From<u16> for ControlRegister {
     }
 }
 
-impl From<ControlRegister> for u16 {
+impl From<ControlRegister> for [u8; 2] {
     fn from(register: ControlRegister) -> Self {
         let mut raw = 0u16;
         raw |= register.use_subpages as u16;
@@ -240,7 +252,7 @@ impl From<ControlRegister> for u16 {
         if register.access_pattern == AccessPattern::Chess {
             raw |= 1u16 << 12;
         }
-        raw
+        raw.to_be_bytes()
     }
 }
 
@@ -275,10 +287,10 @@ impl Default for I2cRegister {
 }
 
 impl Register for I2cRegister {
-    fn write_mask() -> u16 {
+    fn write_mask() -> [u8; 2] {
         // the fourth bit is documented, but it is "reserved" at 0. It *isn't* documented to always
         // be 0 though, so I'm not including it in the mask.
-        0x0007
+        [0x00, 0x07]
     }
 
     fn address() -> Address {
@@ -286,8 +298,13 @@ impl Register for I2cRegister {
     }
 }
 
-impl From<u16> for I2cRegister {
-    fn from(raw: u16) -> Self {
+impl<'a> From<&'a [u8]> for I2cRegister {
+    fn from(buf: &'a [u8]) -> Self {
+        let (int_bytes, _) = buf.split_at(core::mem::size_of::<u16>());
+        let int_bytes: [u8; 2] = int_bytes
+            .try_into()
+            .expect("Not enough bytes in status register buffer");
+        let raw = u16::from_be_bytes(int_bytes);
         // I'm inverting the fast mode plus flag for usage in this library. 0 should always be
         // "disabled", not "not disabled".
         let fast_mode_plus = !is_bit_set(raw, 0);
@@ -302,7 +319,7 @@ impl From<u16> for I2cRegister {
     }
 }
 
-impl From<I2cRegister> for u16 {
+impl From<I2cRegister> for [u8; 2] {
     fn from(register: I2cRegister) -> Self {
         let mut raw = 0u16;
         // And here we translate back to "not disabled" land.
@@ -316,7 +333,7 @@ impl From<I2cRegister> for u16 {
         if !register.sda_current_limiter {
             raw |= 0x0004;
         }
-        raw
+        raw.to_be_bytes()
     }
 }
 
@@ -432,10 +449,13 @@ mod test {
 
     macro_rules! assert_register_field {
         ($register:ty, $value:literal, $field:ident, $expected:expr) => {
-            let packed: $register = From::from($value);
+            // backdoor type annotation for the macro
+            let value: u16 = $value;
+            let bytes = value.to_be_bytes();
+            let packed: $register = From::from(&bytes[..]);
             assert_eq!(packed.$field, $expected);
-            let unpacked: u16 = packed.into();
-            assert_eq!(unpacked, $value);
+            let unpacked: [u8; 2] = packed.into();
+            assert_eq!(unpacked, bytes);
         };
     }
 
@@ -444,8 +464,10 @@ mod test {
         // The write mask is not quite a mask for all relevant bits for the status register: the
         // last updated subpage is a read-only field, so the three least significant bits aren't in
         // the write mask.
-        let all_on = StatusRegister::from(0xFFF8);
-        let masked_on = StatusRegister::from(StatusRegister::write_mask());
+        let bytes = [0xFF, 0xF8];
+        let all_on = StatusRegister::from(&bytes[..]);
+        let mask_bytes = StatusRegister::write_mask();
+        let masked_on: StatusRegister = StatusRegister::from(&mask_bytes[..]);
         assert_eq!(all_on, masked_on);
     }
 
@@ -469,9 +491,11 @@ mod test {
 
     #[test]
     fn control_register_masked() {
-        let all_on = ControlRegister::from(0xFFFF);
+        let bytes: [u8; 2] = [0xFF, 0xFF];
+        let all_on = ControlRegister::from(&bytes[..]);
         // The write mask is also a mask for which bits are relevant to the structure.
-        let masked_on = ControlRegister::from(ControlRegister::write_mask());
+        let mask_bytes = ControlRegister::write_mask();
+        let masked_on = ControlRegister::from(&mask_bytes[..]);
         assert_eq!(all_on, masked_on);
     }
 
