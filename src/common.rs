@@ -94,7 +94,7 @@ pub trait CalibrationData {
     fn corner_temperatures(&self) -> &[i16];
 
     /// K<sub>s<sub>T<sub>o</sub>(n)</sub></sub>, where <var>n</var> as a corresponding corner
-    /// temperature index. The length of this index and the one from [corner_temperatures] must be
+    /// temperature index. The length of this index and the one from `corner_temperatures` must be
     /// identical.
     fn k_s_to(&self) -> &[f32];
 

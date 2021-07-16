@@ -350,9 +350,9 @@ pub enum Subpage {
 /// ensure your I²C bus is fast enough. A quick rundown of the the maximum frame rate some common
 /// I²C bus speeds can support:
 ///
-/// * 100kHz: [4Hz][RefreshRate::Four]
-/// * 400kHz: [16Hz][RefreshRate::Sixteen]
-/// * 1MHz: [64Hz][RefreshRate::Four] (barely, [32Hz][RefreshRate::ThirtyTwo] is safer)
+/// * 100kHz: [4Hz][FrameRate::Four]
+/// * 400kHz: [16Hz][FrameRate::Sixteen]
+/// * 1MHz: [64Hz][FrameRate::Four] (barely, [32Hz][FrameRate::ThirtyTwo] is safer)
 ///
 /// On top of this requirement, your hardware has to be fast enough to be able to process each
 /// frame of data before the next frame is ready.
