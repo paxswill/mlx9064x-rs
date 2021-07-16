@@ -1,17 +1,16 @@
 #![no_std]
 
-mod mlx90640;
-mod mlx90641;
 mod camera;
 mod common;
 mod error;
+pub mod mlx90640;
+pub mod mlx90641;
 mod register;
 mod util;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+pub use camera::Camera;
+pub use common::{Address, CalibrationData, MelexisCamera};
+pub use error::Error;
+pub use register::*;
+
+pub type Mlx90640<I2C> = Camera<mlx90640::Mlx90640, I2C, { mlx90640::HEIGHT }, { mlx90640::WIDTH }>;
