@@ -51,6 +51,9 @@ use crate::register::Subpage;
 /// * Slices covering all pixels are laid out in row-major order, with the X-axis increasing from
 ///   left to right, and the Y-axis increasing from top to bottom.
 pub trait MelexisEeprom: Sized {
+    /// Generate the calibration data from the constants store in the camera's EEPROM.
+    ///
+    /// The given buffer *must* cover all of the EEPROM.
     fn from_data<B: Buf>(data: &mut B) -> Result<Self, &'static str>;
 
     /// K<sub>V<sub>DD</sub></sub>

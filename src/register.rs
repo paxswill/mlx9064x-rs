@@ -112,8 +112,9 @@ pub(crate) struct ControlRegister {
 
     /// Enabled data hold.
     ///
-    /// The default is disabled.
-    // TODO: puzzle out what the datasheet means by this.
+    /// By default data is transferred into RAM for each frame, but if this flag is enabled, data
+    /// will only be written into RAM when the `StatusRegister::overwrite_enabled` flag is set.
+    /// The default is disabled, meaning data will be written into RAM for every measurement.
     pub(crate) data_hold: bool,
 
     /// Whether or not to automatically alternate between subpages.
