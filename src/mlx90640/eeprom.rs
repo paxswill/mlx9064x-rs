@@ -18,6 +18,7 @@ const NATIVE_TEMPERATURE_RANGE: usize = 1;
 /// The word size of the MLX990640 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
 
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Mlx90640Eeprom {
     k_v_dd: i16,
 
