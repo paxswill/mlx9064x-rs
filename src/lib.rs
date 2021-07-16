@@ -2,6 +2,7 @@
 
 mod mlx90640;
 mod mlx90641;
+mod camera;
 mod common;
 mod error;
 mod register;
