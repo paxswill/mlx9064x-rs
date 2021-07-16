@@ -3,6 +3,7 @@
 mod mlx90640;
 mod mlx90641;
 mod common;
+mod error;
 mod register;
 mod util;
 
