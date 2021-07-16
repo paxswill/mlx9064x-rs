@@ -32,8 +32,10 @@
 //! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
 
 use arrayvec::ArrayVec;
+use embedded_hal::blocking::i2c;
 
-use crate::register::Subpage;
+use crate::error::Error;
+use crate::register::{ControlRegister, Subpage};
 
 /// The MLX9064\* modules store a large amount of calibration data in a built-in EEPROM. This trait
 /// defines methods exposing the values needed for generating thermal images from the camera.
@@ -49,12 +51,7 @@ use crate::register::Subpage;
 ///   subpage selected. In that case just ignore that argument.
 /// * Slices covering all pixels are laid out in row-major order, with the X-axis increasing from
 ///   left to right, and the Y-axis increasing from top to bottom.
-pub trait MelexisEeprom: Sized {
-    /// Generate the calibration data from the constants store in the camera's EEPROM.
-    ///
-    /// The given buffer *must* cover all of the EEPROM.
-    fn from_data(data: &[u8]) -> Result<Self, &'static str>;
-
+pub trait CalibrationData {
     /// K<sub>V<sub>DD</sub></sub>
     fn k_v_dd(&self) -> i16;
 
@@ -167,7 +164,12 @@ impl From<Address> for [u8; 2] {
 }
 
 /// Define common addresses accessible within the camera's RAM.
-pub trait MelexisRamAddress {
+pub trait MelexisCamera: Sized {
+    /// Create a new camera with the current control register and a dump of the EEPROM.
+    fn new<I2C>(register: ControlRegister, eeprom: &[u8]) -> Result<Self, Error<I2C>>
+    where
+        I2C: i2c::WriteRead;
+
     /// The address for a particular pixel in a device's memory. An implementation should only
     /// return values for pixel coordinates it supports.
     fn pixel(&self, row: u8, column: u8, subpage: Subpage) -> Option<Address>;
@@ -186,6 +188,10 @@ pub trait MelexisRamAddress {
 
     /// The address for V<sub>DD<sub>pixel</sub></sub>.
     fn v_dd_pixel(&self) -> Address;
+
+    fn calibration(&self) -> &dyn CalibrationData;
+
+    fn update_control_register(&mut self, register: ControlRegister);
 }
 
 /// A helper function for calculating the sensitivity correction coefficients

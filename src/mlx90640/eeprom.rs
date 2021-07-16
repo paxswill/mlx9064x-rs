@@ -19,7 +19,7 @@ const NATIVE_TEMPERATURE_RANGE: usize = 1;
 const WORD_SIZE: usize = 16 / 8;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Mlx90640Eeprom {
+pub(crate) struct Mlx90640Calibration {
     k_v_dd: i16,
 
     v_dd_25: i16,
@@ -63,7 +63,7 @@ pub(crate) struct Mlx90640Eeprom {
     temperature_gradient_coefficient: Option<f32>,
 }
 
-impl Mlx90640Eeprom {
+impl Mlx90640Calibration {
     /// Calculate pixel calibration values based off of the row and column data. The remainder data
     /// will be added in afterwards. This function is used for both offset and sensitivity (alpha)
     /// arrays. The given buffer must be at the word containing the column, row and remainder
@@ -168,12 +168,10 @@ impl Mlx90640Eeprom {
         let k_v_pixels = Self::repeat_chessboard(k_v_avg);
         k_v_pixels.map(move |v: f32| v / *k_v_scale)
     }
-}
 
-impl MelexisEeprom for Mlx90640Eeprom {
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
     /// EEPROM. The buffer must cover *all* of the EEPROM.
-    fn from_data(data: &[u8]) -> Result<Self, &'static str> {
+    pub(super) fn from_data(data: &[u8]) -> Result<Self, &'static str> {
         let mut buf = &data[..];
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
         if buf.remaining() < eeprom_length {
@@ -322,7 +320,9 @@ impl MelexisEeprom for Mlx90640Eeprom {
             temperature_gradient_coefficient,
         })
     }
+}
 
+impl CalibrationData for Mlx90640Calibration {
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
@@ -437,11 +437,11 @@ mod test {
     use arrayvec::ArrayVec;
     use bytes::{Bytes, BytesMut};
 
-    use crate::common::MelexisEeprom;
+    use crate::common::CalibrationData;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
 
-    use super::Mlx90640Eeprom;
+    use super::Mlx90640Calibration;
 
     /// Example EEPROM data from the datasheet (from the worked example)
     // Each line is 8 bytes. The first two lines are empty, as that data is ignored for calibration
@@ -470,9 +470,9 @@ mod test {
         eeprom.freeze()
     }
 
-    fn eeprom() -> Mlx90640Eeprom {
+    fn eeprom() -> Mlx90640Calibration {
         let mut eeprom_bytes = eeprom_data();
-        Mlx90640Eeprom::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
+        Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
     #[test]
@@ -528,7 +528,7 @@ mod test {
         // The pattern order is (for row, column): EE, OE, EO, OO
         let pattern = [1, 2, 3, 4];
         let test_pattern: ArrayVec<i8, NUM_PIXELS> =
-            Mlx90640Eeprom::repeat_chessboard(pattern).collect();
+            Mlx90640Calibration::repeat_chessboard(pattern).collect();
         // Print the test pattern (when std is available), as that makes it much easier to see
         // what's going on.
         #[cfg(feature = "std")]
