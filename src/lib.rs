@@ -13,4 +13,10 @@ pub use common::{Address, CalibrationData, MelexisCamera};
 pub use error::Error;
 pub use register::*;
 
-pub type Mlx90640<I2C> = Camera<mlx90640::Mlx90640, I2C, { mlx90640::HEIGHT }, { mlx90640::WIDTH }>;
+pub type Mlx90640Camera<I2C> = Camera<
+    mlx90640::Mlx90640,
+    I2C,
+    { mlx90640::HEIGHT },
+    { mlx90640::WIDTH },
+    { mlx90640::NUM_PIXELS * 2 },
+>;

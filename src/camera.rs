@@ -70,7 +70,7 @@ macro_rules! set_register_field {
 /// The biggest impact to the user of these modules is that you will need to call one of the
 /// `generate_image_*` functions for both subpages to get a full image.
 #[derive(Clone, Debug)]
-pub struct Camera<Cam, I2C, const H: usize, const W: usize> {
+pub struct Camera<Cam, I2C, const H: usize, const W: usize, const N: usize> {
     /// The I²C bus this camera is accessible on.
     bus: I2C,
 
@@ -79,9 +79,13 @@ pub struct Camera<Cam, I2C, const H: usize, const W: usize> {
 
     /// The camera-specific functionality.
     camera: Cam,
+
+    /// Buffer for reading pixel data off of the camera.
+    // I wish I could use const generics for computer parameters :/
+    pixel_buffer: [u8; N],
 }
 
-impl<Cam, I2C, const H: usize, const W: usize> Camera<Cam, I2C, H, W>
+impl<Cam, I2C, const H: usize, const W: usize, const N: usize> Camera<Cam, I2C, H, W, N>
 where
     Cam: MelexisCamera,
     I2C: i2c::WriteRead,
@@ -101,11 +105,12 @@ where
         let mut eeprom_buf = [0u8; EEPROM_LENGTH];
         bus.write_read(address, &EEPROM_BASE, &mut eeprom_buf)
             .map_err(Error::I2cError)?;
-        let camera = Cam::new(control, &mut eeprom_buf[..])?;
+        let camera = Cam::new(control, &eeprom_buf[..])?;
         Ok(Self {
             bus,
             address,
             camera,
+            pixel_buffer: [0u8; N],
         })
     }
 
