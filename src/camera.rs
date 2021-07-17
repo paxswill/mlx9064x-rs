@@ -286,7 +286,7 @@ where
         i2c_address: u8,
         register_address: Address,
     ) -> Result<[u8; 2], I2C::Error> {
-        let register_address_bytes: [u8; 2] = register_address.into();
+        let register_address_bytes = register_address.as_bytes();
         let mut register_bytes = [0u8; 2];
         bus.write_read(i2c_address, &register_address_bytes, &mut register_bytes)?;
         Ok(register_bytes)
@@ -319,7 +319,7 @@ where
         Ok(())
     }
     let register_address = R::address();
-    let register_address_bytes: [u8; 2] = register_address.into();
+    let register_address_bytes = register_address.as_bytes();
     // Can't use read_register(), as it strips the unused bytes off
     let mut existing_value = [0u8; 2];
     bus.write_read(address, &register_address_bytes, &mut existing_value)

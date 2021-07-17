@@ -103,14 +103,15 @@ impl TryFrom<Address> for EepromAddress {
     type Error = TryFromPrimitiveError<EepromAddress>;
 
     fn try_from(value: Address) -> Result<Self, Self::Error> {
-        Self::try_from(value.0)
+        let raw_address: u16 = value.into();
+        Self::try_from(raw_address)
     }
 }
 
 impl From<EepromAddress> for Address {
     fn from(eeprom_address: EepromAddress) -> Self {
         let raw_address: u16 = eeprom_address.into();
-        Address(raw_address)
+        raw_address.into()
     }
 }
 
@@ -148,13 +149,14 @@ impl TryFrom<Address> for RamAddress {
     type Error = TryFromPrimitiveError<RamAddress>;
 
     fn try_from(value: Address) -> Result<Self, Self::Error> {
-        Self::try_from(value.0)
+        let raw_address: u16 = value.into();
+        Self::try_from(raw_address)
     }
 }
 
 impl From<RamAddress> for Address {
     fn from(ram_address: RamAddress) -> Self {
         let raw_address: u16 = ram_address.into();
-        Address(raw_address)
+        raw_address.into()
     }
 }

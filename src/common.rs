@@ -155,11 +155,28 @@ pub trait CalibrationData {
 }
 /// Marker newtype for addresses accessible over I<sup>2</sup>C.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Address(pub u16);
+pub struct Address(u16);
 
-impl From<Address> for [u8; 2] {
+impl Address {
+    pub(crate) fn as_bytes(&self) -> [u8; 2] {
+        self.0.to_be_bytes()
+    }
+}
+
+impl From<u16> for Address {
+    fn from(raw_address: u16) -> Self {
+        Self(raw_address)
+    }
+}
+impl From<Address> for u16 {
     fn from(address: Address) -> Self {
-        address.0.to_be_bytes()
+        address.0
+    }
+}
+
+impl From<Address> for usize {
+    fn from(address: Address) -> Self {
+        address.0 as usize
     }
 }
 

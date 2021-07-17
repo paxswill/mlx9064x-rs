@@ -47,7 +47,7 @@ impl Register for StatusRegister {
     }
 
     fn address() -> Address {
-        Address(0x8000)
+        0x8000.into()
     }
 }
 
@@ -193,7 +193,7 @@ impl Register for ControlRegister {
     }
 
     fn address() -> Address {
-        Address(0x800D)
+        0x800D.into()
     }
 }
 
@@ -295,7 +295,7 @@ impl Register for I2cRegister {
     }
 
     fn address() -> Address {
-        Address(0x800F)
+        0x800F.into()
     }
 }
 
