@@ -49,7 +49,7 @@ macro_rules! set_register_field {
 /// updated in turn. The pixels are split into subpages depending on the current [access
 /// pattern][AccessPattern]. In chess board mode, the pixels alternate subpages in both the X and
 /// Y axes, resulting in a chess or checker board-like pattern:
-/// ```
+/// ```text
 /// 0 1 0 1 0 1 0 1
 /// 1 0 1 0 1 0 1 0
 /// 0 1 0 1 0 1 0 1
@@ -57,7 +57,7 @@ macro_rules! set_register_field {
 /// ```
 /// The other access mode interleaves each row, so pixels will alternate subpages only on the Y
 /// axis. This is also referred to as "TV" mode in the manufacturer's datasheet.
-/// ```
+/// ```text
 /// 0 0 0 0 0 0 0 0
 /// 1 1 1 1 1 1 1 1
 /// 0 0 0 0 0 0 0 0
