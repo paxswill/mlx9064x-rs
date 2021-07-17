@@ -229,6 +229,9 @@ pub trait MelexisCamera: Sized {
     fn calibration(&self) -> &dyn CalibrationData;
 
     fn update_control_register(&mut self, register: ControlRegister);
+
+    /// Calculate the ADC resolution correction factor
+    fn resolution_correction(&self) -> f32;
 }
 
 pub struct PixelAddressRange {

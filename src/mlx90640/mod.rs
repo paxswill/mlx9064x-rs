@@ -86,6 +86,14 @@ impl MelexisCamera for Mlx90640 {
     fn update_control_register(&mut self, register: ControlRegister) {
         self.config = register;
     }
+
+    fn resolution_correction(&self) -> f32 {
+        // These values are safe to convert to i8, as they were originally 4-bit unsigned ints.
+        let resolution_exp: i8 =
+            (self.calibration_data.resolution() as i8) - self.config.resolution as i8;
+        // Have to use an f32 here as resolution_exp may be negative.
+        f32::from(resolution_exp).exp2()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
