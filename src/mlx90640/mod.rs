@@ -123,12 +123,19 @@ impl Iterator for Mlx90640PixelSubpage {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < NUM_PIXELS {
-            let pixel_subpage = match self.access_pattern {
-                AccessPattern::Chess => self.index % 2,
-                AccessPattern::Interleave => (self.index / WIDTH) % 2,
-            };
+            let row = self.index / WIDTH;
+            let column = self.index % WIDTH;
             self.index += 1;
-            Some(pixel_subpage == self.subpage_num)
+            Some(match self.access_pattern {
+                AccessPattern::Chess => {
+                    if self.subpage_num == 0 {
+                        row % 2 == column % 2
+                    } else {
+                        row % 2 != column % 2
+                    }
+                }
+                AccessPattern::Interleave => row % 2 == self.subpage_num,
+            })
         } else {
             None
         }
@@ -141,7 +148,7 @@ mod test {
 
     use crate::{AccessPattern, Subpage};
 
-    use super::{Mlx90640PixelSubpage, WIDTH};
+    use super::{Mlx90640PixelSubpage, NUM_PIXELS, WIDTH};
 
     #[test]
     fn pixel_subpage_interleaved() {
@@ -169,19 +176,19 @@ mod test {
 
     #[test]
     fn pixel_subpage_chess() {
+        let subpages = [Subpage::Zero, Subpage::One];
+        let zero_first = subpages.iter().copied().cycle().take(WIDTH);
+        let one_first = subpages.iter().copied().cycle().skip(1).take(WIDTH);
+        let chessboard = zero_first.chain(one_first).cycle().take(NUM_PIXELS);
+
         let seq0 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::Zero);
-        let pattern0 = [true, false];
-        seq0.zip(pattern0.iter().cycle())
-            .enumerate()
-            .for_each(|(index, (seq, expected))| {
-                assert_eq!(seq, *expected, "{} is incorrect (pixel {})", seq, index)
-            });
         let seq1 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::One);
-        let pattern1 = [false, true];
-        seq1.zip(pattern1.iter().cycle())
-            .enumerate()
-            .for_each(|(index, (seq, expected))| {
-                assert_eq!(seq, *expected, "{} is incorrect (pixel {})", seq, index)
-            });
+
+        let all = chessboard.zip(seq0.zip(seq1));
+
+        for (subpage, (seq0, seq1)) in all {
+            assert_eq!(subpage == Subpage::Zero, seq0);
+            assert_eq!(subpage == Subpage::One, seq1);
+        }
     }
 }
