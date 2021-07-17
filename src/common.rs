@@ -168,6 +168,7 @@ impl From<u16> for Address {
         Self(raw_address)
     }
 }
+
 impl From<Address> for u16 {
     fn from(address: Address) -> Self {
         address.0
@@ -182,14 +183,33 @@ impl From<Address> for usize {
 
 /// Define common addresses accessible within the camera's RAM.
 pub trait MelexisCamera: Sized {
+    type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
+
+    type PixelsInSubpageIterator: Iterator<Item = bool>;
+
     /// Create a new camera with the current control register and a dump of the EEPROM.
     fn new<I2C>(register: ControlRegister, eeprom: &[u8]) -> Result<Self, Error<I2C>>
     where
         I2C: i2c::WriteRead;
 
-    /// The address for a particular pixel in a device's memory. An implementation should only
-    /// return values for pixel coordinates it supports.
-    fn pixel(&self, row: u8, column: u8, subpage: Subpage) -> Option<Address>;
+    /// Ranges of memory that should be read to load a subpage's data from RAM.
+    ///
+    /// Different cameras with different [access patterns][crate::AccessPattern] have different optimal
+    /// ways of loading data from RAM. In some cases loading by row and then ignoring half the data
+    /// may be appropriate, in other loading individual pixels may be best.
+    fn pixel_ranges(&self, subpage: Subpage) -> Self::PixelRangeIterator;
+
+    /// Returns an iterator of booleans for whether or not a pixel should be considered for a
+    /// subpage.
+    ///
+    /// This is a complement to [`pixel_ranges`][MelexisCamera::pixel_ranges], in that it lets an
+    /// implementation load extra memory when it's more efficient but then ignore the pixels for
+    /// later computations.
+    ///
+    /// The iterator should return tru when the pixel is part of this subpage, and false when it is
+    /// not. The ordering is rows, then columns. The iterator must not be infinite; it should only
+    /// yield as many values as there are pixels.
+    fn pixels_in_subpage(&self, subpage: Subpage) -> Self::PixelsInSubpageIterator;
 
     /// The address for T<sub>a<sub>V<sub>BE</sub></sub></sub>.
     fn t_a_v_be(&self) -> Address;
@@ -209,6 +229,11 @@ pub trait MelexisCamera: Sized {
     fn calibration(&self) -> &dyn CalibrationData;
 
     fn update_control_register(&mut self, register: ControlRegister);
+}
+
+pub struct PixelAddressRange {
+    pub(crate) start_address: Address,
+    pub(crate) length: usize,
 }
 
 /// A helper function for calculating the sensitivity correction coefficients

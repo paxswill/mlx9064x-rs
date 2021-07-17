@@ -5,7 +5,7 @@ mod eeprom;
 #[cfg(test)]
 pub(crate) use eeprom::test::eeprom_data;
 
-use crate::common::{Address, CalibrationData, MelexisCamera};
+use crate::common::{Address, CalibrationData, MelexisCamera, PixelAddressRange};
 use crate::error::Error;
 use crate::register::{AccessPattern, ControlRegister, Subpage};
 
@@ -21,9 +21,6 @@ pub(crate) const WIDTH: usize = 32;
 /// The total number of pixels an MLX90640 has.
 pub(crate) const NUM_PIXELS: usize = HEIGHT * WIDTH;
 
-/// The first RAM address for teh MLX90640.
-const RAM_BASE_ADDRESS: u16 = 0x0400;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640 {
     calibration_data: eeprom::Mlx90640Calibration,
@@ -31,6 +28,9 @@ pub struct Mlx90640 {
 }
 
 impl MelexisCamera for Mlx90640 {
+    type PixelRangeIterator = core::array::IntoIter<PixelAddressRange, 1>;
+    type PixelsInSubpageIterator = Mlx90640PixelSubpage;
+
     fn new<I2C>(register: ControlRegister, eeprom: &[u8]) -> Result<Self, Error<I2C>>
     where
         I2C: i2c::WriteRead,
@@ -43,26 +43,17 @@ impl MelexisCamera for Mlx90640 {
         })
     }
 
-    fn pixel(&self, row: u8, column: u8, subpage: Subpage) -> Option<Address> {
-        let row = row as u16;
-        let column = column as u16;
-        if row >= (HEIGHT as u16) || column >= (WIDTH as u16) {
-            return None;
-        }
-        // The pixel addresses don't change depending on the subpage for the '640 (just their
-        // vailidty). It's just a simple row-major indexing.
-        let index = row as u16 * (WIDTH as u16) + column as u16;
-        match (self.config.access_pattern, row % 2, column % 2, subpage) {
-            (AccessPattern::Chess, 0, 0, Subpage::Zero) => Some(Address(RAM_BASE_ADDRESS + index)),
-            (AccessPattern::Chess, 1, 1, Subpage::One) => Some(Address(RAM_BASE_ADDRESS + index)),
-            (AccessPattern::Interleave, 0, _, Subpage::Zero) => {
-                Some(Address(RAM_BASE_ADDRESS + index))
-            }
-            (AccessPattern::Interleave, 1, _, Subpage::One) => {
-                Some(Address(RAM_BASE_ADDRESS + index))
-            }
-            _ => None,
-        }
+    fn pixel_ranges(&self, _subpage: Subpage) -> Self::PixelRangeIterator {
+        // For the MLX90640, the best strategy (no matter the access mode) is to just load
+        // everything.
+        core::array::IntoIter::new([PixelAddressRange {
+            start_address: RamAddress::Base.into(),
+            length: NUM_PIXELS,
+        }])
+    }
+
+    fn pixels_in_subpage(&self, subpage: Subpage) -> Self::PixelsInSubpageIterator {
+        Mlx90640PixelSubpage::new(self.config.access_pattern, subpage)
     }
 
     fn t_a_v_be(&self) -> Address {
@@ -94,5 +85,95 @@ impl MelexisCamera for Mlx90640 {
 
     fn update_control_register(&mut self, register: ControlRegister) {
         self.config = register;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mlx90640PixelSubpage {
+    /// The count of the current pixel.
+    index: usize,
+
+    /// The access pattern being used.
+    access_pattern: AccessPattern,
+
+    /// The subpage (as a number) this sequence is being generated for.
+    subpage_num: usize,
+}
+
+impl Mlx90640PixelSubpage {
+    fn new(access_pattern: AccessPattern, subpage: Subpage) -> Self {
+        Self {
+            index: 0,
+            access_pattern,
+            subpage_num: subpage as usize,
+        }
+    }
+}
+
+impl Iterator for Mlx90640PixelSubpage {
+    type Item = bool;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < NUM_PIXELS {
+            let pixel_subpage = match self.access_pattern {
+                AccessPattern::Chess => self.index % 2,
+                AccessPattern::Interleave => (self.index / WIDTH) % 2,
+            };
+            self.index += 1;
+            Some(pixel_subpage == self.subpage_num)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use core::iter::repeat;
+
+    use crate::{AccessPattern, Subpage};
+
+    use super::{Mlx90640PixelSubpage, WIDTH};
+
+    #[test]
+    fn pixel_subpage_interleaved() {
+        let seq0 = Mlx90640PixelSubpage::new(AccessPattern::Interleave, Subpage::Zero);
+        let pattern0 = repeat(true)
+            .take(WIDTH)
+            .chain(repeat(false).take(WIDTH))
+            .cycle();
+        seq0.zip(pattern0)
+            .enumerate()
+            .for_each(|(index, (seq, expected))| {
+                assert_eq!(seq, expected, "{} is incorrect (pixel {})", seq, index)
+            });
+        let seq1 = Mlx90640PixelSubpage::new(AccessPattern::Interleave, Subpage::One);
+        let pattern1 = repeat(false)
+            .take(WIDTH)
+            .chain(repeat(true).take(WIDTH))
+            .cycle();
+        seq1.zip(pattern1)
+            .enumerate()
+            .for_each(|(index, (seq, expected))| {
+                assert_eq!(seq, expected, "{} is incorrect (pixel {})", seq, index)
+            });
+    }
+
+    #[test]
+    fn pixel_subpage_chess() {
+        let seq0 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::Zero);
+        let pattern0 = [true, false];
+        seq0.zip(pattern0.iter().cycle())
+            .enumerate()
+            .for_each(|(index, (seq, expected))| {
+                assert_eq!(seq, *expected, "{} is incorrect (pixel {})", seq, index)
+            });
+        let seq1 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::One);
+        let pattern1 = [false, true];
+        seq1.zip(pattern1.iter().cycle())
+            .enumerate()
+            .for_each(|(index, (seq, expected))| {
+                assert_eq!(seq, *expected, "{} is incorrect (pixel {})", seq, index)
+            });
     }
 }
