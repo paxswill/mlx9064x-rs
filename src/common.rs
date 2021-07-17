@@ -218,14 +218,15 @@ pub(crate) fn alpha_correction_coefficients<const NUM_RANGES: usize>(
 /// The actual calculations for [alpha_correction_coefficients] as a recursive function. Memoizing
 /// would be nice, but these calculations are only performed once, at start up.
 fn alpha_corr_n(n: usize, native_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32 {
-    if n < native_range {
-        (1f32 + k_s_to[n] * f32::from(ct[n + 1] - ct[n])).recip()
-            * alpha_corr_n(n + 1, native_range, ct, k_s_to)
-    } else if n > native_range {
-        (1f32 + k_s_to[n - 1] * f32::from(ct[n] - ct[n - 1]))
-            * alpha_corr_n(n - 1, native_range, ct, k_s_to)
-    } else {
-        // The base case, when n == native_range
-        1f32
+    match n.cmp(&native_range) {
+        core::cmp::Ordering::Equal => 1f32,
+        core::cmp::Ordering::Less => {
+            (1f32 + k_s_to[n] * f32::from(ct[n + 1] - ct[n])).recip()
+                * alpha_corr_n(n + 1, native_range, ct, k_s_to)
+        }
+        core::cmp::Ordering::Greater => {
+            (1f32 + k_s_to[n - 1] * f32::from(ct[n] - ct[n - 1]))
+                * alpha_corr_n(n - 1, native_range, ct, k_s_to)
+        }
     }
 }

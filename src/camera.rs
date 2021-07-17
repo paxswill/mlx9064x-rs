@@ -103,8 +103,8 @@ where
             .map_err(Error::I2cError)?;
         let camera = Cam::new(control, &mut eeprom_buf[..])?;
         Ok(Self {
-            bus: bus,
-            address: address,
+            bus,
+            address,
             camera,
         })
     }
@@ -273,7 +273,7 @@ where
     }
 }
 
-fn read_register<'a, R, I2C>(bus: &mut I2C, address: u8) -> Result<R, Error<I2C>>
+fn read_register<R, I2C>(bus: &mut I2C, address: u8) -> Result<R, Error<I2C>>
 where
     I2C: i2c::WriteRead,
     R: Register,
@@ -298,7 +298,7 @@ where
     Ok(register)
 }
 
-fn write_register<'a, R, I2C>(bus: &mut I2C, address: u8, register: R) -> Result<(), Error<I2C>>
+fn write_register<R, I2C>(bus: &mut I2C, address: u8, register: R) -> Result<(), Error<I2C>>
 where
     I2C: i2c::WriteRead,
     R: Register,

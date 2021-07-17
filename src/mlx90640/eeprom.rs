@@ -139,8 +139,8 @@ impl Mlx90640Calibration {
         let even_row_pattern = core::array::IntoIter::new([row_even_col_even, row_even_col_odd]);
         let odd_row_pattern = core::array::IntoIter::new([row_odd_col_even, row_odd_col_odd]);
         // Repeat the pattern across the row
-        let even_row = even_row_pattern.cycle().take(WIDTH).map(|v| T::from(v));
-        let odd_row = odd_row_pattern.cycle().take(WIDTH).map(|v| T::from(v));
+        let even_row = even_row_pattern.cycle().take(WIDTH).map(T::from);
+        let odd_row = odd_row_pattern.cycle().take(WIDTH).map(T::from);
         // Then chain the two rows together, repeating to fill the array
         let repeating_rows = even_row.chain(odd_row).cycle();
         repeating_rows.take(NUM_PIXELS)
@@ -161,18 +161,16 @@ impl Mlx90640Calibration {
     /// Unlike the other per-pixel calibration values, K<sub>V is just a repeated sequence. Other
     /// camera models *do* have per-pixel values, so to keep the interface the same/factor out
     /// shared functionality a full array is being generated.
-    fn generate_k_v_pixels<'a>(
-        k_v_avg: [i8; 4],
-        k_v_scale: &'a f32,
-    ) -> impl Iterator<Item = f32> + 'a {
+    fn generate_k_v_pixels(k_v_avg: [i8; 4], k_v_scale: &f32) -> impl Iterator<Item = f32> {
         let k_v_pixels = Self::repeat_chessboard(k_v_avg);
-        k_v_pixels.map(move |v: f32| v / *k_v_scale)
+        let k_v_scale = *k_v_scale;
+        k_v_pixels.map(move |v: f32| v / k_v_scale)
     }
 
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
     /// EEPROM. The buffer must cover *all* of the EEPROM.
     pub(super) fn from_data(data: &[u8]) -> Result<Self, &'static str> {
-        let mut buf = &data[..];
+        let mut buf = data;
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
         if buf.remaining() < eeprom_length {
             return Err("Not enough space left in buffer to be a full EEPROM dump");
@@ -195,8 +193,8 @@ impl Mlx90640Calibration {
         let alpha_scale = f32::from(alpha_scale_exp + 30).exp2();
         let gain = buf.get_i16();
         let v_ptat_25 = buf.get_i16();
-        let (k_v_ptat, mut kt_ptat_bytes) = word_6_10_split(&mut buf);
-        let k_t_ptat = i16_from_bits(&mut kt_ptat_bytes, 10);
+        let (k_v_ptat, kt_ptat_bytes) = word_6_10_split(&mut buf);
+        let k_t_ptat = i16_from_bits(&kt_ptat_bytes, 10);
         let k_v_dd = (buf.get_i8() as i16) << 5;
         // The data in EEPROM is unsigned, so we upgrade to a signed type as it's immediately sent
         // negative (by subtracting 256), then multipled by 2^5, and finally has 2^13 subtracted
@@ -234,8 +232,8 @@ impl Mlx90640Calibration {
             [alpha_cp0, alpha_cp0 * (1f32 + alpha_cp_ratio)]
         };
         let offset_reference_cp = {
-            let (offset_cp_delta, mut offset_cp_bytes) = word_6_10_split(&mut buf);
-            let offset_cp0 = i16_from_bits(&mut offset_cp_bytes, 10);
+            let (offset_cp_delta, offset_cp_bytes) = word_6_10_split(&mut buf);
+            let offset_cp0 = i16_from_bits(&offset_cp_bytes, 10);
             [offset_cp0, offset_cp0 + i16::from(offset_cp_delta)]
         };
         let k_v_cp = f32::from(buf.get_i8()) / k_v_scale;
@@ -432,7 +430,7 @@ pub(crate) mod test {
     #[cfg(feature = "std")]
     extern crate std;
     #[cfg(feature = "std")]
-    use std::print;
+    use std::{print, println};
 
     use arrayvec::ArrayVec;
     use bytes::{Bytes, BytesMut};
@@ -537,7 +535,7 @@ pub(crate) mod test {
                 let index = row * WIDTH + column;
                 print!("{} ", test_pattern[index]);
             }
-            print!("\n")
+            println!();
         }
         for column in 0..WIDTH {
             for row in 0..HEIGHT {
