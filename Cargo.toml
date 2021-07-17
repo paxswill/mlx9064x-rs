@@ -6,7 +6,8 @@ edition = "2018"
 keywords = ["embedded-hal", "thermal-camera", "thermopile", "mlx90640", "mlx90641"]
 license = "Apache-2.0"
 name = "mlx9064x"
-version = "0.1.0"
+version = "0.0.1"
+readme = "ReadMe.md"
 
 [dependencies]
 arrayvec = { version = "0.7", default-features = false }
