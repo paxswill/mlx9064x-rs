@@ -8,6 +8,7 @@ license = "Apache-2.0"
 name = "mlx9064x"
 version = "0.0.1"
 readme = "ReadMe.md"
+repository = "https://github.com/paxswill/mlx9064x-rs"
 
 [dependencies]
 arrayvec = { version = "0.7", default-features = false }
