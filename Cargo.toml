@@ -15,6 +15,7 @@ arrayvec = { version = "0.7", default-features = false }
 bytes = { version = "1", default-features = false }
 embedded-hal = "0.2.5"
 num_enum = "0.5"
+num-traits = { version = "0.2", default-features = false }
 paste = "1"
 
 [dev-dependencies]

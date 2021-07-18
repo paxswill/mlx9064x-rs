@@ -4,6 +4,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::common::Address;
 use crate::error::LibraryError;
+use crate::util::is_bit_set;
 
 /// Trait for common register functionality.
 pub trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
@@ -588,13 +589,6 @@ pub enum AccessPattern {
     Interleave = 0,
 }
 
-/// Check if the n-th bit is set.
-///
-/// Bits are 0-indexed, from the LSB.
-fn is_bit_set(value: u16, index: u16) -> bool {
-    (value & (1 << index)) > 0
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -842,17 +836,5 @@ mod test {
     #[test]
     fn default_resolution() {
         assert_eq!(Resolution::default(), Resolution::Eighteen);
-    }
-
-    #[test]
-    fn is_bit_set() {
-        for n in 0..16 {
-            let value: u16 = 1 << n;
-            assert!(
-                super::is_bit_set(value, n),
-                "is_bit_set was incorrect for bit {}",
-                n
-            );
-        }
     }
 }

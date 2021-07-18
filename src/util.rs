@@ -71,3 +71,28 @@ macro_rules! expose_member {
         }
     };
 }
+
+/// Check if the n-th bit is set.
+///
+/// Bits are 0-indexed, from the LSB.
+pub(crate) fn is_bit_set<B>(value: B, index: usize) -> bool
+where
+    B: num_traits::PrimInt + num_traits::Unsigned,
+{
+    (value & (B::one() << index)) > B::zero()
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn is_bit_set() {
+        for n in 0..16 {
+            let value: u16 = 1 << n;
+            assert!(
+                super::is_bit_set(value, n),
+                "is_bit_set was incorrect for bit {}",
+                n
+            );
+        }
+    }
+}
