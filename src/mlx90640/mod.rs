@@ -6,7 +6,7 @@ mod eeprom;
 pub(crate) use eeprom::test::eeprom_data;
 
 use crate::common::{Address, CalibrationData, MelexisCamera, PixelAddressRange};
-use crate::error::Error;
+use crate::error::{Error, LibraryError};
 use crate::register::{AccessPattern, ControlRegister, Subpage};
 
 use address::RamAddress;
@@ -36,7 +36,7 @@ impl MelexisCamera for Mlx90640 {
         I2C: i2c::WriteRead,
     {
         let calibration_data =
-            eeprom::Mlx90640Calibration::from_data(eeprom).map_err(Error::Other)?;
+            eeprom::Mlx90640Calibration::from_data(eeprom).map_err(LibraryError::Other)?;
         Ok(Self {
             calibration_data,
             config: register,
