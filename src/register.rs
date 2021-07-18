@@ -7,7 +7,7 @@ use crate::error::LibraryError;
 use crate::util::is_bit_set;
 
 /// Trait for common register functionality.
-pub trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
+pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
     /// A bit mask of which bits can be modified by the controller.
     ///
     /// When changing register values on the camera, the current value should be read, then

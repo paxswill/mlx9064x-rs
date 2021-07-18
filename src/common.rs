@@ -237,6 +237,7 @@ pub trait MelexisCamera: Sized {
     fn resolution_correction(&self) -> f32;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PixelAddressRange {
     pub(crate) start_address: Address,
     pub(crate) length: usize,

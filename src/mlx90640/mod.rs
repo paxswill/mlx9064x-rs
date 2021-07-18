@@ -99,6 +99,10 @@ impl MelexisCamera for Mlx90640 {
     }
 }
 
+/// An iterator for determining which pixels are part of the current subpage.
+///
+/// This type is an implementation detail, and should not be relied upon by consumers of this
+/// crate.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mlx90640PixelSubpage {
     /// The count of the current pixel.

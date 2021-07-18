@@ -690,9 +690,8 @@ mod test {
     use embedded_hal_mock::i2c::{Mock as I2cMock, Transaction};
     use float_cmp::{approx_eq, F32Margin};
 
-    use crate::{
-        mlx90640, Camera, I2cRegister, MelexisCamera, Mlx90640Camera, StatusRegister, Subpage,
-    };
+    use crate::common::MelexisCamera;
+    use crate::{mlx90640, I2cRegister, Mlx90640Camera, StatusRegister, Subpage};
 
     fn create_mlx90640() -> Mlx90640Camera<I2cMock> {
         // Specifically using a non-default address to make sure assumptions aren't being made

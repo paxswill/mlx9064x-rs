@@ -33,13 +33,13 @@
 mod camera;
 mod common;
 mod error;
-pub mod mlx90640;
-pub mod mlx90641;
+mod mlx90640;
+mod mlx90641;
 mod register;
 mod util;
 
 pub use camera::Camera;
-pub use common::{Address, CalibrationData, MelexisCamera};
+pub use common::{Address, CalibrationData};
 pub use error::Error;
 pub use register::*;
 
