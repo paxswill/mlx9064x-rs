@@ -16,8 +16,13 @@ const EEPROM_BASE: [u8; 2] = 0x2400u16.to_be_bytes();
 /// contains a 16-bit value, so we multiply by two to get the number of 8-bit bytes.
 const EEPROM_LENGTH: usize = ((0x273F + 1) - 0x2400) * 2;
 
+/// Constant needed a few times for the final pixel temperature calculations.
 const KELVINS_TO_CELSIUS: f32 = 273.15;
 
+/// DRY macro for the set_* methods in `Camera` that modify a register field.
+///
+/// Most of the fields are boolean values, so that's the default type. Otherwise, add the type in
+/// before the docstring.
 macro_rules! set_register_field {
     { $register_access:ident, $field:ident, $doc:literal } => {
         set_register_field! {
@@ -72,10 +77,10 @@ macro_rules! set_register_field {
 /// advises against changing the access mode (90640), or doesn't mention the impact of changing the
 /// access mode at all (90641).
 ///
-/// The biggest impact to the user of these modules is that you will need to call one of the
-/// `generate_image_*` functions for both subpages to get a full image.
+/// The biggest impact to users of these modules is that one of the  `generate_image_*` functions
+/// will need to be called twice (once for each subpage) before a full image is available.
 #[derive(Clone, Debug)]
-pub struct Camera<Cam, I2C, const H: usize, const W: usize, const N: usize> {
+pub struct Camera<Cam, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_BYTES: usize> {
     /// The I²C bus this camera is accessible on.
     bus: I2C,
 
@@ -87,7 +92,7 @@ pub struct Camera<Cam, I2C, const H: usize, const W: usize, const N: usize> {
 
     /// Buffer for reading pixel data off of the camera.
     // I wish I could use const generics for computer parameters :/
-    pixel_buffer: [u8; N],
+    pixel_buffer: [u8; NUM_BYTES],
 
     /// ADC resolution correction factor.
     resolution_correction: f32,
@@ -102,12 +107,13 @@ pub struct Camera<Cam, I2C, const H: usize, const W: usize, const N: usize> {
     emissivity: f32,
 }
 
-impl<Cam, I2C, const H: usize, const W: usize, const N: usize> Camera<Cam, I2C, H, W, N>
+impl<Cam, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_PIXELS: usize>
+    Camera<Cam, I2C, HEIGHT, WIDTH, NUM_PIXELS>
 where
     Cam: MelexisCamera,
     I2C: i2c::WriteRead,
 {
-    /// Create a `Camera` for accessing the device at the given I²C address.
+    /// Create a `Camera` for accessing the camera at the given I²C address.
     ///
     /// MLX90964\*s can be configured to use any I²C address (except 0x00), but the default address
     /// is 0x33.
@@ -131,7 +137,7 @@ where
             bus,
             address,
             camera,
-            pixel_buffer: [0u8; N],
+            pixel_buffer: [0u8; NUM_PIXELS],
             resolution_correction,
             ambient_temperature: None,
             emissivity,
@@ -303,8 +309,8 @@ where
 
     /// Get the emissivity value that is being used for calculations currently.
     ///
-    /// The default emissivity is 1, unless a device has a different value stored in EEPROM, in
-    /// which case that value is used. There default can also be
+    /// The default emissivity is 1, unless a camera has a different value stored in EEPROM, in
+    /// which case that value is used. The default can also be
     /// [overridden][Camera::override_emissivity], but this change is not stored on the camera.
     pub fn effective_emissivity(&self) -> f32 {
         self.emissivity
@@ -312,7 +318,7 @@ where
 
     /// Override the emissivity value used in temperature calculations.
     ///
-    /// The default emissivity is 1, unless a device has a different value stored in EEPROM, in
+    /// The default emissivity is 1, unless a camera has a different value stored in EEPROM, in
     /// which case that value is used. This method allows a new value to be used to compensate for
     /// emissivity.
     pub fn override_emissivity(&mut self, new_value: f32) {
@@ -339,12 +345,12 @@ where
     /// The height of the thermal image, in pixels.
     pub fn height(&self) -> usize {
         // const generics make this silly.
-        H
+        HEIGHT
     }
 
     /// The width of the thermal image, in pixels.
     pub fn width(&self) -> usize {
-        W
+        WIDTH
     }
 
     /// Read a value from the camera's RAM.
@@ -408,8 +414,8 @@ where
     ) -> Result<(), Error<I2C>> {
         // This is going to be a monster function, as the results of earlier calculations are used
         // throughout the process.
-        // Pick a maximum size of H, as the worst access pattern is still by rows
-        let pixel_ranges: ArrayVec<PixelAddressRange, H> =
+        // Pick a maximum size of HEIGHT, as the worst access pattern is still by rows
+        let pixel_ranges: ArrayVec<PixelAddressRange, HEIGHT> =
             self.camera.pixel_ranges(subpage).into_iter().collect();
         // Use the first pixel range's starting address as the first.
         // This is a weak assumption, but it holds so far with MLX90640.
