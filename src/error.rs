@@ -16,6 +16,18 @@ pub enum LibraryError {
     Other(&'static str),
 }
 
+impl fmt::Display for LibraryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LibraryError::InvalidData(msg) => write!(f, "{}", msg),
+            LibraryError::Other(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for LibraryError {}
+
 #[derive(Clone, PartialEq)]
 pub enum Error<I2C>
 where
@@ -67,7 +79,7 @@ where
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::I2cError(i2c_error) => Some(i2c_error),
-            _ => None,
+            Error::LibraryError(lib_err) => Some(lib_err),
         }
     }
 }
