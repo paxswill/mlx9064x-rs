@@ -1,0 +1,39 @@
+image: "debian/stable"
+arch: "amd64"
+shell: false
+sources:
+  - "https://git.sr.ht/~paxswill/mlx9064x"
+tasks:
+  - install_rustup: |
+      curl \
+        --proto '=https' \
+        --tlsv1.2 \
+        --silent \
+        --show-error \
+        --fail \
+        --location \
+        --output rustup-init \
+        https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+      chmod +x ./rustup-init
+      ./rustup-init \
+        --profile minimal \
+        --quiet \
+        -y
+  - test: |
+      cd mlx9064x
+      source $HOME/.cargo/env
+      # Test with and without std
+      cargo test
+      cargo test --no-default-features
+  # TODO: Add clippy and rustfmt lints. When doing that, make sure to add those
+  # components to the rustup task above.
+  - test-docs: |
+      cd mlx9064x
+      source $HOME/.cargo/env
+      # Ensure all doc comments are well formed (even private ones)
+      cargo rustdoc -- \
+        --document-private-items \
+        --deny broken_intra_doc_links \
+        --deny private_intra_doc_links \
+        --deny invalid_codeblock_attributes \
+        --deny bare_urls
