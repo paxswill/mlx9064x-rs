@@ -327,6 +327,30 @@ where
         self.emissivity = self.camera.calibration().emissivity().unwrap_or(1f32);
     }
 
+    /// Get the most recent ambient temperature calculation.
+    ///
+    /// The ambient temperature is calculated as part of the overall image calculations. If that
+    /// process hasn't been performed yet (by calling `generate_image_if_ready` or similar), this
+    /// method will return `None`.
+    pub fn ambient_temperature(&self) -> Option<f32> {
+        self.ambient_temperature
+    }
+
+    /// The height of the thermal image, in pixels.
+    pub fn height(&self) -> usize {
+        // const generics make this silly.
+        H
+    }
+
+    /// The width of the thermal image, in pixels.
+    pub fn width(&self) -> usize {
+        W
+    }
+
+    /// Read a value from the camera's RAM.
+    ///
+    /// All values in RAM are signed 16-bit integers, so this function also converts the raw values
+    /// into `i16`.
     fn read_ram_value(&mut self, address: Address) -> Result<i16, Error<I2C>> {
         let address_bytes = address.as_bytes();
         let mut scratch = [0u8; 2];
@@ -337,8 +361,8 @@ where
     }
 
     // The functions from here until the generate_* functions are all components of the temperature
-    // calculation process. Splitting them out to make them easier to test, and hope the compiler
-    // inlines the hell out of them.
+    // calculation process. Splitting them out makes it easier to test them, and I hope the
+    // compiler will inline them appropriately.
 
     fn delta_v(&self, v_dd_pixel: i16) -> f32 {
         f32::from(v_dd_pixel - self.camera.calibration().v_dd_25())
