@@ -24,7 +24,7 @@ fn main() {
     let bus = I2cdev::new(bus_path).expect("The given path should work as an I2C device");
     let mut camera =
         Mlx90640Camera::new(bus, address).expect("An MLX90640 instance should've been created");
-    let mut temperatures = vec![0f32; 768];
+    let mut temperatures = vec![0f32; camera.height() * camera.width()];
     let delay = Duration::from_millis(500);
     camera
         .generate_image_if_ready(&mut temperatures)
