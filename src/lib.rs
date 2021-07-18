@@ -13,7 +13,7 @@
 //! use mlx9064x::Mlx90640Camera;
 //! use linux_embedded_hal::I2cdev;
 //!
-//! let i2c_bus = I2cdev::new("/dev/i2c-1").unwrap();
+//! let i2c_bus = I2cdev::new("/dev/i2c-1").expect("/dev/i2c-1 needs to be an I2C controller");
 //! // Default address for these cameras is 0x33
 //! let mut camera = Mlx90640Camera::new(i2c_bus, 0x33)?;
 //! // A buffer for storing the temperature "image"

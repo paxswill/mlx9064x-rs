@@ -10,11 +10,12 @@ use crate::util::is_bit_set;
 pub trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
     /// A bit mask of which bits can be modified by the controller.
     ///
-    /// When changing register values on the device, the current value should be read, then
+    /// When changing register values on the camera, the current value should be read, then
     /// bitwise-ANDed with the complement of this mask, then bitwise-ORd with the new value. This
     /// preserves the values of any reserved bits in the registers.
     fn write_mask() -> [u8; 2];
 
+    /// The address of this register in the camera's memory map.
     fn address() -> Address;
 }
 
@@ -358,11 +359,6 @@ pub enum Subpage {
 ///
 /// On top of this requirement, your hardware has to be fast enough to be able to process each
 /// frame of data before the next frame is ready.
-///
-/// NOTE: The discriminant values are the raw values used in the control register. The discriminant
-/// values do *not* match the frame rate values (ex: [`SixtyFour`][FrameRate::SixtyFour] has a
-/// discriminant of 7). This also means that `IntoPrimitive` and `TryFromPrimitive` will *not* use
-/// the values you would assume.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum FrameRate {
     /// 0.5 Hz, one frame every two seconds.
@@ -434,6 +430,13 @@ impl TryFrom<f32> for FrameRate {
     ///
     /// This will only work if the source number *exactly* matches one of the values named as a
     /// variant.
+    /// ```
+    /// # use core::convert::TryFrom;
+    /// # use mlx9064x::FrameRate;
+    /// assert_eq!(FrameRate::try_from(0.5), Ok(FrameRate::Half));
+    /// let almost_half = 0.50001;
+    /// assert!(FrameRate::try_from(almost_half).is_err());
+    /// ```
     #[allow(clippy::float_cmp)]
     fn try_from(value: f32) -> Result<Self, Self::Error> {
         if value == 0.5 {

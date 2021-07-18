@@ -7,7 +7,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use crate::address_enum_ops;
 use crate::common::Address;
 
-/// EEPROM addresses for th MLX90640
+/// EEPROM addresses for the MLX90640
 
 // NOTE: To make it easier to compare against the datasheet, discriminant values should *always* be
 // explicitly written out.
