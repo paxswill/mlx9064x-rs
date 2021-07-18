@@ -20,6 +20,7 @@ const NATIVE_TEMPERATURE_RANGE: usize = 1;
 /// The word size of the MLX990640 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
 
+/// MLX990640-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Mlx90640Calibration {
     k_v_dd: i16,
@@ -66,10 +67,11 @@ pub(crate) struct Mlx90640Calibration {
 }
 
 impl Mlx90640Calibration {
-    /// Calculate pixel calibration values based off of the row and column data. The remainder data
-    /// will be added in afterwards. This function is used for both offset and sensitivity (alpha)
-    /// arrays. The given buffer must be at the word containing the column, row and remainder
-    /// scaling factors.
+    /// Calculate pixel calibration values based off of the row and column data.
+    ///
+    /// Remainder data will be added in afterwards. This function is used for both offset and
+    /// sensitivity (alpha) arrays. The given buffer must be at the word containing the column, row
+    /// and remainder scaling factors.
     /// The calculated array, the remainder scaling factor, and the value occupying the 4 bits
     /// preceding the scaling factors are returned (in that order).
     fn calculate_bulk_pixel_calibration<B: Buf>(data: &mut B) -> ([i16; NUM_PIXELS], u8, u8) {
@@ -117,8 +119,9 @@ impl Mlx90640Calibration {
         (pixel_calibration, remainder_scale, extra_value)
     }
 
-    /// Generate an interator from a set of four `i8` values. The given values are ordered:
+    /// Generate a chessboard-patterned sequence from four values.
     ///
+    /// The given values are ordered:
     /// 1. even row, even column
     /// 2. odd row, even column
     /// 3. even row, odd column
@@ -148,11 +151,13 @@ impl Mlx90640Calibration {
         repeating_rows.take(NUM_PIXELS)
     }
 
+    /// Calculate the per-pixel K<sub>T<sub>A</sub></sub> values.
+    ///
     /// Similar to the offset and sensitivity values, the K<sub>T<sub>A</sub></sub> values have a
     /// per-pixel calibration value that is added to an average value shared by multiple pixels.
     /// Where the offset and sensitivity averages are calculated on a per row and column basis,
-    /// this value is one of four values, determined by if the row and column indices are even or
-    /// odd. The rest of the calculation is performed later, with the rest of the per-pixel
+    /// this value is chosen from four values, determined by if the row and column indices are even
+    /// or odd. The rest of the calculation is performed later, with the rest of the per-pixel
     /// calculations.
     fn generate_k_ta_pixels<B: Buf>(data: &mut B) -> impl Iterator<Item = i16> {
         let source_data: ArrayVec<i8, 4> = (0..4).map(|_| data.get_i8()).collect();
@@ -160,9 +165,11 @@ impl Mlx90640Calibration {
         Self::repeat_chessboard(source_data)
     }
 
-    /// Unlike the other per-pixel calibration values, K<sub>V is just a repeated sequence. Other
-    /// camera models *do* have per-pixel values, so to keep the interface the same/factor out
-    /// shared functionality a full array is being generated.
+    /// Calculate the per-pixel K<sub>V</sub> values.
+    ///
+    /// Unlike the other per-pixel calibration values, K<sub>V has no per-pixel adjustments. It
+    /// does vary based on the pixel's row and column though, similar to
+    /// [K<sub>T<sub>A</sub></sub>](Mlx90640Calibration::generate_k_ta_pixels).
     fn generate_k_v_pixels(k_v_avg: [i8; 4], k_v_scale: &f32) -> impl Iterator<Item = f32> {
         let k_v_pixels = Self::repeat_chessboard(k_v_avg);
         let k_v_scale = *k_v_scale;
@@ -170,7 +177,9 @@ impl Mlx90640Calibration {
     }
 
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
-    /// EEPROM. The buffer must cover *all* of the EEPROM.
+    /// EEPROM.
+    ///
+    /// The buffer must cover *all* of the EEPROM.
     pub(super) fn from_data(data: &[u8]) -> Result<Self, &'static str> {
         let mut buf = data;
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
@@ -295,7 +304,6 @@ impl Mlx90640Calibration {
                     f32::from(k_ta_numerator + (k_ta_remainder << k_ta_scale2_exp));
                 *k_ta = k_ta_numerator / k_ta_scale1;
             });
-        //for (offset, alpha, k_ta)
         Ok(Self {
             k_v_dd,
             v_dd_25,
@@ -386,8 +394,9 @@ fn i16_from_bits(mut bytes: &[u8], num_bits: u8) -> i16 {
     (num << shift_amount) >> shift_amount
 }
 
-/// Split a word into a 6-bit value and a 10-bit value. Further conversion for the second value is
-/// left to the caller.
+/// Split a word into a 6-bit value and a 10-bit value.
+///
+/// Further conversion for the second value is left to the caller.
 fn word_6_10_split<B: Buf>(data: &mut B) -> (i8, [u8; 2]) {
     let mut word = [data.get_u8(), data.get_u8()];
     // Copy out the 6-bit value, and shift it over. As signed right shifts are aritmetic, the sign
