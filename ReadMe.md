@@ -1,3 +1,7 @@
+![Crates.io](https://img.shields.io/crates/v/mlx9064x)
+![docs.rs](https://img.shields.io/docsrs/mlx9064x?label=docs.rs)
+[![builds.sr.ht status](https://builds.sr.ht/~paxswill/mlx9064x.svg)](https://builds.sr.ht/~paxswill/mlx9064x?)
+
 # mlx9064x
 
 `mlx9064x` is a library for using the MLX90640 (and eventually) MLX90641 thermal
