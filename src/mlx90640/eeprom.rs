@@ -11,7 +11,7 @@ use super::{NUM_PIXELS, WIDTH};
 /// The number of corner temperatures an MLX90640 has.
 const NUM_CORNER_TEMPERATURES: usize = 4;
 
-/// The native temperature range. See discussion on [MelexisEeprom::native_range] for more details.
+/// The native temperature range. See discussion on [CalibrationData::native_range] for more details.
 // It's defined as 1 in the datasheet(well, 2, but 1-indexed, so 1 when 0-indexed).
 const NATIVE_TEMPERATURE_RANGE: usize = 1;
 
