@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright © 2021 Will Ross
 #[cfg(feature = "std")]
 extern crate std;
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright © 2021 Will Ross
+
 //! Common functionality between MLX90640 and MLX90641 cameras.
 //!
 //! At first glance, the datasheets for these modules can be pretty intimidating, with nearly half

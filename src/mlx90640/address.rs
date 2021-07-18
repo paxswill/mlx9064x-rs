@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright © 2021 Will Ross
 use core::convert::TryFrom;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};

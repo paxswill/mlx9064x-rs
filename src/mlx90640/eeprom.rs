@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright © 2021 Will Ross
 use arrayvec::ArrayVec;
 use bytes::Buf;
 

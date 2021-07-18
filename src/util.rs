@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright © 2021 Will Ross
+
 /// Define addition and subtraction for address enumerations.
 #[macro_export]
 macro_rules! address_enum_ops {

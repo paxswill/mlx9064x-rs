@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright © 2021 Will Ross
 use core::convert::TryInto;
 
 use arrayvec::ArrayVec;
