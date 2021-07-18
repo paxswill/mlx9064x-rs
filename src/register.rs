@@ -1,8 +1,9 @@
-use core::convert::TryInto;
+use core::convert::{TryFrom, TryInto};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::common::Address;
+use crate::error::LibraryError;
 
 /// Trait for common register functionality.
 pub trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
@@ -215,10 +216,10 @@ impl<'a> From<&'a [u8]> for ControlRegister {
         };
         // Unwrapping is safe here as the only values valid for FrameRate are 0-7, and we're
         // masking off all but 3 bits.
-        let frame_rate = FrameRate::try_from_primitive(((raw & 0x0380) >> 7) as u8).unwrap();
+        let frame_rate = FrameRate::from_raw((raw & 0x0380) >> 7).unwrap();
         // Unwrap: Same as deal as frame_rate, except now it's two bits and there's only four
         // values.
-        let resolution = Resolution::try_from_primitive(((raw & 0x0C00) >> 10) as u8).unwrap();
+        let resolution = Resolution::from_raw((raw & 0x0C00) >> 10).unwrap();
         let access_pattern = if is_bit_set(raw, 12) {
             AccessPattern::Chess
         } else {
@@ -246,9 +247,9 @@ impl From<ControlRegister> for [u8; 2] {
         raw |= (register.subpage_repeat as u16) << 3;
         let subpage_int: usize = register.subpage.into();
         raw |= (subpage_int as u16) << 4;
-        let frame_rate_int: u8 = register.frame_rate.into();
+        let frame_rate_int: u8 = register.frame_rate.as_raw() as u8;
         raw |= (frame_rate_int as u16) << 7;
-        let resolution_int: u8 = register.resolution.into();
+        let resolution_int: u8 = register.resolution.as_raw() as u8;
         raw |= (resolution_int as u16) << 10;
         if register.access_pattern == AccessPattern::Chess {
             raw |= 1u16 << 12;
@@ -361,32 +362,62 @@ pub enum Subpage {
 /// values do *not* match the frame rate values (ex: [`SixtyFour`][FrameRate::SixtyFour] has a
 /// discriminant of 7). This also means that `IntoPrimitive` and `TryFromPrimitive` will *not* use
 /// the values you would assume.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
-#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum FrameRate {
     /// 0.5 Hz, one frame every two seconds.
-    Half = 0,
+    Half,
 
     /// 1Hz.
-    One = 1,
+    One,
 
     /// 2Hz, which is also the default for the MLX90640 and MLX90641.
-    Two = 2,
+    Two,
 
     // 4Hz.
-    Four = 3,
+    Four,
 
     // 8Hz.
-    Eight = 4,
+    Eight,
 
     // 16 Hz.
-    Sixteen = 5,
+    Sixteen,
 
     // 32Hz.
-    ThirtyTwo = 6,
+    ThirtyTwo,
 
     // 64Hz.
-    SixtyFour = 7,
+    SixtyFour,
+}
+
+impl FrameRate {
+    /// Attempt to create a `FrameRate` from a raw value from the camera.
+    pub(crate) fn from_raw(raw_value: u16) -> Result<Self, LibraryError> {
+        match raw_value {
+            0 => Ok(Self::Half),
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            3 => Ok(Self::Four),
+            4 => Ok(Self::Eight),
+            5 => Ok(Self::Sixteen),
+            6 => Ok(Self::ThirtyTwo),
+            7 => Ok(Self::SixtyFour),
+            _ => Err(LibraryError::InvalidData("Invalid frame rate given")),
+        }
+    }
+
+    /// Map a frame rate variant into the representation used by the camera.
+    pub(crate) fn as_raw(&self) -> u16 {
+        match self {
+            Self::Half => 0,
+            Self::One => 1,
+            Self::Two => 2,
+            Self::Four => 3,
+            Self::Eight => 4,
+            Self::Sixteen => 5,
+            Self::ThirtyTwo => 6,
+            Self::SixtyFour => 7,
+        }
+    }
 }
 
 impl Default for FrameRate {
@@ -395,23 +426,143 @@ impl Default for FrameRate {
     }
 }
 
+impl TryFrom<f32> for FrameRate {
+    type Error = LibraryError;
+
+    /// Attempt to create a `FrameRate` from a number.
+    ///
+    /// This will only work if the source number *exactly* matches one of the values named as a
+    /// variant.
+    #[allow(clippy::float_cmp)]
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        if value == 0.5 {
+            Ok(Self::Half)
+        } else if value == 1.0 {
+            Ok(Self::One)
+        } else if value == 2.0 {
+            Ok(Self::Two)
+        } else if value == 4.0 {
+            Ok(Self::Four)
+        } else if value == 8.0 {
+            Ok(Self::Eight)
+        } else if value == 16.0 {
+            Ok(Self::Sixteen)
+        } else if value == 32.0 {
+            Ok(Self::ThirtyTwo)
+        } else if value == 64.0 {
+            Ok(Self::SixtyFour)
+        } else {
+            Err(LibraryError::InvalidData(
+                "The given number does not match a valid frame rate",
+            ))
+        }
+    }
+}
+
+impl TryFrom<u8> for FrameRate {
+    type Error = LibraryError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        // No way to say 0.5, so skipping it
+        match value {
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            4 => Ok(Self::Four),
+            8 => Ok(Self::Eight),
+            16 => Ok(Self::Sixteen),
+            32 => Ok(Self::ThirtyTwo),
+            64 => Ok(Self::SixtyFour),
+            _ => Err(LibraryError::InvalidData(
+                "The given number does not match a valid frame rate",
+            )),
+        }
+    }
+}
+
+impl From<FrameRate> for f32 {
+    fn from(frame_rate: FrameRate) -> Self {
+        match frame_rate {
+            FrameRate::Half => 0.5,
+            FrameRate::One => 1f32,
+            FrameRate::Two => 2f32,
+            FrameRate::Four => 4f32,
+            FrameRate::Eight => 8f32,
+            FrameRate::Sixteen => 16f32,
+            FrameRate::ThirtyTwo => 32f32,
+            FrameRate::SixtyFour => 64f32,
+        }
+    }
+}
+
 /// The resolution of the internal [ADC][adc].
 ///
 /// [adc]: https://en.wikipedia.org/wiki/Analog-to-digital_converter
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Resolution {
     /// 16-bit.
-    Sixteen = 0,
+    Sixteen,
 
     /// 17-bit.
-    Seventeen = 1,
+    Seventeen,
 
     /// 18-bit, which is also the default for both the MLX90640 and MLX90641.
-    Eighteen = 2,
+    Eighteen,
 
     /// 19-bit.
-    Nineteen = 3,
+    Nineteen,
+}
+
+impl Resolution {
+    /// Attempt to create a `FrameRate` from a raw value from the camera.
+    pub(crate) fn from_raw(raw_value: u16) -> Result<Self, LibraryError> {
+        match raw_value {
+            0 => Ok(Self::Sixteen),
+            1 => Ok(Self::Seventeen),
+            2 => Ok(Self::Eighteen),
+            3 => Ok(Self::Nineteen),
+            _ => Err(LibraryError::InvalidData(
+                "Invalid raw resolution value given",
+            )),
+        }
+    }
+
+    /// Map a frame rate variant into the representation used by the camera.
+    pub(crate) fn as_raw(&self) -> u16 {
+        match self {
+            Self::Sixteen => 0,
+            Self::Seventeen => 1,
+            Self::Eighteen => 2,
+            Self::Nineteen => 3,
+        }
+    }
+}
+
+impl TryFrom<u8> for Resolution {
+    type Error = LibraryError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            16 => Ok(Self::Sixteen),
+            17 => Ok(Self::Seventeen),
+            18 => Ok(Self::Eighteen),
+            19 => Ok(Self::Nineteen),
+            _ => Err(LibraryError::InvalidData(
+                "The given value did not match a valid ADC resolution",
+            )),
+        }
+    }
+}
+
+impl From<Resolution> for u8 {
+    fn from(resolution: Resolution) -> Self {
+        match resolution {
+            Resolution::Sixteen => 16,
+            Resolution::Seventeen => 17,
+            Resolution::Eighteen => 18,
+            Resolution::Nineteen => 19,
+        }
+    }
 }
 
 impl Default for Resolution {
@@ -429,12 +580,12 @@ pub enum AccessPattern {
     /// This is the default (and strongly recommended value) for the MLX909640. While the MLX909641
     /// datasheet mentions this mode in the register section, no further mention is made in the
     /// datasheet, so I'm not sure it's actually supported.
-    Chess,
+    Chess = 1,
 
     /// Each row of pixels is in the same subpage, with the rows alternating between subpages.
     ///
     /// This is the default mode for the MLX90641.
-    Interleave,
+    Interleave = 0,
 }
 
 /// Check if the n-th bit is set.
@@ -587,8 +738,105 @@ mod test {
     }
 
     #[test]
+    fn frame_rate_from_raw() {
+        assert_eq!(FrameRate::from_raw(0).unwrap(), FrameRate::Half);
+        assert_eq!(FrameRate::from_raw(1).unwrap(), FrameRate::One);
+        assert_eq!(FrameRate::from_raw(2).unwrap(), FrameRate::Two);
+        assert_eq!(FrameRate::from_raw(3).unwrap(), FrameRate::Four);
+        assert_eq!(FrameRate::from_raw(4).unwrap(), FrameRate::Eight);
+        assert_eq!(FrameRate::from_raw(5).unwrap(), FrameRate::Sixteen);
+        assert_eq!(FrameRate::from_raw(6).unwrap(), FrameRate::ThirtyTwo);
+        assert_eq!(FrameRate::from_raw(7).unwrap(), FrameRate::SixtyFour);
+        assert!(FrameRate::from_raw(8).is_err());
+    }
+
+    #[test]
+    fn frame_rate_as_raw() {
+        assert_eq!(FrameRate::Half.as_raw(), 0);
+        assert_eq!(FrameRate::One.as_raw(), 1);
+        assert_eq!(FrameRate::Two.as_raw(), 2);
+        assert_eq!(FrameRate::Four.as_raw(), 3);
+        assert_eq!(FrameRate::Eight.as_raw(), 4);
+        assert_eq!(FrameRate::Sixteen.as_raw(), 5);
+        assert_eq!(FrameRate::ThirtyTwo.as_raw(), 6);
+        assert_eq!(FrameRate::SixtyFour.as_raw(), 7);
+    }
+
+    #[test]
+    fn frame_rate_from_f32() {
+        assert_eq!(FrameRate::try_from(0.5f32).unwrap(), FrameRate::Half);
+        assert_eq!(FrameRate::try_from(1f32).unwrap(), FrameRate::One);
+        assert_eq!(FrameRate::try_from(2f32).unwrap(), FrameRate::Two);
+        assert_eq!(FrameRate::try_from(4f32).unwrap(), FrameRate::Four);
+        assert_eq!(FrameRate::try_from(8f32).unwrap(), FrameRate::Eight);
+        assert_eq!(FrameRate::try_from(16f32).unwrap(), FrameRate::Sixteen);
+        assert_eq!(FrameRate::try_from(32f32).unwrap(), FrameRate::ThirtyTwo);
+        assert_eq!(FrameRate::try_from(64f32).unwrap(), FrameRate::SixtyFour);
+        // Don't try to add more zeros into the next test; too many more and it gets truncated.
+        assert!(FrameRate::try_from(0.5000001f32).is_err());
+    }
+
+    #[test]
+    fn frame_rate_from_u8() {
+        // No fractions in integer-land
+        assert_eq!(FrameRate::try_from(1u8).unwrap(), FrameRate::One);
+        assert_eq!(FrameRate::try_from(2u8).unwrap(), FrameRate::Two);
+        assert_eq!(FrameRate::try_from(4u8).unwrap(), FrameRate::Four);
+        assert_eq!(FrameRate::try_from(8u8).unwrap(), FrameRate::Eight);
+        assert_eq!(FrameRate::try_from(16u8).unwrap(), FrameRate::Sixteen);
+        assert_eq!(FrameRate::try_from(32u8).unwrap(), FrameRate::ThirtyTwo);
+        assert_eq!(FrameRate::try_from(64u8).unwrap(), FrameRate::SixtyFour);
+        assert!(FrameRate::try_from(u8::MAX).is_err());
+    }
+
+    #[test]
+    fn frame_rate_to_f32() {
+        assert_eq!(f32::from(FrameRate::Half), 0.5);
+        assert_eq!(f32::from(FrameRate::One), 1f32);
+        assert_eq!(f32::from(FrameRate::Two), 2f32);
+        assert_eq!(f32::from(FrameRate::Four), 4f32);
+        assert_eq!(f32::from(FrameRate::Eight), 8f32);
+        assert_eq!(f32::from(FrameRate::Sixteen), 16f32);
+        assert_eq!(f32::from(FrameRate::ThirtyTwo), 32f32);
+        assert_eq!(f32::from(FrameRate::SixtyFour), 64f32);
+    }
+
+    #[test]
     fn default_frame_rate() {
         assert_eq!(FrameRate::default(), FrameRate::Two)
+    }
+    #[test]
+    fn resolution_from_raw() {
+        assert_eq!(Resolution::from_raw(0).unwrap(), Resolution::Sixteen);
+        assert_eq!(Resolution::from_raw(1).unwrap(), Resolution::Seventeen);
+        assert_eq!(Resolution::from_raw(2).unwrap(), Resolution::Eighteen);
+        assert_eq!(Resolution::from_raw(3).unwrap(), Resolution::Nineteen);
+        assert!(Resolution::from_raw(4).is_err());
+    }
+
+    #[test]
+    fn resolution_as_raw() {
+        assert_eq!(Resolution::Sixteen.as_raw(), 0);
+        assert_eq!(Resolution::Seventeen.as_raw(), 1);
+        assert_eq!(Resolution::Eighteen.as_raw(), 2);
+        assert_eq!(Resolution::Nineteen.as_raw(), 3);
+    }
+
+    #[test]
+    fn resolution_from_u8() {
+        assert_eq!(Resolution::try_from(16u8).unwrap(), Resolution::Sixteen);
+        assert_eq!(Resolution::try_from(17u8).unwrap(), Resolution::Seventeen);
+        assert_eq!(Resolution::try_from(18u8).unwrap(), Resolution::Eighteen);
+        assert_eq!(Resolution::try_from(19u8).unwrap(), Resolution::Nineteen);
+        assert!(Resolution::try_from(1u8).is_err());
+    }
+
+    #[test]
+    fn resolution_to_u8() {
+        assert_eq!(u8::from(Resolution::Sixteen), 16);
+        assert_eq!(u8::from(Resolution::Seventeen), 17);
+        assert_eq!(u8::from(Resolution::Eighteen), 18);
+        assert_eq!(u8::from(Resolution::Nineteen), 19);
     }
 
     #[test]
