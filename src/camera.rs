@@ -579,6 +579,7 @@ where
         match self.data_available()? {
             Some(subpage) => {
                 self.generate_image_subpage_to(subpage, destination)?;
+                self.reset_data_available()?;
                 Ok(true)
             }
             None => Ok(false),
