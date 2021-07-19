@@ -35,7 +35,7 @@ impl MelexisCamera for Mlx90640 {
 
     fn new<I2C>(register: ControlRegister, eeprom: &[u8]) -> Result<Self, Error<I2C>>
     where
-        I2C: i2c::WriteRead,
+        I2C: i2c::WriteRead + i2c::Write,
     {
         let calibration_data =
             eeprom::Mlx90640Calibration::from_data(eeprom).map_err(LibraryError::Other)?;

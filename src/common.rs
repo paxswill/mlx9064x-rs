@@ -193,7 +193,7 @@ pub trait MelexisCamera: Sized {
     /// Create a new camera with the current control register and a dump of the EEPROM.
     fn new<I2C>(register: ControlRegister, eeprom: &[u8]) -> Result<Self, Error<I2C>>
     where
-        I2C: i2c::WriteRead;
+        I2C: i2c::WriteRead + i2c::Write;
 
     /// Ranges of memory that should be read to load a subpage's data from RAM.
     ///

@@ -28,13 +28,14 @@ impl fmt::Display for LibraryError {
 #[cfg(feature = "std")]
 impl std::error::Error for LibraryError {}
 
-#[derive(Clone, PartialEq)]
 pub enum Error<I2C>
 where
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
 {
     /// Errors originating from the I²C implementation.
-    I2cError(I2C::Error),
+    I2cWriteReadError(<I2C as i2c::WriteRead>::Error),
+
+    I2cWriteError(<I2C as i2c::Write>::Error),
 
     /// Errors originating from within this library.
     LibraryError(LibraryError),
@@ -44,14 +45,20 @@ where
 // linux-embedded-hal).
 impl<I2C> fmt::Debug for Error<I2C>
 where
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
     <I2C as i2c::WriteRead>::Error: fmt::Debug,
+    <I2C as i2c::Write>::Error: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::I2cError(i2c_error) => {
-                f.debug_tuple("Error::I2cError").field(i2c_error).finish()
-            }
+            Error::I2cWriteReadError(i2c_error) => f
+                .debug_tuple("Error::I2cWriteReadError")
+                .field(i2c_error)
+                .finish(),
+            Error::I2cWriteError(i2c_error) => f
+                .debug_tuple("Error::I2cWriteError")
+                .field(i2c_error)
+                .finish(),
             Error::LibraryError(err) => f.debug_tuple("Error::LibraryError").field(err).finish(),
         }
     }
@@ -59,12 +66,14 @@ where
 
 impl<I2C> fmt::Display for Error<I2C>
 where
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
     <I2C as i2c::WriteRead>::Error: fmt::Debug,
+    <I2C as i2c::Write>::Error: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::I2cError(i2c_error) => write!(f, "I2C Error: {:?}", i2c_error),
+            Error::I2cWriteReadError(i2c_error) => write!(f, "I2C Error: {:?}", i2c_error),
+            Error::I2cWriteError(i2c_error) => write!(f, "I2C Error: {:?}", i2c_error),
             Error::LibraryError(err) => write!(f, "Library Error: {:?}", err),
         }
     }
@@ -73,12 +82,14 @@ where
 #[cfg(feature = "std")]
 impl<I2C> std::error::Error for Error<I2C>
 where
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
     <I2C as i2c::WriteRead>::Error: std::error::Error + 'static,
+    <I2C as i2c::Write>::Error: std::error::Error + 'static,
 {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::I2cError(i2c_error) => Some(i2c_error),
+            Error::I2cWriteReadError(err) => Some(err),
+            Error::I2cWriteError(err) => Some(err),
             Error::LibraryError(lib_err) => Some(lib_err),
         }
     }
@@ -86,7 +97,7 @@ where
 
 impl<I2C> From<LibraryError> for Error<I2C>
 where
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
 {
     fn from(lib_err: LibraryError) -> Self {
         Self::LibraryError(lib_err)

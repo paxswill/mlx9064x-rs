@@ -113,7 +113,7 @@ impl<Cam, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_PIXELS: usize>
     Camera<Cam, I2C, HEIGHT, WIDTH, NUM_PIXELS>
 where
     Cam: MelexisCamera,
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
 {
     /// Create a `Camera` for accessing the camera at the given I²C address.
     ///
@@ -129,7 +129,7 @@ where
         // Dump the EEPROM. Both cameras use the same size and starting offset for their EEPROM.
         let mut eeprom_buf = [0u8; EEPROM_LENGTH];
         bus.write_read(address, &EEPROM_BASE, &mut eeprom_buf)
-            .map_err(Error::I2cError)?;
+            .map_err(Error::I2cWriteReadError)?;
         let camera = Cam::new(control, &eeprom_buf[..])?;
         // Cache this value
         let resolution_correction = camera.resolution_correction();
@@ -364,7 +364,7 @@ where
         let mut scratch = [0u8; 2];
         self.bus
             .write_read(self.address, &address_bytes[..], &mut scratch[..])
-            .map_err(Error::I2cError)?;
+            .map_err(Error::I2cWriteReadError)?;
         Ok(i16::from_be_bytes(scratch))
     }
 
@@ -433,7 +433,7 @@ where
                     &address_bytes[..],
                     &mut self.pixel_buffer[offset..(offset + range.length)],
                 )
-                .map_err(Error::I2cError)?;
+                .map_err(Error::I2cWriteReadError)?;
         }
         // And now to read the non-pixel information out
         let t_a_v_be = self.read_ram_value(self.camera.t_a_v_be())?;
@@ -619,7 +619,7 @@ fn per_pixel_temparature(v_ir: f32, alpha: f32, t_ar: f32, k_s_to: f32) -> f32 {
 
 fn read_register<R, I2C>(bus: &mut I2C, address: u8) -> Result<R, Error<I2C>>
 where
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
     R: Register,
 {
     // Inner function to reduce the impact of monomorphization for Register. It'll still get
@@ -637,17 +637,18 @@ where
     }
 
     let register_address = R::address();
-    let register_value = read_register(bus, address, register_address).map_err(Error::I2cError)?;
+    let register_value =
+        read_register(bus, address, register_address).map_err(Error::I2cWriteReadError)?;
     let register = R::from(&register_value[..]);
     Ok(register)
 }
 
 fn write_register<R, I2C>(bus: &mut I2C, address: u8, register: R) -> Result<(), Error<I2C>>
 where
-    I2C: i2c::WriteRead,
+    I2C: i2c::WriteRead + i2c::Write,
     R: Register,
 {
-    fn write_register<I2C: i2c::WriteRead>(
+    fn write_register<I2C: i2c::Write>(
         bus: &mut I2C,
         i2c_address: u8,
         register_address: [u8; 2],
@@ -659,7 +660,7 @@ where
             register_data[0],
             register_data[1],
         ];
-        bus.write_read(i2c_address, &combined, &mut [])?;
+        bus.write(i2c_address, &combined)?;
         Ok(())
     }
     let register_address = R::address();
@@ -667,7 +668,7 @@ where
     // Can't use read_register(), as it strips the unused bytes off
     let mut existing_value = [0u8; 2];
     bus.write_read(address, &register_address_bytes, &mut existing_value)
-        .map_err(Error::I2cError)?;
+        .map_err(Error::I2cWriteReadError)?;
     let mut new_bytes: [u8; 2] = register.into();
     new_bytes
         .iter_mut()
@@ -677,7 +678,8 @@ where
             *new_value &= mask;
             *new_value |= old_value & !mask;
         });
-    write_register(bus, address, register_address_bytes, new_bytes).map_err(Error::I2cError)?;
+    write_register(bus, address, register_address_bytes, new_bytes)
+        .map_err(Error::I2cWriteError)?;
     Ok(())
 }
 
