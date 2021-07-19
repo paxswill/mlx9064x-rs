@@ -745,7 +745,11 @@ mod test {
             Transaction::write_read(address, vec![0x80, 0x00], vec![0xFF, 0xC1]),
             // Ensure that the reserved bits are kept, and the new setting (in this case, data
             // overwite) is also set
-            Transaction::write_read(address, vec![0x80, 0x00, 0xFF, 0xD1], vec![]),
+            // The MLX90640 (and possibly 90641, but I don't have one handy to test) will become
+            // confused and cause I2C errors if there's an empty read immediately after a write.
+            // Going by what happens with the Linux implementation, I think it takes a reset of the
+            // I2C bus to clear the error.
+            Transaction::write(address, vec![0x80, 0x00, 0xFF, 0xD1]),
         ];
         let mut mock_bus = I2cMock::new(&expected);
         let mut status_register: StatusRegister =
