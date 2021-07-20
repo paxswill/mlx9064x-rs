@@ -40,81 +40,89 @@ use embedded_hal::blocking::i2c;
 use crate::error::Error;
 use crate::register::{ControlRegister, Subpage};
 
-/// The MLX9064\* modules store a large amount of calibration data in a built-in EEPROM. This trait
-/// defines methods exposing the values needed for generating thermal images from the camera.
-/// Without context, the method names are almost useless, but they make much more sense when read
-/// in context of the MLX90640 and MLX90641 datasheets, and using more descriptive names would
-/// make comparing the implementation to the datasheet more difficult (and the names would get
-/// incredibly long).
+/// This trait provides access to the module-specific calibration data.
 ///
-/// A couple of conventions:
-///
-/// * Method names will use underscores in changes of sub-script-ness.
-/// * Some methods will take suppage arguments when a device doesn't vary a value depending on the
-///   subpage selected. In that case just ignore that argument.
-/// * Slices covering all pixels are laid out in row-major order, with the X-axis increasing from
-///   left to right, and the Y-axis increasing from top to bottom.
-pub trait CalibrationData {
-    /// K<sub>V<sub>DD</sub></sub>
+/// Each MLX9064\* camera has calibration data from the factory stored on its EEPROM. The
+/// factory-provided data is then used as the input to generate the constants needed to convert the
+/// raw output of the camera into concrete temperatures (or even just raw infrared radition
+/// measurements). The naming scheme for the methods in this trait is taken from the names of the
+/// variables used in the formulas in the datasheet. Most users of this library can make use fo the
+/// provided implementations, but if you're trying to minimize memory usage or tweak performance
+/// for a specific use case, this might be a way to do it.
     fn k_v_dd(&self) -> i16;
 
-    /// V<sub>DD<sub>25</sub></sub>
-    ///
-    /// Pixel supply reference voltage at 25.0 ℃
+    /// Constant for pixel supply voltage at 25℃ (V<sub>DD<sub>25</sub></sub>).
     fn v_dd_25(&self) -> i16;
 
-    /// Resolution<sub>EE</sub>
+    /// ADC resolution this camera was calibrated at.
+    // TODO: Should this return `Resolution`?
     fn resolution(&self) -> u8;
 
-    /// V<sub>DD<sub>0</sub></sub>.
+    /// Pixel supply voltage (V<sub>DD<sub>0</sub></sub>).
     ///
-    /// The voltage supplied to the device. It *should* be as close to 3.3 as possible.
+    /// This is the voltage supplied to the device, and should be 3.3V for the MLX90640 and
+    /// MLX90641. The default implementation is hardcoded to return `3.3f32`, but if there's a
+    /// reason it needs to be overridden, it's possible.
     fn v_dd_0(&self) -> f32 {
         3.3f32
     }
 
-    /// K<sub>V<sub>PTAT</sub></sub>
+    /// Voltage proportional to ambient temperature constant (K<sub>V<sub>PTAT</sub></sub>).
     fn k_v_ptat(&self) -> i16;
 
-    /// K<sub>T<sub>PTAT</sub></sub>
+    /// Temperature proportional to ambient temperature constant (K<sub>T<sub>PTAT</sub></sub>).
     fn k_t_ptat(&self) -> i16;
 
-    /// V<sub>PTAT<sub>25</sub></sub>
+    /// Voltage proportional to ambient temperature at 25℃ (V<sub>PTAT<sub>25</sub></sub>).
     fn v_ptat_25(&self) -> i16;
 
-    /// α<sub>PTAT</sub>
+    /// Sensitivity proportional to ambient temperature (α<sub>PTAT</sub>).
     fn alpha_ptat(&self) -> u16;
 
     /// The gain constant. Usually written as <var>GAIN</var> in the datasheets.
     fn gain(&self) -> i16;
 
-    /// K<sub>S<sub>T<sub>a</sub></sub></sub>
+    /// Sensitivity constant for ambient temperature (K<sub>S<sub>T<sub>a</sub></sub></sub>).
     fn k_s_ta(&self) -> f32;
 
-    /// A slice of the "corner temperatures". These define temperature ranges with different
-    /// sensitivity characteristics. They are indexed in the datasheet starting from 1, so be aware
-    /// fo the difference in indexing.
+    /// A slice of the "corner temperatures".
+    ///
+    /// These define temperature ranges with different sensitivity characteristics. They are
+    /// indexed in the datasheet starting from 1 but everything in this library is 0-indexed, so be
+    /// aware of the difference.
     fn corner_temperatures(&self) -> &[i16];
 
-    /// K<sub>s<sub>T<sub>o</sub>(n)</sub></sub>, where <var>n</var> as a corresponding corner
-    /// temperature index. The length of this index and the one from `corner_temperatures` must be
-    /// identical.
+    /// Constant for the object temperature sensitivity (K<sub>s<sub>T<sub>o</sub>(n)</sub></sub>)
+    /// depending on the temperature range.
+    ///
+    /// This is a slight variance from the datasheet's nomenclature. In the symbol above,
+    /// <var>n</sub> is the index of the temperature range, which the datasheet normally just
+    /// writes out (ex: K<sub>S<sub>T<sub>o</sub>1</sub></sub> through how every many temperature
+    /// ranges the camera has).
+    ///
+    /// This method returns a slice of values equal in length to [`corner_temperatures`].
     fn k_s_to(&self) -> &[f32];
 
-    /// The α<sub>correction</sub>(r), where <var>r</var> is the *temperature range* index. This
-    /// range is the region between two successive corner temperatures.
+    /// Temperature range sensitivity correction (α<sub>correction</sub>(n))
+    ///
+    /// Like [`k_s_to`], the name of this method is slightly different that the naming in the
+    /// datasheet. Also like `k_s_to`, this method returns a slice of values with a length equal to
+    /// the length of the slice returned by  [`corner_temperatures`],
     fn alpha_correction(&self) -> &[f32];
 
-    /// The index of the "native" temperature range. Temperature ranges (delimited by the control
-    /// temperatures) outside of the "native" range are "extended temperature ranges" and require
-    /// extra processing for accuracy. The datasheets do not use the term "native range, but for
-    /// this library it is defined as the index of the range (0-indexed) that has
-    /// α<sub>correction</sub>(r) = 1. Again note that the datasheets use 1-indexing.
-    /// Also note that this is returning [usize], to make it easier to use when indexing into slices.
+    /// The index of the "native" temperature range.
+    ///
+    /// Temperature ranges (delimited by the control temperatures) outside of the "native" range
+    /// are "extended temperature ranges" and require extra processing for accuracy. The datasheets
+    /// do not use the term "native range", but for this library it is defined as the index of the
+    /// range (0-indexed) that has α<sub>correction</sub>(r) = 1. Also note that this library uses
+    /// 0-indexing as opposed to the datasheets that use 1-indexing.
     fn native_range(&self) -> usize;
 
-    /// The emissivity stored on the device. Not all devices support storing the emissivity, in
-    /// which case they should return [None] (which is what the provided implementation does).
+    /// The emissivity stored on the device.
+    ///
+    /// Not all devices support storing the emissivity, in which case they should return [None]
+    /// (which is what the provided implementation does).
     fn emissivity(&self) -> Option<f32> {
         None
     }
@@ -124,7 +132,8 @@ pub trait CalibrationData {
     /// The returned slice covers all pixels.
     fn offset_reference_pixels(&self, subpage: Subpage) -> &[i16];
 
-    // Offset<sub>reference<sub>CP</sub></sub>
+    /// The offset reference value for the compensation pixel corresponding to the given subpage
+    /// (Offset<sub>reference<sub>CP</sub></sub>).
     fn offset_reference_cp(&self, subpage: Subpage) -> i16;
 
     /// α<sub>pixel</sub>
@@ -132,7 +141,8 @@ pub trait CalibrationData {
     /// The returned slice covers all pixels.
     fn alpha_pixels(&self, subpage: Subpage) -> &[f32];
 
-    /// α<sub>CP</sub>
+    /// The sensitivity calibration value for the compensation pixel for the given subpage
+    /// (α<sub>CP</sub>).
     fn alpha_cp(&self, subpage: Subpage) -> f32;
 
     /// K<sub>V<sub>pixel</sub></sub>
@@ -140,7 +150,8 @@ pub trait CalibrationData {
     /// The returned slice covers all pixels.
     fn k_v_pixels(&self, subpage: Subpage) -> &[f32];
 
-    /// K<sub>V<sub>CP</sub></sub>
+    /// The voltage calibration constant for the compensation pixel for the given subpage
+    /// (K<sub>V<sub>CP</sub></sub>).
     fn k_v_cp(&self, subpage: Subpage) -> f32;
 
     /// K<sub>T<sub>a</sub>pixel</sub>
@@ -148,10 +159,11 @@ pub trait CalibrationData {
     /// The returned slice covers all pixels.
     fn k_ta_pixels(&self, subpage: Subpage) -> &[f32];
 
-    /// K<sub>T<sub>a</sub>CP</sub>
+    /// The ambient temperature calibration constant for the compensation pixel for the given
+    /// subpage (K<sub>T<sub>a</sub>CP</sub>).
     fn k_ta_cp(&self, subpage: Subpage) -> f32;
 
-    /// Temperature Gradient Coefficient
+    /// Temperature gradient coefficient (TGC).
     ///
     /// Some devices do not support a TGC (it can also be disabled manually on other devices).
     fn temperature_gradient_coefficient(&self) -> Option<f32>;
