@@ -35,9 +35,7 @@
 //! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
 
 use arrayvec::ArrayVec;
-use embedded_hal::blocking::i2c;
 
-use crate::error::Error;
 use crate::register::{ControlRegister, Subpage};
 
 pub trait FromI2C<I2C> {
@@ -57,6 +55,8 @@ pub trait FromI2C<I2C> {
 /// variables used in the formulas in the datasheet. Most users of this library can make use fo the
 /// provided implementations, but if you're trying to minimize memory usage or tweak performance
 /// for a specific use case, this might be a way to do it.
+pub trait CalibrationData<'a> {
+    /// Pixel supply voltage constant (K<sub>V<sub>DD</sub></sub>).
     fn k_v_dd(&self) -> i16;
 
     /// Constant for pixel supply voltage at 25℃ (V<sub>DD<sub>25</sub></sub>).
@@ -135,37 +135,54 @@ pub trait FromI2C<I2C> {
         None
     }
 
-    /// Offset<sub>reference<sub>pixel</sub></sub>, for all pixels.
+    type OffsetReferenceIterator: Iterator<Item = &'a i16>;
+
+    /// An iterator over the per-pixel offset reference values for the given subpage
+    /// (Offset<sub>reference</sub>(i, j)).
     ///
-    /// The returned slice covers all pixels.
-    fn offset_reference_pixels(&self, subpage: Subpage) -> &[i16];
+    /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
+    /// to right and the columns increasing from top to bottom. The iterator must yield *all*
+    /// pixels, even if they would not normally be present in the given subpage.
+    fn offset_reference_pixels(&'a self, subpage: Subpage) -> Self::OffsetReferenceIterator;
 
     /// The offset reference value for the compensation pixel corresponding to the given subpage
     /// (Offset<sub>reference<sub>CP</sub></sub>).
     fn offset_reference_cp(&self, subpage: Subpage) -> i16;
 
-    /// α<sub>pixel</sub>
+    type AlphaIterator: Iterator<Item = &'a f32>;
+
+    /// An iterator over the per-pixel sensitivity calibration values (α<sub>pixel</sub>(i, j)).
     ///
-    /// The returned slice covers all pixels.
-    fn alpha_pixels(&self, subpage: Subpage) -> &[f32];
+    /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
+    /// to right and the columns increasing from top to bottom. The iterator must yield *all*
+    /// pixels, even if they would not normally be present in the given subpage.
+    fn alpha_pixels(&'a self, subpage: Subpage) -> Self::AlphaIterator;
 
     /// The sensitivity calibration value for the compensation pixel for the given subpage
     /// (α<sub>CP</sub>).
     fn alpha_cp(&self, subpage: Subpage) -> f32;
 
-    /// K<sub>V<sub>pixel</sub></sub>
+    type KvIterator: Iterator<Item = &'a f32>;
+
+    /// An iterator over the per-pixel voltage calibration constants (K<sub>V<sub>pixel</sub></sub>).
     ///
-    /// The returned slice covers all pixels.
-    fn k_v_pixels(&self, subpage: Subpage) -> &[f32];
+    /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
+    /// to right and the columns increasing from top to bottom. The iterator must yield *all*
+    /// pixels, even if they would not normally be present in the given subpage.
+    fn k_v_pixels(&'a self, subpage: Subpage) -> Self::KvIterator;
 
     /// The voltage calibration constant for the compensation pixel for the given subpage
     /// (K<sub>V<sub>CP</sub></sub>).
     fn k_v_cp(&self, subpage: Subpage) -> f32;
 
-    /// K<sub>T<sub>a</sub>pixel</sub>
+    type KtaIterator: Iterator<Item = &'a f32>;
+
+    /// The per pixel ambient temperature calibration constants (K<sub>T<sub>a</sub>pixel</sub>).
     ///
-    /// The returned slice covers all pixels.
-    fn k_ta_pixels(&self, subpage: Subpage) -> &[f32];
+    /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
+    /// to right and the columns increasing from top to bottom. The iterator must yield *all*
+    /// pixels, even if they would not normally be present in the given subpage.
+    fn k_ta_pixels(&'a self, subpage: Subpage) -> Self::KtaIterator;
 
     /// The ambient temperature calibration constant for the compensation pixel for the given
     /// subpage (K<sub>T<sub>a</sub>CP</sub>).
@@ -210,10 +227,8 @@ pub trait MelexisCamera: Sized {
 
     type PixelsInSubpageIterator: Iterator<Item = bool>;
 
-    /// Create a new camera with the current control register and a dump of the EEPROM.
-    fn new<I2C>(register: ControlRegister, eeprom: &[u8]) -> Result<Self, Error<I2C>>
-    where
-        I2C: i2c::WriteRead + i2c::Write;
+    /// Create a new camera with the current control register.
+    fn new(register: ControlRegister) -> Self;
 
     /// Ranges of memory that should be read to load a subpage's data from RAM.
     ///
@@ -249,12 +264,10 @@ pub trait MelexisCamera: Sized {
     /// The address for V<sub>DD<sub>pixel</sub></sub>.
     fn v_dd_pixel(&self) -> Address;
 
-    fn calibration(&self) -> &dyn CalibrationData;
-
     fn update_control_register(&mut self, register: ControlRegister);
 
     /// Calculate the ADC resolution correction factor
-    fn resolution_correction(&self) -> f32;
+    fn resolution_correction(&self, calibrated_resolution: u8) -> f32;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

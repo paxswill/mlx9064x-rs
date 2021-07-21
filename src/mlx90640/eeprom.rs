@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
+use core::slice;
+
 use arrayvec::ArrayVec;
 use bytes::Buf;
 
 use crate::common::*;
+use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::Subpage;
 
@@ -22,7 +25,7 @@ const WORD_SIZE: usize = 16 / 8;
 
 /// MLX990640-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Mlx90640Calibration {
+pub struct Mlx90640Calibration {
     k_v_dd: i16,
 
     v_dd_25: i16,
@@ -55,7 +58,7 @@ pub(crate) struct Mlx90640Calibration {
 
     offset_reference_cp: [i16; 2],
 
-    k_v_pixels: [f32; NUM_PIXELS],
+    k_v_pattern: [f32; 4],
 
     k_v_cp: f32,
 
@@ -165,26 +168,17 @@ impl Mlx90640Calibration {
         Self::repeat_chessboard(source_data)
     }
 
-    /// Calculate the per-pixel K<sub>V</sub> values.
-    ///
-    /// Unlike the other per-pixel calibration values, K<sub>V has no per-pixel adjustments. It
-    /// does vary based on the pixel's row and column though, similar to
-    /// [K<sub>T<sub>A</sub></sub>](Mlx90640Calibration::generate_k_ta_pixels).
-    fn generate_k_v_pixels(k_v_avg: [i8; 4], k_v_scale: &f32) -> impl Iterator<Item = f32> {
-        let k_v_pixels = Self::repeat_chessboard(k_v_avg);
-        let k_v_scale = *k_v_scale;
-        k_v_pixels.map(move |v: f32| v / k_v_scale)
-    }
-
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
     /// EEPROM.
     ///
     /// The buffer must cover *all* of the EEPROM.
-    pub(super) fn from_data(data: &[u8]) -> Result<Self, &'static str> {
+    pub fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
         let mut buf = data;
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
         if buf.remaining() < eeprom_length {
-            return Err("Not enough space left in buffer to be a full EEPROM dump");
+            return Err(LibraryError::Other(
+                "Not enough space left in buffer to be a full EEPROM dump",
+            ));
         }
         // Skip the first 16 words, they're irrelevant
         buf.advance(WORD_SIZE * 16);
@@ -227,11 +221,12 @@ impl Mlx90640Calibration {
         // Leaving k_ta_scale2 as just the exponenet, as it's small enough to be used to shift it's
         // operand directly.
         let k_ta_scale2_exp = unpacked_scales[3];
-        // We have k_v_scale now, calculate k_v_pixels
-        let k_v_pixels: ArrayVec<f32, NUM_PIXELS> =
-            Self::generate_k_v_pixels(k_v_avg, &k_v_scale).collect();
-        // Safe to unwrap as generate_k_v_pixels creates an iterator of exactly NUM_PIXELS
-        let k_v_pixels = k_v_pixels.into_inner().unwrap();
+        // We have k_v_scale now, calculate k_v_pattern
+        let k_v_pattern: ArrayVec<f32, 4> = core::array::IntoIter::new(k_v_avg)
+            .map(|v| f32::from(v) / k_v_scale)
+            .collect();
+        // Safe to unwrap as the input was only four elements, and the array is only 4 elements.
+        let k_v_pattern = k_v_pattern.into_inner().unwrap();
         // Compensation pixel parameters
         let alpha_cp = {
             let (alpha_cp_ratio, alpha_cp_bytes) = word_6_10_split(&mut buf);
@@ -321,7 +316,7 @@ impl Mlx90640Calibration {
             alpha_cp,
             offset_reference_pixels,
             offset_reference_cp,
-            k_v_pixels,
+            k_v_pattern,
             k_v_cp,
             k_ta_pixels,
             k_ta_cp,
@@ -330,7 +325,7 @@ impl Mlx90640Calibration {
     }
 }
 
-impl CalibrationData for Mlx90640Calibration {
+impl<'a> CalibrationData<'a> for Mlx90640Calibration {
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
@@ -349,32 +344,40 @@ impl CalibrationData for Mlx90640Calibration {
         NATIVE_TEMPERATURE_RANGE
     }
 
-    fn offset_reference_pixels(&self, _subpage: Subpage) -> &[i16] {
-        &self.offset_reference_pixels
+    type OffsetReferenceIterator = slice::Iter<'a, i16>;
+
+    fn offset_reference_pixels(&'a self, _subpage: Subpage) -> Self::OffsetReferenceIterator {
+        self.offset_reference_pixels.iter()
     }
 
     fn offset_reference_cp(&self, subpage: Subpage) -> i16 {
         self.offset_reference_cp[subpage as usize]
     }
 
-    fn alpha_pixels(&self, _subpage: Subpage) -> &[f32] {
-        &self.alpha_pixels
+    type AlphaIterator = slice::Iter<'a, f32>;
+
+    fn alpha_pixels(&'a self, _subpage: Subpage) -> Self::AlphaIterator {
+        self.alpha_pixels.iter()
     }
 
     fn alpha_cp(&self, subpage: Subpage) -> f32 {
         self.alpha_cp[subpage as usize]
     }
 
-    fn k_v_pixels(&self, _subpage: Subpage) -> &[f32] {
-        &self.k_v_pixels
+    type KvIterator = ChessboardIter<'a, f32>;
+
+    fn k_v_pixels(&'a self, _subpage: Subpage) -> Self::KvIterator {
+        ChessboardIter::new(&self.k_v_pattern)
     }
 
     fn k_v_cp(&self, _subpage: Subpage) -> f32 {
         self.k_v_cp
     }
 
-    fn k_ta_pixels(&self, _subpage: Subpage) -> &[f32] {
-        &self.k_ta_pixels
+    type KtaIterator = slice::Iter<'a, f32>;
+
+    fn k_ta_pixels(&'a self, _subpage: Subpage) -> Self::KtaIterator {
+        self.k_ta_pixels.iter()
     }
 
     fn k_ta_cp(&self, _subpage: Subpage) -> f32 {
@@ -382,6 +385,47 @@ impl CalibrationData for Mlx90640Calibration {
     }
 
     expose_member!(temperature_gradient_coefficient, Option<f32>);
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChessboardIter<'a, T: 'a> {
+    index: usize,
+    source: &'a [T],
+}
+
+impl<'a, T: 'a> ChessboardIter<'a, T> {
+    /// Repeat a sequence of values in a chessboard pattern.
+    ///
+    /// The given slice must have at least four values (if it has more than four, they are
+    /// ignored). The values in the slice will be used for values like so (assuming 0-indexed rows
+    /// and columns):
+    /// 1. even row, even column
+    /// 2. odd row, even column
+    /// 3. even row, odd column
+    /// 4. odd row, odd column
+    fn new(source: &'a [T]) -> Self {
+        Self { index: 0, source }
+    }
+}
+
+impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < NUM_PIXELS {
+            let row = self.index / WIDTH;
+            let column = self.index % WIDTH;
+            self.index += 1;
+            Some(match (row % 2 == 0, column % 2 == 0) {
+                (true, true) => &self.source[0],
+                (false, true) => &self.source[1],
+                (true, false) => &self.source[2],
+                (false, false) => &self.source[3],
+            })
+        } else {
+            None
+        }
+    }
 }
 
 /// Create a i16 from some bytes representing a `num_bits`-bit signed integer.
@@ -479,7 +523,7 @@ pub(crate) mod test {
         eeprom.freeze()
     }
 
-    fn eeprom() -> Mlx90640Calibration {
+    pub(crate) fn eeprom() -> Mlx90640Calibration {
         let mut eeprom_bytes = eeprom_data();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
@@ -599,8 +643,10 @@ pub(crate) mod test {
     #[test]
     fn pixel_offset() {
         let e = eeprom();
-        let offsets0 = e.offset_reference_pixels(Subpage::One);
-        let offsets1 = e.offset_reference_pixels(Subpage::Zero);
+        let offsets0: ArrayVec<i16, NUM_PIXELS> =
+            e.offset_reference_pixels(Subpage::One).copied().collect();
+        let offsets1: ArrayVec<i16, NUM_PIXELS> =
+            e.offset_reference_pixels(Subpage::Zero).copied().collect();
         // MLX90640 doesn't vary offsets on subpage
         assert_eq!(offsets0, offsets1);
         let index = 11 * WIDTH + 15;
@@ -611,12 +657,12 @@ pub(crate) mod test {
     #[test]
     fn pixel_k_ta() {
         let e = eeprom();
-        let offsets0 = e.k_ta_pixels(Subpage::One);
-        let offsets1 = e.k_ta_pixels(Subpage::Zero);
+        let k_ta0: ArrayVec<f32, NUM_PIXELS> = e.k_ta_pixels(Subpage::One).copied().collect();
+        let k_ta1: ArrayVec<f32, NUM_PIXELS> = e.k_ta_pixels(Subpage::Zero).copied().collect();
         // MLX90640 doesn't vary k_ta on subpage
-        assert_eq!(offsets0, offsets1);
+        assert_eq!(k_ta0, k_ta1);
         let index = 11 * WIDTH + 15;
-        let pixel = offsets0[index];
+        let pixel = k_ta0[index];
         assert_eq!(pixel, 0.005126953125);
     }
 
@@ -626,7 +672,7 @@ pub(crate) mod test {
         // Again, no difference between subpages here
         assert_eq!(e.k_v_pixels(Subpage::Zero), e.k_v_pixels(Subpage::One));
         let index = 11 * WIDTH + 15;
-        assert_eq!(e.k_v_pixels(Subpage::Zero)[index], 0.5);
+        assert_eq!(e.k_v_pixels(Subpage::Zero).nth(index).unwrap(), &0.5);
     }
 
     #[test]
@@ -674,12 +720,12 @@ pub(crate) mod test {
     #[test]
     fn pixel_alpha() {
         let e = eeprom();
-        let offsets0 = e.alpha_pixels(Subpage::One);
-        let offsets1 = e.alpha_pixels(Subpage::Zero);
+        let alpha0: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::One).copied().collect();
+        let alpha1: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::Zero).copied().collect();
         // MLX90640 doesn't vary alpha on subpage
-        assert_eq!(offsets0, offsets1);
+        assert_eq!(alpha0, alpha1);
         let index = 11 * WIDTH + 15;
-        let pixel = offsets0[index];
+        let pixel = alpha0[index];
         assert_eq!(pixel, 1.262233122690854E-7);
     }
 

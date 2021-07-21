@@ -3,9 +3,10 @@
 mod address;
 mod eeprom;
 
+pub use eeprom::Mlx90640Calibration;
 // When testing, open up access to the EEPROM data test fixture
 #[cfg(test)]
-pub(crate) use eeprom::test::eeprom_data;
+pub(crate) use eeprom::test::{eeprom, eeprom_data};
 
 use crate::common::{Address, CalibrationData, MelexisCamera, PixelAddressRange};
 use crate::error::{Error, LibraryError};
@@ -25,7 +26,6 @@ pub(crate) const NUM_PIXELS: usize = HEIGHT * WIDTH;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640 {
-    calibration_data: eeprom::Mlx90640Calibration,
     config: ControlRegister,
 }
 
@@ -33,16 +33,8 @@ impl MelexisCamera for Mlx90640 {
     type PixelRangeIterator = core::array::IntoIter<PixelAddressRange, 1>;
     type PixelsInSubpageIterator = Mlx90640PixelSubpage;
 
-    fn new<I2C>(register: ControlRegister, eeprom: &[u8]) -> Result<Self, Error<I2C>>
-    where
-        I2C: i2c::WriteRead + i2c::Write,
-    {
-        let calibration_data =
-            eeprom::Mlx90640Calibration::from_data(eeprom).map_err(LibraryError::Other)?;
-        Ok(Self {
-            calibration_data,
-            config: register,
-        })
+    fn new(register: ControlRegister) -> Self {
+        Self { config: register }
     }
 
     fn pixel_ranges(&self, _subpage: Subpage) -> Self::PixelRangeIterator {
@@ -82,18 +74,13 @@ impl MelexisCamera for Mlx90640 {
         RamAddress::PixelSupplyVoltage.into()
     }
 
-    fn calibration(&self) -> &dyn CalibrationData {
-        &self.calibration_data
-    }
-
     fn update_control_register(&mut self, register: ControlRegister) {
         self.config = register;
     }
 
-    fn resolution_correction(&self) -> f32 {
+    fn resolution_correction(&self, calibrated_resolution: u8) -> f32 {
         // These values are safe to convert to i8, as they were originally 4-bit unsigned ints.
-        let resolution_exp: i8 =
-            (self.calibration_data.resolution() as i8) - self.config.resolution as i8;
+        let resolution_exp: i8 = calibrated_resolution as i8 - self.config.resolution as i8;
         // Have to use an f32 here as resolution_exp may be negative.
         f32::from(resolution_exp).exp2()
     }

@@ -30,6 +30,7 @@
 
 #![no_std]
 
+mod calculations;
 mod camera;
 mod common;
 mod error;
@@ -45,6 +46,7 @@ pub use register::*;
 
 pub type Mlx90640Camera<I2C> = Camera<
     mlx90640::Mlx90640,
+    mlx90640::Mlx90640Calibration,
     I2C,
     { mlx90640::HEIGHT },
     { mlx90640::WIDTH },
