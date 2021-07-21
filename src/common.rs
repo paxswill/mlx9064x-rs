@@ -36,7 +36,7 @@
 
 use arrayvec::ArrayVec;
 
-use crate::register::{ControlRegister, Subpage};
+use crate::register::{AccessPattern, ControlRegister, Subpage};
 
 pub trait FromI2C<I2C> {
     type Error;
@@ -222,20 +222,17 @@ impl From<Address> for usize {
 }
 
 /// Define common addresses accessible within the camera's RAM.
-pub trait MelexisCamera: Sized {
+pub trait MelexisCamera {
     type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
 
     type PixelsInSubpageIterator: Iterator<Item = bool>;
-
-    /// Create a new camera with the current control register.
-    fn new(register: ControlRegister) -> Self;
 
     /// Ranges of memory that should be read to load a subpage's data from RAM.
     ///
     /// Different cameras with different [access patterns][crate::AccessPattern] have different optimal
     /// ways of loading data from RAM. In some cases loading by row and then ignoring half the data
     /// may be appropriate, in other loading individual pixels may be best.
-    fn pixel_ranges(&self, subpage: Subpage) -> Self::PixelRangeIterator;
+    fn pixel_ranges(subpage: Subpage, access_pattern: AccessPattern) -> Self::PixelRangeIterator;
 
     /// Returns an iterator of booleans for whether or not a pixel should be considered for a
     /// subpage.
@@ -247,27 +244,28 @@ pub trait MelexisCamera: Sized {
     /// The iterator should return tru when the pixel is part of this subpage, and false when it is
     /// not. The ordering is rows, then columns. The iterator must not be infinite; it should only
     /// yield as many values as there are pixels.
-    fn pixels_in_subpage(&self, subpage: Subpage) -> Self::PixelsInSubpageIterator;
+    fn pixels_in_subpage(
+        subpage: Subpage,
+        access_pattern: AccessPattern,
+    ) -> Self::PixelsInSubpageIterator;
 
     /// The address for T<sub>a<sub>V<sub>BE</sub></sub></sub>.
-    fn t_a_v_be(&self) -> Address;
+    fn t_a_v_be() -> Address;
 
     /// The address for T<sub>a<sub>PTAT</sub></sub>
-    fn t_a_ptat(&self) -> Address;
+    fn t_a_ptat() -> Address;
 
     /// The address of the compensation pixel for the given subpage.
-    fn compensation_pixel(&self, subpage: Subpage) -> Address;
+    fn compensation_pixel(subpage: Subpage) -> Address;
 
     /// The address of the current gain.
-    fn gain(&self) -> Address;
+    fn gain() -> Address;
 
     /// The address for V<sub>DD<sub>pixel</sub></sub>.
-    fn v_dd_pixel(&self) -> Address;
-
-    fn update_control_register(&mut self, register: ControlRegister);
+    fn v_dd_pixel() -> Address;
 
     /// Calculate the ADC resolution correction factor
-    fn resolution_correction(&self, calibrated_resolution: u8) -> f32;
+    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -8,12 +8,10 @@ pub use eeprom::Mlx90640Calibration;
 #[cfg(test)]
 pub(crate) use eeprom::test::{eeprom, eeprom_data};
 
-use crate::common::{Address, CalibrationData, MelexisCamera, PixelAddressRange};
-use crate::error::{Error, LibraryError};
+use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, ControlRegister, Subpage};
 
 use address::RamAddress;
-use embedded_hal::blocking::i2c;
 
 /// The height of the image captured by sensor in pixels.
 pub(crate) const HEIGHT: usize = 24;
@@ -33,11 +31,7 @@ impl MelexisCamera for Mlx90640 {
     type PixelRangeIterator = core::array::IntoIter<PixelAddressRange, 1>;
     type PixelsInSubpageIterator = Mlx90640PixelSubpage;
 
-    fn new(register: ControlRegister) -> Self {
-        Self { config: register }
-    }
-
-    fn pixel_ranges(&self, _subpage: Subpage) -> Self::PixelRangeIterator {
+    fn pixel_ranges(_subpage: Subpage, _access_pattern: AccessPattern) -> Self::PixelRangeIterator {
         // For the MLX90640, the best strategy (no matter the access mode) is to just load
         // everything.
         core::array::IntoIter::new([PixelAddressRange {
@@ -47,40 +41,39 @@ impl MelexisCamera for Mlx90640 {
         }])
     }
 
-    fn pixels_in_subpage(&self, subpage: Subpage) -> Self::PixelsInSubpageIterator {
-        Mlx90640PixelSubpage::new(self.config.access_pattern, subpage)
+    fn pixels_in_subpage(
+        subpage: Subpage,
+        access_pattern: AccessPattern,
+    ) -> Self::PixelsInSubpageIterator {
+        Mlx90640PixelSubpage::new(access_pattern, subpage)
     }
 
-    fn t_a_v_be(&self) -> Address {
+    fn t_a_v_be() -> Address {
         RamAddress::AmbientTemperatureVoltageBe.into()
     }
 
-    fn t_a_ptat(&self) -> Address {
+    fn t_a_ptat() -> Address {
         RamAddress::AmbientTemperatureVoltage.into()
     }
 
-    fn compensation_pixel(&self, subpage: Subpage) -> Address {
+    fn compensation_pixel(subpage: Subpage) -> Address {
         match subpage {
             Subpage::Zero => RamAddress::CompensationPixelZero.into(),
             Subpage::One => RamAddress::CompensationPixelOne.into(),
         }
     }
 
-    fn gain(&self) -> Address {
+    fn gain() -> Address {
         RamAddress::Gain.into()
     }
 
-    fn v_dd_pixel(&self) -> Address {
+    fn v_dd_pixel() -> Address {
         RamAddress::PixelSupplyVoltage.into()
     }
 
-    fn update_control_register(&mut self, register: ControlRegister) {
-        self.config = register;
-    }
-
-    fn resolution_correction(&self, calibrated_resolution: u8) -> f32 {
+    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32 {
         // These values are safe to convert to i8, as they were originally 4-bit unsigned ints.
-        let resolution_exp: i8 = calibrated_resolution as i8 - self.config.resolution as i8;
+        let resolution_exp: i8 = calibrated_resolution as i8 - current_resolution as i8;
         // Have to use an f32 here as resolution_exp may be negative.
         f32::from(resolution_exp).exp2()
     }

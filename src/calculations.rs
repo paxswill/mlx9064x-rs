@@ -4,7 +4,7 @@ use core::convert::TryInto;
 
 use embedded_hal::blocking::i2c;
 
-use crate::common::{Address, CalibrationData, FromI2C, MelexisCamera};
+use crate::common::{Address, CalibrationData, MelexisCamera};
 use crate::register::Subpage;
 
 /// Constant needed a few times for the final pixel temperature calculations.
@@ -76,24 +76,21 @@ impl RamData {
     }
 
     /// Read the non-pixel data from the specified camera over I²C.
-    // TODO: Think about implementing FromI2C. It would entail making this cover both subpages, and
-    // changing MelexisCamera to just be associated functions.
     pub fn read_from_i2c<I2C, Cam>(
         bus: &mut I2C,
         i2c_address: u8,
-        camera: &Cam,
         subpage: Subpage,
     ) -> Result<Self, I2C::Error>
     where
         I2C: i2c::WriteRead,
         Cam: MelexisCamera,
     {
-        let t_a_v_be = Self::read_ram_value(bus, i2c_address, camera.t_a_v_be())?;
-        let t_a_ptat = Self::read_ram_value(bus, i2c_address, camera.t_a_ptat())?;
-        let v_dd_pixel = Self::read_ram_value(bus, i2c_address, camera.v_dd_pixel())?;
-        let gain = Self::read_ram_value(bus, i2c_address, camera.gain())?;
+        let t_a_v_be = Self::read_ram_value(bus, i2c_address, Cam::t_a_v_be())?;
+        let t_a_ptat = Self::read_ram_value(bus, i2c_address, Cam::t_a_ptat())?;
+        let v_dd_pixel = Self::read_ram_value(bus, i2c_address, Cam::v_dd_pixel())?;
+        let gain = Self::read_ram_value(bus, i2c_address, Cam::gain())?;
         let compensation_pixel =
-            Self::read_ram_value(bus, i2c_address, camera.compensation_pixel(subpage))?;
+            Self::read_ram_value(bus, i2c_address, Cam::compensation_pixel(subpage))?;
         Ok(Self {
             t_a_v_be,
             t_a_ptat,

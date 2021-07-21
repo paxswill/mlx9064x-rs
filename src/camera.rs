@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
 
+use core::marker::PhantomData;
+
 use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
 use paste::paste;
@@ -86,9 +88,6 @@ pub struct Camera<Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const 
     /// The I²C address this camera is accessible at.
     address: u8,
 
-    /// The camera-specific functionality.
-    camera: Cam,
-
     /// The factory calibration data for a specific camera.
     calibration: Clb,
 
@@ -107,6 +106,11 @@ pub struct Camera<Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const 
 
     /// The emissivity value to use when calculating pixel temperature.
     emissivity: f32,
+
+    /// The current access pattern the camera is using.
+    access_pattern: AccessPattern,
+
+    _camera: PhantomData<Cam>,
 }
 
 impl<'a, Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_PIXELS: usize>
@@ -131,20 +135,22 @@ where
         let mut eeprom_buf = [0u8; EEPROM_LENGTH];
         bus.write_read(address, &EEPROM_BASE, &mut eeprom_buf)
             .map_err(Error::I2cWriteReadError)?;
-        let camera = Cam::new(control);
-        // Cache this value
-        let resolution_correction = camera.resolution_correction(calibration.resolution());
+        // Cache these values
+        let resolution_correction =
+            Cam::resolution_correction(calibration.resolution(), control.resolution.as_raw() as u8);
+        let access_pattern = control.access_pattern;
         // Choose an emissivity value to start with.
         let emissivity = calibration.emissivity().unwrap_or(1f32);
         Ok(Self {
             bus,
             address,
-            camera,
             calibration: calibration,
             pixel_buffer: [0u8; NUM_PIXELS],
             resolution_correction,
             ambient_temperature: None,
             emissivity,
+            access_pattern,
+            _camera: PhantomData,
         })
     }
 
@@ -158,11 +164,12 @@ where
     }
 
     fn control_register(&mut self) -> Result<ControlRegister, Error<I2C>> {
-        let register = read_register(&mut self.bus, self.address)?;
-        self.camera.update_control_register(register);
+        let register: ControlRegister = read_register(&mut self.bus, self.address)?;
         // Update the resolution as well
         let calibrated_resolution = self.calibration.resolution();
-        self.resolution_correction = self.camera.resolution_correction(calibrated_resolution);
+        self.resolution_correction =
+            Cam::resolution_correction(calibrated_resolution, register.resolution.as_raw() as u8);
+        self.access_pattern = register.access_pattern;
         Ok(register)
     }
 
@@ -363,7 +370,7 @@ where
         read_ram::<Cam, I2C, HEIGHT>(
             &mut self.bus,
             self.address,
-            &self.camera,
+            self.access_pattern,
             subpage,
             &mut self.pixel_buffer,
         )
@@ -375,7 +382,7 @@ where
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
-        let mut valid_pixels = self.camera.pixels_in_subpage(subpage);
+        let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern);
         let t_a = raw_pixels_to_ir_data(
             &self.calibration,
             self.emissivity,
@@ -396,7 +403,7 @@ where
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
-        let mut valid_pixels = self.camera.pixels_in_subpage(subpage);
+        let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern);
         let t_a = raw_pixels_to_temperatures(
             &self.calibration,
             self.emissivity,
@@ -435,14 +442,19 @@ where
     ) -> Result<bool, Error<I2C>> {
         // Not going through the helper methods on self to avoid infecting them with 'a
         let address = self.address;
-        let camera = &self.camera;
         let bus = &mut self.bus;
         let pixel_buffer = &mut self.pixel_buffer;
         let mut status_register: StatusRegister = read_register(bus, address)?;
         if status_register.new_data {
             let subpage = status_register.last_updated_subpage;
-            let mut valid_pixels = camera.pixels_in_subpage(subpage);
-            let ram = read_ram::<Cam, I2C, HEIGHT>(bus, address, camera, subpage, pixel_buffer)?;
+            let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern);
+            let ram = read_ram::<Cam, I2C, HEIGHT>(
+                bus,
+                address,
+                self.access_pattern,
+                subpage,
+                pixel_buffer,
+            )?;
             let ambient_temperature = raw_pixels_to_temperatures(
                 &self.calibration,
                 self.emissivity,
@@ -466,7 +478,7 @@ where
 fn read_ram<Cam, I2C, const HEIGHT: usize>(
     bus: &mut I2C,
     i2c_address: u8,
-    camera: &Cam,
+    access_pattern: AccessPattern,
     subpage: Subpage,
     pixel_data_buffer: &mut [u8],
 ) -> Result<RamData, Error<I2C>>
@@ -476,7 +488,9 @@ where
 {
     // Pick a maximum size of HEIGHT, as the worst access pattern is still by rows
     let pixel_ranges: ArrayVec<PixelAddressRange, HEIGHT> =
-        camera.pixel_ranges(subpage).into_iter().collect();
+        Cam::pixel_ranges(subpage, access_pattern)
+            .into_iter()
+            .collect();
     // Use the first pixel range's starting address as the first.
     // This is a weak assumption, but it holds so far with MLX90640.
     // TODO when '641 support is added, make sure this tested extensively.
@@ -493,7 +507,7 @@ where
         .map_err(Error::I2cWriteReadError)?;
     }
     // And now to read the non-pixel information out
-    RamData::read_from_i2c(bus, i2c_address, camera, subpage).map_err(Error::I2cWriteReadError)
+    RamData::read_from_i2c::<I2C, Cam>(bus, i2c_address, subpage).map_err(Error::I2cWriteReadError)
 }
 
 fn read_register<R, I2C>(bus: &mut I2C, address: u8) -> Result<R, Error<I2C>>
