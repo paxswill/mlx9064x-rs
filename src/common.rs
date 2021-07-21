@@ -40,6 +40,14 @@ use embedded_hal::blocking::i2c;
 use crate::error::Error;
 use crate::register::{ControlRegister, Subpage};
 
+pub trait FromI2C<I2C> {
+    type Error;
+    type Ok;
+
+    /// Create an instance of a type using data retrieved over I²C.
+    fn from_i2c(bus: &mut I2C, i2c_address: u8) -> Result<Self::Ok, Self::Error>;
+}
+
 /// This trait provides access to the module-specific calibration data.
 ///
 /// Each MLX9064\* camera has calibration data from the factory stored on its EEPROM. The
