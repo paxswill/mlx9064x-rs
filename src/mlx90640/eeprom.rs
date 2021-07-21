@@ -4,6 +4,7 @@ use core::slice;
 
 use arrayvec::ArrayVec;
 use bytes::Buf;
+use embedded_hal::blocking::i2c;
 
 use crate::common::*;
 use crate::error::{Error, LibraryError};
@@ -322,6 +323,25 @@ impl Mlx90640Calibration {
             k_ta_cp,
             temperature_gradient_coefficient,
         })
+    }
+}
+
+impl<I2C> FromI2C<I2C> for Mlx90640Calibration
+where
+    I2C: i2c::WriteRead + i2c::Write,
+{
+    type Error = Error<I2C>;
+    type Ok = Self;
+
+    fn from_i2c(bus: &mut I2C, i2c_address: u8) -> Result<Self, Error<I2C>> {
+        // Dump the EEPROM. Both cameras use the same size and starting offset for their EEPROM.
+        const EEPROM_LENGTH: usize =
+            (EepromAddress::End as usize - EepromAddress::Base as usize) + 1;
+        let mut eeprom_buf = [0u8; EEPROM_LENGTH];
+        let eeprom_base: Address = EepromAddress::Base.into();
+        bus.write_read(i2c_address, &eeprom_base.as_bytes(), &mut eeprom_buf)
+            .map_err(Error::I2cWriteReadError)?;
+        Ok(Self::from_data(&eeprom_buf)?)
     }
 }
 
