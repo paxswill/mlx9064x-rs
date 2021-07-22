@@ -11,7 +11,7 @@ pub(crate) use eeprom::test::{eeprom, eeprom_data};
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, ControlRegister, Subpage};
 
-use address::RamAddress;
+pub use address::RamAddress;
 
 /// The height of the image captured by sensor in pixels.
 pub(crate) const HEIGHT: usize = 24;

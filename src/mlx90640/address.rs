@@ -119,7 +119,7 @@ impl From<EepromAddress> for Address {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
 #[repr(u16)]
-pub(super) enum RamAddress {
+pub enum RamAddress {
     /// The start of RAM in the MLX90640 address space. This is also the start of the pixel
     /// addresses, which are laid out in row-major order like the EEPROM.
     Base = 0x0400,
