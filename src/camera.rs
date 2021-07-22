@@ -12,14 +12,6 @@ use crate::common::*;
 use crate::error::Error;
 use crate::register::*;
 
-/// Both the MLX90640 and MLX90641 use the same starting address for their EEPROM.
-const EEPROM_BASE: [u8; 2] = 0x2400u16.to_be_bytes();
-
-/// Both cameras (MLX90640 and MLX90641) have the same size EEPROM. 0x273F is the last address in
-/// the EEPROM, so add one to that to include it, while 0x2400 is the first address. Each address
-/// contains a 16-bit value, so we multiply by two to get the number of 8-bit bytes.
-const EEPROM_LENGTH: usize = ((0x273F + 1) - 0x2400) * 2;
-
 /// DRY macro for the set_* methods in `Camera` that modify a register field.
 ///
 /// Most of the fields are boolean values, so that's the default type. Otherwise, add the type in
@@ -120,21 +112,27 @@ where
     Clb: CalibrationData<'a>,
     I2C: i2c::WriteRead + i2c::Write,
 {
+    /// Create a new `Camera`, obtaining the calibration data from the camera over I²C.
+    pub fn new(bus: I2C, address: u8) -> Result<Self, Error<I2C>>
+    where
+        Clb: FromI2C<I2C, Ok = Clb, Error = Error<I2C>>,
+    {
+        let mut bus = bus;
+        let calibration = Clb::from_i2c(&mut bus, address)?;
+        Self::new_with_calibration(bus, address, calibration)
+    }
+
     /// Create a `Camera` for accessing the camera at the given I²C address.
     ///
     /// MLX90964\*s can be configured to use any I²C address (except 0x00), but the default address
     /// is 0x33.
-    pub fn new(bus: I2C, address: u8, calibration: Clb) -> Result<Self, Error<I2C>> {
+    pub fn new_with_calibration(bus: I2C, address: u8, calibration: Clb) -> Result<Self, Error<I2C>> {
         // We own the bus now, make it mutable.
         let mut bus = bus;
         // Grab the control register values first
         // Need to map from I2C::Error manually as it's an associated type without bounds, so we
         // can't implement From<I2C:Error>
         let control: ControlRegister = read_register(&mut bus, address)?;
-        // Dump the EEPROM. Both cameras use the same size and starting offset for their EEPROM.
-        let mut eeprom_buf = [0u8; EEPROM_LENGTH];
-        bus.write_read(address, &EEPROM_BASE, &mut eeprom_buf)
-            .map_err(Error::I2cWriteReadError)?;
         // Cache these values
         let resolution_correction =
             Cam::resolution_correction(calibration.resolution(), control.resolution.as_raw() as u8);
@@ -598,7 +596,7 @@ mod test {
             Transaction::write_read(address, vec![0x24, 0x00], eeprom_vec),
         ];
         let mock_bus = I2cMock::new(&expected);
-        Mlx90640Camera::new(mock_bus, address, mlx90640::eeprom())
+        Mlx90640Camera::new_with_calibration(mock_bus, address, mlx90640::eeprom())
             .expect("A MLX90640 camera should be created after loading its data")
     }
 
