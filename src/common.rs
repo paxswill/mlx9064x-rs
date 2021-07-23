@@ -33,6 +33,7 @@
 //!   for an object.
 //! * V<sub>DD</sub>: Pixel supply voltage
 //! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
+use core::fmt;
 
 use arrayvec::ArrayVec;
 
@@ -194,12 +195,18 @@ pub trait CalibrationData<'a> {
     fn temperature_gradient_coefficient(&self) -> Option<f32>;
 }
 /// Marker newtype for addresses accessible over I<sup>2</sup>C.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Address(u16);
 
 impl Address {
     pub(crate) fn as_bytes(&self) -> [u8; 2] {
         self.0.to_be_bytes()
+    }
+}
+
+impl fmt::Debug for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Address({:#X})", self.0)
     }
 }
 
