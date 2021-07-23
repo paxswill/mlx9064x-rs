@@ -378,7 +378,7 @@ where
         )
     }
 
-    fn generate_raw_image_subpage_to(
+    pub fn generate_raw_image_subpage_to(
         &'a mut self,
         subpage: Subpage,
         destination: &mut [f32],
@@ -399,7 +399,7 @@ where
         Ok(())
     }
 
-    fn generate_image_subpage_to(
+    pub fn generate_image_subpage_to(
         &'a mut self,
         subpage: Subpage,
         destination: &mut [f32],

@@ -30,7 +30,7 @@
 
 #![no_std]
 
-mod calculations;
+pub mod calculations;
 mod camera;
 mod common;
 mod error;
