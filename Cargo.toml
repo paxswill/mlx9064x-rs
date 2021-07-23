@@ -25,6 +25,7 @@ paste = "1"
 
 [dev-dependencies]
 float-cmp = "0.8.0"
+linux-embedded-hal = "0.3"
 
 [features]
 default = ["std"]
