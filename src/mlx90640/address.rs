@@ -147,6 +147,8 @@ pub enum RamAddress {
     End = 0x073F,
 }
 
+address_enum_ops!(RamAddress);
+
 impl TryFrom<Address> for RamAddress {
     type Error = TryFromPrimitiveError<RamAddress>;
 
