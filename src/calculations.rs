@@ -378,9 +378,12 @@ mod test {
     use float_cmp::{approx_eq, F32Margin};
 
     use crate::{mlx90640, CalibrationData, Subpage};
+    use crate::test::mlx90640_eeprom_data;
 
     fn mlx90640_calibration() -> mlx90640::Mlx90640Calibration {
-        mlx90640::eeprom()
+        let eeprom_data = mlx90640_eeprom_data();
+        mlx90640::Mlx90640Calibration::from_data(&eeprom_data)
+            .expect("Mlx90640Calibration should be able to be created from the example data")
     }
 
     // The super bare, single function tests with magic number are using values from the worked

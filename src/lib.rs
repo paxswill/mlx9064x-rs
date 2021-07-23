@@ -37,6 +37,8 @@ mod error;
 mod mlx90640;
 mod mlx90641;
 mod register;
+#[cfg(test)]
+mod test;
 mod util;
 
 pub use camera::Camera;

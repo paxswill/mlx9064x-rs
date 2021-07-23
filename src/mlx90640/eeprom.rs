@@ -508,43 +508,16 @@ pub(crate) mod test {
     use std::{print, println};
 
     use arrayvec::ArrayVec;
-    use bytes::{Bytes, BytesMut};
 
     use crate::common::CalibrationData;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
+    use crate::test::mlx90640_eeprom_data;
 
     use super::Mlx90640Calibration;
 
-    /// Example EEPROM data from the datasheet (from the worked example)
-    // Each line is 8 bytes. The first two lines are empty, as that data is ignored for calibration
-    // purposes. The next six lines are the shared calibration data.
-    const EEPROM_HEADER: &'static [u8] = b"\
-        \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
-        \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
-        \x42\x10\xff\xbb\x02\x02\xf2\x02\xf2\xf2\xe2\xe2\xd1\xe1\xb1\xd1\
-        \xf1\x0f\xf0\x0f\xe0\xef\xe0\xef\xe1\xe1\xf3\xf2\xf4\x04\xe5\x04\
-        \x79\xa6\x2f\x44\xff\xdd\x22\x10\x33\x33\x22\x33\xef\x01\x9a\xcc\
-        \xee\xdc\x10\xff\x22\x21\x33\x33\x23\x33\x01\x12\xee\xff\xbb\xdd\
-        \x18\xef\x2f\xf1\x59\x52\x9d\x68\x54\x54\x09\x94\x69\x56\x53\x54\
-        \x23\x63\xe4\x46\xfb\xb5\x04\x4b\xf0\x20\x97\x97\x97\x97\x28\x89";
-
-    pub(crate) fn eeprom_data() -> Bytes {
-        let mut eeprom = BytesMut::from(EEPROM_HEADER);
-        // 0x08a0 is the data used in the datasheet's worked example. The example only covers one
-        // pixel, but I'm just going to repeat it to fill the rest of the space>
-        let pixel_data = b"\x08\xa0";
-        eeprom.extend(
-            pixel_data
-                .iter()
-                .cycle()
-                .take(NUM_PIXELS * pixel_data.len()),
-        );
-        eeprom.freeze()
-    }
-
     pub(crate) fn eeprom() -> Mlx90640Calibration {
-        let mut eeprom_bytes = eeprom_data();
+        let mut eeprom_bytes = mlx90640_eeprom_data();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 

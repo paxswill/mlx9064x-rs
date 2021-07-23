@@ -24,7 +24,6 @@ num-traits = { version = "0.2", default-features = false }
 paste = "1"
 
 [dev-dependencies]
-embedded-hal-mock = "0.7"
 float-cmp = "0.8.0"
 
 [features]

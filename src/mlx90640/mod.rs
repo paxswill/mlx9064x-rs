@@ -4,9 +4,6 @@ mod address;
 mod eeprom;
 
 pub use eeprom::Mlx90640Calibration;
-// When testing, open up access to the EEPROM data test fixture
-#[cfg(test)]
-pub(crate) use eeprom::test::{eeprom, eeprom_data};
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, ControlRegister, Subpage};

@@ -580,23 +580,15 @@ mod test {
     use core::iter::FromIterator;
     use std::vec;
 
-    use embedded_hal_mock::i2c::{Mock as I2cMock, Transaction};
+    use crate::test::{mock_mlx90640_at_address, MockCameraBus, MLX90640_RAM_LENGTH};
+    use crate::{I2cRegister, Mlx90640Camera, StatusRegister};
 
-    use crate::{mlx90640, I2cRegister, Mlx90640Camera, StatusRegister};
-
-    fn create_mlx90640() -> Mlx90640Camera<I2cMock> {
+    fn create_mlx90640() -> Mlx90640Camera<MockCameraBus<MLX90640_RAM_LENGTH>> {
         // Specifically using a non-default address to make sure assumptions aren't being made
         // about the address.
         let address: u8 = 0x30;
-        let eeprom_vec = vec::Vec::from_iter(mlx90640::eeprom_data());
-        let expected = [
-            // Control register. Using the value used in the datasheet for the worked example
-            Transaction::write_read(address, vec![0x80, 0x0D], vec![0x09, 0x01]),
-            // EEPROM
-            Transaction::write_read(address, vec![0x24, 0x00], eeprom_vec),
-        ];
-        let mock_bus = I2cMock::new(&expected);
-        Mlx90640Camera::new_with_calibration(mock_bus, address, mlx90640::eeprom())
+        let mock_bus = mock_mlx90640_at_address(address);
+        Mlx90640Camera::new(mock_bus, address)
             .expect("A MLX90640 camera should be created after loading its data")
     }
 
@@ -610,11 +602,7 @@ mod test {
     fn read_register() {
         // Just picking addresses now
         let address = 0x10;
-        let expected = [
-            // Toggling all of the reserved bits on for kicks.
-            Transaction::write_read(address, vec![0x80, 0x0F], vec![0xFF, 0xF0]),
-        ];
-        let mut mock_bus = I2cMock::new(&expected);
+        let mut mock_bus = mock_mlx90640_at_address(address);
         let register: I2cRegister = super::read_register(&mut mock_bus, address).unwrap();
         assert_eq!(register, I2cRegister::default());
     }
@@ -623,23 +611,7 @@ mod test {
     fn read_write_register() {
         let address = 0x42;
         // Using the status register for this test as it has read-only sections at both ends.
-        let expected = [
-            // Start with the read-only sections zeroed
-            Transaction::write_read(address, vec![0x80, 0x00], vec![0x00, 0xE0]),
-            // After modifying the register struct, write_register() will do another read, and all
-            // reserved bits will be set, and the last updated subpage will have changed.
-            // NOTE: the final byte is 0xC1, not 0xE1. This library handles step mode, which is
-            // controlled by the 6th bit which is reserved in later datasheets).
-            Transaction::write_read(address, vec![0x80, 0x00], vec![0xFF, 0xC1]),
-            // Ensure that the reserved bits are kept, and the new setting (in this case, data
-            // overwite) is also set
-            // The MLX90640 (and possibly 90641, but I don't have one handy to test) will become
-            // confused and cause I2C errors if there's an empty read immediately after a write.
-            // Going by what happens with the Linux implementation, I think it takes a reset of the
-            // I2C bus to clear the error.
-            Transaction::write(address, vec![0x80, 0x00, 0xFF, 0xD1]),
-        ];
-        let mut mock_bus = I2cMock::new(&expected);
+        let mut mock_bus = mock_mlx90640_at_address(address);
         let mut status_register: StatusRegister =
             super::read_register(&mut mock_bus, address).unwrap();
         assert!(!status_register.overwrite_enabled);
