@@ -37,7 +37,7 @@ use core::fmt;
 
 use arrayvec::ArrayVec;
 
-use crate::register::{AccessPattern, ControlRegister, Subpage};
+use crate::register::{AccessPattern, Subpage};
 
 pub trait FromI2C<I2C> {
     type Error;

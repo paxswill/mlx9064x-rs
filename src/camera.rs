@@ -126,7 +126,11 @@ where
     ///
     /// MLX90964\*s can be configured to use any I²C address (except 0x00), but the default address
     /// is 0x33.
-    pub fn new_with_calibration(bus: I2C, address: u8, calibration: Clb) -> Result<Self, Error<I2C>> {
+    pub fn new_with_calibration(
+        bus: I2C,
+        address: u8,
+        calibration: Clb,
+    ) -> Result<Self, Error<I2C>> {
         // We own the bus now, make it mutable.
         let mut bus = bus;
         // Grab the control register values first
@@ -142,7 +146,7 @@ where
         Ok(Self {
             bus,
             address,
-            calibration: calibration,
+            calibration,
             pixel_buffer: [0u8; NUM_PIXELS],
             resolution_correction,
             ambient_temperature: None,
@@ -577,8 +581,6 @@ where
 #[cfg(test)]
 mod test {
     extern crate std;
-    use core::iter::FromIterator;
-    use std::vec;
 
     use crate::test::{mock_mlx90640_at_address, MockCameraBus, MLX90640_RAM_LENGTH};
     use crate::{I2cRegister, Mlx90640Camera, StatusRegister};

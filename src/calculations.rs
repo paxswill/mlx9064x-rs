@@ -136,7 +136,6 @@ impl CommonIrData {
 }
 
 /// The per-pixel calculations to get a raw measurement of infrared radiation.
-#[allow(clippy::too_many_arguments)]
 fn per_pixel_v_ir(
     pixel_data: i16,
     common: &CommonIrData,
@@ -161,6 +160,7 @@ fn per_pixel_v_ir(
 /// camera, and has not been compensated for pixel sensitivity or ambient temperature. It *is*
 /// useful though for applications where just an "image" is needed but the actual temperatures
 /// are not.
+#[allow(clippy::too_many_arguments)]
 pub fn raw_pixels_to_ir_data<'a, Clb, Px>(
     calibration: &'a Clb,
     emissivity: f32,
@@ -225,8 +225,7 @@ fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
     // Again, start with the steps common to all pixels
     let t_a_k4 = (t_a + KELVINS_TO_CELSIUS).powi(4);
     let t_r_k4 = (t_r + KELVINS_TO_CELSIUS).powi(4);
-    let t_ar = t_r_k4 - ((t_r_k4 - t_a_k4) / emissivity);
-    t_ar
+    t_r_k4 - ((t_r_k4 - t_a_k4) / emissivity)
 }
 
 /// Calculate K<sub>s<sub>T<sub>o</sub></sub></sub> and the sensitivity correction coefficient.
@@ -296,6 +295,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
         });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn raw_pixels_to_temperatures<'a, Clb, Px>(
     calibration: &'a Clb,
     emissivity: f32,
@@ -377,8 +377,8 @@ where
 mod test {
     use float_cmp::{approx_eq, F32Margin};
 
-    use crate::{mlx90640, CalibrationData, Subpage};
     use crate::test::mlx90640_eeprom_data;
+    use crate::{mlx90640, CalibrationData, Subpage};
 
     fn mlx90640_calibration() -> mlx90640::Mlx90640Calibration {
         let eeprom_data = mlx90640_eeprom_data();

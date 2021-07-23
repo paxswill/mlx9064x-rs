@@ -10,7 +10,9 @@ use mlx9064x::Mlx90640Camera;
 fn main() -> Result<(), AnyError> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
-        return Err(AnyError::String("Two arguments required: <I2C bus> <camera address>".to_string()));
+        return Err(AnyError::String(
+            "Two arguments required: <I2C bus> <camera address>".to_string(),
+        ));
     }
     let address: u8 = if args[2].starts_with("0x") {
         let hex_digits = args[2].split_at(2).1;
@@ -20,15 +22,12 @@ fn main() -> Result<(), AnyError> {
     };
     let bus_path = Path::new(&args[1]);
     let bus = I2cdev::new(bus_path)?;
-    let mut camera =
-        Mlx90640Camera::new(bus, address)?;
+    let mut camera = Mlx90640Camera::new(bus, address)?;
     let mut temperatures = vec![0f32; camera.height() * camera.width()];
     let delay = Duration::from_millis(500);
-    camera
-        .generate_image_if_ready(&mut temperatures)?;
+    camera.generate_image_if_ready(&mut temperatures)?;
     sleep(delay);
-    camera
-        .generate_image_if_ready(&mut temperatures)?;
+    camera.generate_image_if_ready(&mut temperatures)?;
 
     let width = 32;
     print_temperatures(&temperatures, width);
@@ -63,7 +62,7 @@ impl std::fmt::Display for AnyError {
 
 impl<E> From<E> for AnyError
 where
-    E: StdError + 'static
+    E: StdError + 'static,
 {
     fn from(err: E) -> Self {
         AnyError::Wrapped(Box::new(err))
