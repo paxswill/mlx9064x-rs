@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
-
 //! Common functionality between MLX90640 and MLX90641 cameras.
 //!
 //! At first glance, the datasheets for these modules can be pretty intimidating, with nearly half
@@ -152,14 +151,16 @@ pub trait CalibrationData<'a> {
     /// writes out (ex: K<sub>S<sub>T<sub>o</sub>1</sub></sub> through how every many temperature
     /// ranges the camera has).
     ///
-    /// This method returns a slice of values equal in length to [`corner_temperatures`].
+    /// This method returns a slice of values equal in length to
+    /// [`corner_temperatures`](CalibrationData::corner_temperatures).
     fn k_s_to(&self) -> &[f32];
 
     /// Temperature range sensitivity correction (α<sub>correction</sub>(n))
     ///
     /// Like [`k_s_to`], the name of this method is slightly different that the naming in the
     /// datasheet. Also like `k_s_to`, this method returns a slice of values with a length equal to
-    /// the length of the slice returned by  [`corner_temperatures`],
+    /// the length of the slice returned by
+    /// [`corner_temperatures`](CalibrationData::corner_temperatures),
     fn alpha_correction(&self) -> &[f32];
 
     /// The index of the "native" temperature range.
