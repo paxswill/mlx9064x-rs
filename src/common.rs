@@ -9,30 +9,73 @@
 //! and other bit twiddling that can be written much more clearly. Here's a bit of a decoder ring
 //! for some of the patterns:
 //!
-//! * A line similar to "If K<sub>Foo</sub> &gt; *(2<sup>n</sup> - 1)* → K<sub>Foo</sub> = K<sub>Foo</sub>
-//!   - *(2<sup>n + 1</sup>" is converting an unsigned integer to a signed one. The *italicized*
-//!   portions in the quote are typically expanded, so instead of *2<sup>7</sup> - 1* you'll see
-//!   *127*, and so on.
+//! * If you see a line similar to
+//!   >  If K<sub>Foo</sub> &gt; *(2<sup>n</sup> - 1)* → K<sub>Foo</sub> = K<sub>Foo</sub> - *2<sup>n + 1</sup>*
+//!
+//!   It is converting an unsigned integer to a signed one. The *italicized* portions in the quote
+//!   are typically expanded, so instead of *2<sup>7</sup>&nbsp;-&nbsp;1* and *2<sup>8</sup* you'll
+//!   see 127 and 256.
 //! * Masking a value off with a logical AND, followed by a division by a power of 2. The division
 //!   can be easier to read as a right-shift by whatever power of two.
-//! * The datasheets are inconsistent between each other and within themselves as to use "α" or
-//!   *Alpha*, or whether to write something as "Pix<sub>Foo</sub>(i, j)" or "Foo<sub>pix</sub>(i,
-//!   j)".
+//! * The datasheets are inconsistent between each other and within themselves whether to write
+//!   something as "Pix<sub>Foo</sub>(i, j)" or "Foo<sub>pix</sub>(i, j)".
 //!
 //! And a glossary:
-//! * α, alpha: Sensitivity coefficient
-//! * CP: Compensation pixel
-//! * ε, emissivity: This is a bit beyond a glossary entry, but basically how much IR radiation a
-//!   surface emits relative to its temperature.
-//! * K: Prefix for constants.
-//! * PTAT: Proportional to ambient temperature
-//! * T<sub>a</sub>: Ambient temperature
-//! * T<sub>a<sub>0</sub></sub>: Ambient temperature reference, 25.0 ℃. If it looks like 0, it's
-//!   probably "o" as this value is really only used in one place.
-//! * T<sub>o</sub>: Object temperature, meaning the temperature an individual pixel has detected
-//!   for an object.
-//! * V<sub>DD</sub>: Pixel supply voltage
-//! * V<sub>DD<sub>25</sub></sub>: Pixel supply voltage reference at 25.0 ℃
+//! # Glossary
+//! <dl>
+//! <dt>
+//! α, alpha
+//! </dt><dd>
+//! Sensitivity coefficient
+//! </dd>
+//! <dt>
+//! CP
+//! </dt><dd>
+//! Compensation pixel
+//! </dd>
+//! <dt>
+//! ε, emissivity
+//! </dt><dd>
+//! This is a bit beyond a glossary entry, but basically how much IR radiation a surface emits
+//! relative to its temperature.
+//! </dd>
+//! <dt>
+//! K
+//! </dt><dd>
+//! Prefix for constants.
+//! </dd>
+//! <dt>
+//! PTAT
+//! </dt><dd>
+//! Proportional to ambient temperature
+//! </dd>
+//! <dt>
+//! T<sub>a</sub>
+//! </dt><dd>
+//! Ambient temperature
+//! </dd>
+//! <dt>
+//! T<sub>a<sub>0</sub></sub>
+//! </dt><dd>
+//! Ambient temperature reference, 25.0 ℃. If it looks like 0, it's probably "o" as this value is
+//! really only used in one place.
+//! </dd>
+//! <dt>
+//! T<sub>o</sub>
+//! </dt><dd>
+//! Object temperature, meaning the temperature an individual pixel has detected for an object.
+//! </dd>
+//! <dt>
+//! V<sub>DD</sub>
+//! </dt><dd>
+//! Pixel supply voltage
+//! </dd>
+//! <dt>
+//! V<sub>DD<sub>25</sub></sub>
+//! </dt><dd>
+//! Pixel supply voltage reference at 25.0 ℃
+//! </dd>
+//! </dl>
 use core::fmt;
 
 use arrayvec::ArrayVec;
