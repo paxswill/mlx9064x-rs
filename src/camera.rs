@@ -485,7 +485,7 @@ where
         .map_err(Error::I2cWriteReadError)?;
     }
     // And now to read the non-pixel information out
-    RamData::read_from_i2c::<I2C, Cam>(bus, i2c_address, subpage).map_err(Error::I2cWriteReadError)
+    RamData::from_i2c::<I2C, Cam>(bus, i2c_address, subpage).map_err(Error::I2cWriteReadError)
 }
 
 fn read_register<R, I2C>(bus: &mut I2C, address: u8) -> Result<R, Error<I2C>>

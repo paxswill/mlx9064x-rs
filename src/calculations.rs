@@ -76,7 +76,7 @@ impl RamData {
     }
 
     /// Read the non-pixel data from the specified camera over I²C.
-    pub fn read_from_i2c<I2C, Cam>(
+    pub fn from_i2c<I2C, Cam>(
         bus: &mut I2C,
         i2c_address: u8,
         subpage: Subpage,
