@@ -27,6 +27,31 @@
 //! This library uses the [`embedded-hal`] I²C traits, meaning you should be able to use this
 //! library on other platforms, as long as there's an `embedded-hal` I²C implementation available.
 //! This library is also `no_std` compatible (there is a large memory requirement though).
+//!
+//! # Subpages and Access Patterns
+//! One of the key differences between these cameras and other common thermal cameras is that not
+//! all of the image is updated at once. The imaging area is divided into two [subpages][Subpage],
+//! each being updated in turn. The pixels are split into subpages depending on the current [access
+//! pattern][AccessPattern]. In chess board mode, the pixels alternate subpages in both the X and
+//! Y axes, resulting in a chess or checker board-like pattern:
+//! ```text
+//! 0 1 0 1 0 1 0 1
+//! 1 0 1 0 1 0 1 0
+//! 0 1 0 1 0 1 0 1
+//! 1 0 1 0 1 0 1 0
+//! ```
+//! The other access mode interleaves each row, so pixels will alternate subpages only on the Y
+//! axis. This is also referred to as "TV" mode in the manufacturer's datasheet.
+//! ```text
+//! 0 0 0 0 0 0 0 0
+//! 1 1 1 1 1 1 1 1
+//! 0 0 0 0 0 0 0 0
+//! 1 1 1 1 1 1 1 1
+//! ```
+//! The default mode is different between these two cameras, and the datasheet either strongly
+//! advises against changing the access mode (90640), or doesn't mention the impact of changing the
+//! access mode at all (90641).
+//!
 
 #![no_std]
 

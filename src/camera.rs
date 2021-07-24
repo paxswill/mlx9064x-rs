@@ -46,30 +46,6 @@ macro_rules! set_register_field {
 /// thermal cameras, but they come with some differences in operation, as well as much more
 /// processing required to end up with a grid of temperatures.
 ///
-/// # Subpages and Access Patterns
-/// One of the biggest differences you may encounter with these cameras is that not all of the
-/// image is updated at once. The imaging area is divided into two [subpages][Subpage], each being
-/// updated in turn. The pixels are split into subpages depending on the current [access
-/// pattern][AccessPattern]. In chess board mode, the pixels alternate subpages in both the X and
-/// Y axes, resulting in a chess or checker board-like pattern:
-/// ```text
-/// 0 1 0 1 0 1 0 1
-/// 1 0 1 0 1 0 1 0
-/// 0 1 0 1 0 1 0 1
-/// 1 0 1 0 1 0 1 0
-/// ```
-/// The other access mode interleaves each row, so pixels will alternate subpages only on the Y
-/// axis. This is also referred to as "TV" mode in the manufacturer's datasheet.
-/// ```text
-/// 0 0 0 0 0 0 0 0
-/// 1 1 1 1 1 1 1 1
-/// 0 0 0 0 0 0 0 0
-/// 1 1 1 1 1 1 1 1
-/// ```
-/// The default mode is different between these two cameras, and the datasheet either strongly
-/// advises against changing the access mode (90640), or doesn't mention the impact of changing the
-/// access mode at all (90641).
-///
 /// The biggest impact to users of these modules is that one of the  `generate_image_*` functions
 /// will need to be called twice (once for each subpage) before a full image is available.
 #[derive(Clone, Debug)]
