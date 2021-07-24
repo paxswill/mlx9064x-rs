@@ -1,12 +1,19 @@
 //! A pure-Rust library for accessing the MLX90640 and MLX90641 (eventually!) thermal cameras over
 //! I²C.
 //!
-//! These cameras are not the simplest to use, with a significant amount of slow floating point
-//! calculations that need to be performed for each frame. The advantages these cameras have over
-//! others in this price range are a much higher resolution, faster refresh rate, and (depending on
-//! the specific camera) wider view angles.
+//! These cameras have a large amount of calibration data that must be pre-processed before use,
+//! and the output data also requires a somewhat complex process to turn it into temperature data.
+//! This crate has two levels of API, a high-level API that handles the calibration data and raw
+//! data processing for you, and a low-level API if you need to go beyond what the high-level API
+//! can do for you.
 //!
-//! # Usage
+//! This library uses the [`embedded-hal`][embedded-hal] I²C traits, meaning you should be able to use this
+//! library on other platforms, as long as there's an `embedded-hal` I²C implementation available.
+//! This library is also `no_std` compatible (there is a large memory requirement though).
+//!
+//! [embedded-hal]: https://docs.rs/embedded-hal/*/embedded_hal/blocking/i2c/index.html
+//!
+//! # High-Level API
 //! ```no_run
 //! use std::thread::sleep;
 //! use std::time::Duration;
@@ -24,9 +31,30 @@
 //! camera.generate_image_if_ready(&mut temperatures)?;
 //! # Ok::<(), mlx9064x::Error<I2cdev>>(())
 //! ```
-//! This library uses the [`embedded-hal`] I²C traits, meaning you should be able to use this
-//! library on other platforms, as long as there's an `embedded-hal` I²C implementation available.
-//! This library is also `no_std` compatible (there is a large memory requirement though).
+//! This snippet gives a quick example of using the high-level API with an MLX90640 on Linux. The
+//! camera is using the I²C bus #1 (`/dev/i2c-1`) and the default I²C address (`0x33`). The
+//! calibration data is loaded from the camera over I²C and saved into an
+//! [`Mlx90640Calibration`][mlx90640::Mlx90640Calibration] within `camera`. A destination buffer is
+//! created to store the temperature data from the camera using a `Vec`, and then the temperature
+//! data is retrieved twice to cover both [subpages](#subpages-and-access-patterns), with a delay
+//! between the accesses to allow the next frame of data to become available.
+//!
+//! The high-level API is exposed through [`Camera`], and also makes it easy to configure the
+//! camera settings like frame rate or access mode. If you need to tailor the functionality beyond
+//! what `Camera` provides for you, the low-level API is probably a better choice for you.
+//!
+//! # Low-Level API
+//! The low-level API is the foundation for the high-level API, exposed for those cases where a
+//! more customized approach is needed. A common example is customizing how the calibration data is
+//! loaded. To reduce startup time and memory usage, you might want to pre-process the calibration
+//! data for a specific camera and store it in a microcontroller's flash memory. This can be done
+//! by implementing [`CalibrationData`][common::CalibrationData]. Because `Camera` is generic over
+//! `CalibrationData`, you can use your custom `CalibrationData` with the rest of the high-level
+//! API with almost no changes.
+//!
+//! Most users of the low-level API will probably find the [`common`], [`register`], and
+//! [`calculations`] modules most relevant to their needs, with camera-model specific constants and
+//! types available in the [`mlx90640`] and [`mlx90641`] modules.
 //!
 //! # Subpages and Access Patterns
 //! One of the key differences between these cameras and other common thermal cameras is that not
@@ -56,12 +84,12 @@
 #![no_std]
 
 pub mod calculations;
-mod camera;
-mod common;
-mod error;
-mod mlx90640;
-mod mlx90641;
-mod register;
+pub mod camera;
+pub mod common;
+pub mod error;
+pub mod mlx90640;
+pub mod mlx90641;
+pub mod register;
 #[cfg(test)]
 mod test;
 mod util;
