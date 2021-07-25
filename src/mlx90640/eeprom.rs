@@ -17,9 +17,9 @@ use super::{NUM_PIXELS, WIDTH};
 /// The number of corner temperatures an MLX90640 has.
 const NUM_CORNER_TEMPERATURES: usize = 4;
 
-/// The native temperature range. See discussion on [CalibrationData::native_range] for more details.
+/// The basic temperature range. See discussion on [CalibrationData::basic_range] for more details.
 // It's defined as 1 in the datasheet(well, 2, but 1-indexed, so 1 when 0-indexed).
-const NATIVE_TEMPERATURE_RANGE: usize = 1;
+const BASIC_TEMPERATURE_RANGE: usize = 1;
 
 /// The word size of the MLX990640 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
@@ -272,7 +272,7 @@ impl Mlx90640Calibration {
         // Now that we have k_s_to_scale, we can scale k_s_to properly:
         k_s_to.iter_mut().for_each(|k_s_to| *k_s_to /= k_s_to_scale);
         let alpha_correction =
-            alpha_correction_coefficients(NATIVE_TEMPERATURE_RANGE, &corner_temperatures, &k_s_to);
+            alpha_correction_coefficients(BASIC_TEMPERATURE_RANGE, &corner_temperatures, &k_s_to);
         // Calculate the rest of the per-pixel data using the remainder/k_ta data
         let mut k_ta_pixels = [0f32; NUM_PIXELS];
         offset_reference_pixels
@@ -360,8 +360,8 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
     expose_member!(&k_s_to, [f32]);
     expose_member!(&alpha_correction, [f32]);
 
-    fn native_range(&self) -> usize {
-        NATIVE_TEMPERATURE_RANGE
+    fn basic_range(&self) -> usize {
+        BASIC_TEMPERATURE_RANGE
     }
 
     type OffsetReferenceIterator = slice::Iter<'a, i16>;

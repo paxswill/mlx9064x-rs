@@ -163,14 +163,14 @@ pub trait CalibrationData<'a> {
     /// [`corner_temperatures`](CalibrationData::corner_temperatures),
     fn alpha_correction(&self) -> &[f32];
 
-    /// The index of the "native" temperature range.
+    /// The index of the basic temperature range.
     ///
-    /// Temperature ranges (delimited by the control temperatures) outside of the "native" range
+    /// Temperature ranges (delimited by the control temperatures) outside of the basic range
     /// are "extended temperature ranges" and require extra processing for accuracy. The datasheets
-    /// do not use the term "native range", but for this library it is defined as the index of the
-    /// range (0-indexed) that has α<sub>correction</sub>(r) = 1. Also note that this library uses
+    /// don't give a generic definition of the basic range, but for this library it is defined as
+    /// the temperature range with α<sub>correction</sub>(r) = 1. Also note that this library uses
     /// 0-indexing as opposed to the datasheets that use 1-indexing.
-    fn native_range(&self) -> usize;
+    fn basic_range(&self) -> usize;
 
     /// The emissivity stored on the device.
     ///
@@ -330,16 +330,16 @@ pub struct PixelAddressRange {
 ///
 /// This function will `panic` if the passed in slices both do not have exactly `N` elements.
 pub(crate) fn alpha_correction_coefficients<const NUM_RANGES: usize>(
-    native_range: usize,
+    basic_range: usize,
     corner_temperatures: &[i16],
     k_s_to: &[f32],
 ) -> [f32; NUM_RANGES] {
     // This is the actual calculation. The values are built up recursively from the base case of
-    // the native range (which doesn't need correcting, so it's 1).
+    // the basic range (which doesn't need correcting, so it's 1).
     // Memoizing would be nice here, but these calculations are done only once, at start up, so the
     // impact isn't that big.
     let results: ArrayVec<f32, NUM_RANGES> = (0..NUM_RANGES)
-        .map(|n| alpha_corr_n(n, native_range, corner_temperatures, k_s_to))
+        .map(|n| alpha_corr_n(n, basic_range, corner_temperatures, k_s_to))
         .collect();
     results
         .into_inner()
@@ -348,16 +348,16 @@ pub(crate) fn alpha_correction_coefficients<const NUM_RANGES: usize>(
 
 /// The actual calculations for [alpha_correction_coefficients] as a recursive function. Memoizing
 /// would be nice, but these calculations are only performed once, at start up.
-fn alpha_corr_n(n: usize, native_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32 {
-    match n.cmp(&native_range) {
+fn alpha_corr_n(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32 {
+    match n.cmp(&basic_range) {
         core::cmp::Ordering::Equal => 1f32,
         core::cmp::Ordering::Less => {
             (1f32 + k_s_to[n] * f32::from(ct[n + 1] - ct[n])).recip()
-                * alpha_corr_n(n + 1, native_range, ct, k_s_to)
+                * alpha_corr_n(n + 1, basic_range, ct, k_s_to)
         }
         core::cmp::Ordering::Greater => {
             (1f32 + k_s_to[n - 1] * f32::from(ct[n] - ct[n - 1]))
-                * alpha_corr_n(n - 1, native_range, ct, k_s_to)
+                * alpha_corr_n(n - 1, basic_range, ct, k_s_to)
         }
     }
 }

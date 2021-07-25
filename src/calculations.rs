@@ -233,18 +233,18 @@ fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
 /// The sensitivity correction coefficient isn't named as such in the datasheet, it's just been
 /// extracted from the "Normalizing to sensitivity" section. It is equal to 1 +
 /// K<sub>s<sub>T<aub>a</sub></sub></sub> * (T<sub>a</sub> - T<sub>a<sub>0)
-fn native_k_s_t<'a, Clb>(calibration: &'a Clb, t_a: f32) -> (f32, f32)
+fn basic_k_s_t<'a, Clb>(calibration: &'a Clb, t_a: f32) -> (f32, f32)
 where
     Clb: CalibrationData<'a>,
 {
-    let native_index = calibration.native_range();
+    let basic_index = calibration.basic_range();
     let k_s_to = calibration.k_s_to();
-    let k_s_to_native = k_s_to[native_index];
+    let k_s_to_basic = k_s_to[basic_index];
     let k_s_ta = calibration.k_s_ta();
     let t_a0 = 25f32;
     // Little bit of optimization; this factor is shared by all pixels
     let alpha_coefficient = 1f32 + k_s_ta * (t_a - t_a0);
-    (k_s_to_native, alpha_coefficient)
+    (k_s_to_basic, alpha_coefficient)
 }
 
 /// The per-pixel calculations to go from a raw measurement to a temperature.
@@ -273,7 +273,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
     let alpha_compensation_pixel = calibration
         .temperature_gradient_coefficient()
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
-    let (k_s_to_native, alpha_coefficient) = native_k_s_t(calibration, t_a);
+    let (k_s_to_basic, alpha_coefficient) = basic_k_s_t(calibration, t_a);
     // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
     // of the surrounding environment (but not T_a, which is basically the temperature of the
     // sensor itself). For now hard-coding this to 8 degrees lower than T_a.
@@ -291,7 +291,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
                 Some(alpha_compensation_pixel) => alpha - alpha_compensation_pixel,
                 None => *alpha,
             } * alpha_coefficient;
-            *output = per_pixel_temperature(v_ir, compensated_alpha, t_ar, k_s_to_native);
+            *output = per_pixel_temperature(v_ir, compensated_alpha, t_ar, k_s_to_basic);
         });
 }
 
@@ -331,7 +331,7 @@ where
     let alpha_compensation_pixel = calibration
         .temperature_gradient_coefficient()
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
-    let (k_s_to_native, alpha_coefficient) = native_k_s_t(calibration, common.t_a);
+    let (k_s_to_basic, alpha_coefficient) = basic_k_s_t(calibration, common.t_a);
     // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
     // of the surrounding environment (but not T_a, which is basically the temperature of the
     // sensor itself). For now hard-coding this to 8 degrees lower than T_a.
@@ -367,7 +367,7 @@ where
                     Some(alpha_compensation_pixel) => alpha - alpha_compensation_pixel,
                     None => *alpha,
                 } * alpha_coefficient;
-                *output = per_pixel_temperature(v_ir, compensated_alpha, t_ar, k_s_to_native);
+                *output = per_pixel_temperature(v_ir, compensated_alpha, t_ar, k_s_to_basic);
             },
         );
     common.t_a
@@ -458,8 +458,8 @@ mod test {
     #[test]
     fn pixel_temperature() {
         let clb = mlx90640_calibration();
-        let native_index = clb.native_range();
-        let k_s_to = clb.k_s_to()[native_index];
+        let basic_index = clb.basic_range();
+        let k_s_to = clb.k_s_to()[basic_index];
         // The worked example is using TGC, which is done before per_pixel_temparature() is called,
         // so these values are hard-coded from the datasheet.
         let alpha = 1.1876487360496E-7;
