@@ -35,7 +35,7 @@ fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
 }
 
 /// Calculate the ambient temperature, and cache it for later use.
-fn calculate_ambient_temperature<'a, Clb: CalibrationData<'a>>(
+fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
     calibration: &'a Clb,
     v_ptat_art: f32,
     delta_v: f32,
@@ -124,7 +124,7 @@ impl CommonIrData {
         let v_dd = v_dd(calibration, resolution_correction, delta_v);
         // Labelled V_PTAT in the formulas, but T_a_PTAT in the memory map.
         let v_ptat_art = v_ptat_art(calibration, ram.t_a_ptat, ram.t_a_v_be);
-        let t_a = calculate_ambient_temperature(calibration, v_ptat_art, delta_v);
+        let t_a = ambient_temperature(calibration, v_ptat_art, delta_v);
         let gain = f32::from(calibration.gain()) / f32::from(ram.gain);
         Self {
             gain,
@@ -422,7 +422,7 @@ mod test {
         // The datasheet is a bit more precise than I can get with f32, so approx_eq here
         approx_eq!(
             f32,
-            super::calculate_ambient_temperature(&clb, v_ptat_art, delta_v),
+            super::ambient_temperature(&clb, v_ptat_art, delta_v),
             39.18440152,
             epsilon = 0.000002
         );
