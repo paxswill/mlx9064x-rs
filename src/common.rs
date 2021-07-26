@@ -161,6 +161,8 @@ pub trait CalibrationData<'a> {
     /// datasheet. Also like `k_s_to`, this method returns a slice of values with a length equal to
     /// the length of the slice returned by
     /// [`corner_temperatures`](CalibrationData::corner_temperatures),
+    ///
+    /// [`k_s_to`]: CalibrationData::k_s_to
     fn alpha_correction(&self) -> &[f32];
 
     /// The index of the basic temperature range.
