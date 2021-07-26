@@ -11,12 +11,6 @@ readme = "ReadMe.md"
 repository = "https://github.com/paxswill/mlx9064x-rs"
 autoexamples = false
 
-[package.metadata.docs.rs]
-rustdoc-args = [
-    "--html-in-header",
-    "docs/header.html",
-]
-
 [dependencies]
 # anyhow is only required for examples
 anyhow = { version = "1.0", optional = true }
