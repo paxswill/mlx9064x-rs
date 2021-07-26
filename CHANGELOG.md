@@ -1,5 +1,7 @@
 # Unreleased
 
+# v0.0.2
+
 * Added ambient temperature and image dimension access methods to base camera
   type.
 * Error type was split to make internal use easier.
