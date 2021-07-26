@@ -72,7 +72,7 @@ const KELVINS_TO_CELSIUS: f32 = 273.15;
 ///
 /// The constants $V_{DD_{25}}$ and $K_{V_{DD}}$ are retrieved from the `calibration` argument,
 /// while $V_{DD_{pix}}$ (`v_dd_pixel`) is read from the camera's RAM.
-fn delta_v<'a, Clb: CalibrationData<'a>>(calibration: &'a Clb, v_dd_pixel: i16) -> f32 {
+pub fn delta_v<'a, Clb: CalibrationData<'a>>(calibration: &'a Clb, v_dd_pixel: i16) -> f32 {
     f32::from(v_dd_pixel - calibration.v_dd_25()) / f32::from(calibration.k_v_dd())
 }
 
@@ -95,7 +95,7 @@ fn delta_v<'a, Clb: CalibrationData<'a>>(calibration: &'a Clb, v_dd_pixel: i16) 
 /// [`MelexisCamera::resolution_correction`][mlx-cam-res].
 ///
 /// [mlx-cam-res]: crate::common::MelexisCamera::resolution_correction
-fn v_dd<'a, Clb: CalibrationData<'a>>(
+pub fn v_dd<'a, Clb: CalibrationData<'a>>(
     calibration: &'a Clb,
     resolution_correction: f32,
     delta_v: f32,
@@ -115,7 +115,7 @@ fn v_dd<'a, Clb: CalibrationData<'a>>(
 ///
 /// $Alpha_{PTAT}$ is retrieved from the `calibration` argument, while $T_{a_{PTAT}}$ (`t_a_ptat`)
 /// and $T_{a_{V_{BE}}}$ (`t_a_v_be`) are read from the camera's RAM.
-fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
+pub fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
     calibration: &'a Clb,
     t_a_ptat: i16,
     t_a_v_be: i16,
@@ -141,7 +141,7 @@ fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
 /// $V_{PTAT_{25}}$, are taken from `calibration`, while
 /// $V_{PTAT_{art}}$ (`v_ptat_art`) and $\Delta V$ (`delta_v`) are the results of
 /// [`v_ptat_art`] and [`delta_v`] respectively.
-fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
+pub fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
     calibration: &'a Clb,
     v_ptat_art: f32,
     delta_v: f32,
@@ -164,22 +164,22 @@ pub struct RamData {
     ///
     /// This value is labelled as $T_{a_{V_{BE}}}$ on the EEPROM map, but is labelled $V_{BE}$
     /// elsewhere in the datasheet.
-    t_a_v_be: i16,
+    pub t_a_v_be: i16,
 
     /// $T_{a_{PTAT}}$
     ///
     /// This value is labelled as $T_{a_{PTAT}}$ on the EEPROM map, but is labelled $V_{PTAT}
     /// elsewhere in the datasheet.
-    t_a_ptat: i16,
+    pub t_a_ptat: i16,
 
     /// $V_{DD_{pix}}$
-    v_dd_pixel: i16,
+    pub v_dd_pixel: i16,
 
     /// The gain value for the current frame.
-    gain: i16,
+    pub gain: i16,
 
     /// The compensation pixel for the current frame.
-    compensation_pixel: i16,
+    pub compensation_pixel: i16,
 }
 
 impl RamData {
@@ -244,12 +244,12 @@ pub struct CommonIrData {
     /// "gain coefficient" that is calculated from the calibration EEPROM. The parameter is
     /// documented in section 12.2.2.4 in both datasheets, while the coefficient is documented in
     /// section 11.1.7 in both datasheets.
-    gain: f32,
+    pub gain: f32,
 
     /// The pixel supply voltage ($V_{dd}$)
     ///
     /// This is calculated using the [`delta_v`] and [`v_dd`] functions.
-    v_dd: f32,
+    pub v_dd: f32,
 
     /// The [emissivity] ($\varepsilon$) to use when calculating the pixel temperatures.
     ///
@@ -258,7 +258,7 @@ pub struct CommonIrData {
     /// available.
     ///
     /// [emissivity]: https://en.wikipedia.org/wiki/Emissivity
-    emissivity: f32,
+    pub emissivity: f32,
 
     /// The ambient temperature ($T_{a}$)
     ///
@@ -266,7 +266,7 @@ pub struct CommonIrData {
     /// of the air surrounding the camera, but the temperature of the sensor itself, which is
     /// typically a few degrees warmer than the surrounding air. This value is calculated using
     /// [`ambient_temperature`].
-    t_a: f32,
+    pub t_a: f32,
 }
 
 impl CommonIrData {
@@ -326,7 +326,8 @@ impl CommonIrData {
 ///
 /// This function is also used for calculating the compensation pixel values when using thermal
 /// gradient compensation.
-fn per_pixel_v_ir(
+#[inline]
+pub fn per_pixel_v_ir(
     pixel_data: i16,
     common: &CommonIrData,
     reference_offset: i16,
@@ -432,7 +433,8 @@ where
 /// (`t_r`) as well as the emissivity ($\varepsilon$) of the object are combined with the ambient
 /// temperature of the sensor itself (`t_a`). This calculation is described in section 11.2.2.9 in
 /// both datasheets.
-fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
+#[inline]
+pub fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
     // Again, start with the steps common to all pixels
     let t_a_k4 = (t_a + KELVINS_TO_CELSIUS).powi(4);
     let t_r_k4 = (t_r + KELVINS_TO_CELSIUS).powi(4);
@@ -445,7 +447,7 @@ fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
 /// common factor used when calculating $T\_o$. In section 11.2.2.8 of the datasheet,
 /// $1 + K\_{S\_{T\_a}} \* (T\_a - T\_{a\_0})$ is common to all pixel sensitivity calculation, so
 /// calculating it once is done to improve performance.
-fn sensitivity_correction_coefficient<'a, Clb>(calibration: &'a Clb, t_a: f32) -> f32
+pub fn sensitivity_correction_coefficient<'a, Clb>(calibration: &'a Clb, t_a: f32) -> f32
 where
     Clb: CalibrationData<'a>,
 {
@@ -492,7 +494,8 @@ where
 /// This function calculates the temperature for the basic temperature range only; extended
 /// temperature range calculations are not implemented yet and will probably be done in a separate
 /// function.
-fn per_pixel_temperature(v_ir: f32, alpha: f32, t_ar: f32, k_s_to: f32) -> f32 {
+#[inline]
+pub fn per_pixel_temperature(v_ir: f32, alpha: f32, t_ar: f32, k_s_to: f32) -> f32 {
     // This function is a mess of raising floats to the third and fourth powers, doing some
     // operations, then taking the fourth root of everything.
     let s_x = k_s_to * (alpha.powi(3) * v_ir + alpha.powi(4) * t_ar).powf(0.25);
