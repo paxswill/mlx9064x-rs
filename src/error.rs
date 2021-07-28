@@ -13,7 +13,13 @@ pub enum LibraryError {
     /// When a value from the camera is malformed in some way.
     InvalidData(&'static str),
 
+    /// Other error messages.
     Other(&'static str),
+
+    /// Failures when decoding a checksum.
+    ///
+    /// The MLX90641 uses a checksum with its [EEPROM][crate::mlx90641::eeprom].
+    Checksum(u16),
 }
 
 impl fmt::Display for LibraryError {
@@ -21,6 +27,9 @@ impl fmt::Display for LibraryError {
         match self {
             LibraryError::InvalidData(msg) => write!(f, "{}", msg),
             LibraryError::Other(msg) => write!(f, "{}", msg),
+            LibraryError::Checksum(invalid_word) => {
+                write!(f, "Invalid checksum for data {:#06X}", invalid_word)
+            }
         }
     }
 }
