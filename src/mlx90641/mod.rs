@@ -2,7 +2,7 @@
 // Copyright © 2021 Will Ross
 mod address;
 mod eeprom;
-mod hamming;
+pub mod hamming;
 
 use core::cmp::Ordering;
 use core::iter;
@@ -12,7 +12,6 @@ use crate::register::{AccessPattern, Subpage};
 
 pub use address::RamAddress;
 pub use eeprom::Mlx90641Calibration;
-pub use hamming::{add_checksum, validate_checksum};
 
 /// The height of the image captured by sensor in pixels.
 pub(crate) const HEIGHT: usize = 12;

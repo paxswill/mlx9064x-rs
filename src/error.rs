@@ -18,7 +18,8 @@ pub enum LibraryError {
 
     /// Failures when decoding a checksum.
     ///
-    /// The MLX90641 uses a checksum with its [EEPROM][crate::mlx90641::eeprom].
+    /// The MLX90641 uses a checksum with its [EEPROM][crate::mlx90641::hamming], and will return
+    /// this error is it encounters an uncorrectable error.
     Checksum(u16),
 }
 
