@@ -558,8 +558,8 @@ where
 mod test {
     extern crate std;
 
-    use crate::test::{mock_mlx90640_at_address, MockCameraBus, MLX90640_RAM_LENGTH};
-    use crate::{I2cRegister, Mlx90640Camera, StatusRegister};
+    use crate::test::*;
+    use crate::{I2cRegister, Mlx90640Camera, Mlx90641Camera, StatusRegister};
 
     fn create_mlx90640() -> Mlx90640Camera<MockCameraBus<MLX90640_RAM_LENGTH>> {
         // Specifically using a non-default address to make sure assumptions aren't being made
@@ -570,9 +570,18 @@ mod test {
             .expect("A MLX90640 camera should be created after loading its data")
     }
 
+    fn create_mlx90641() -> Mlx90641Camera<MockCameraBus<MLX90641_RAM_LENGTH>> {
+        // Again, non default address, but different from the '640 mock as well
+        let address: u8 = 0x28;
+        let mock_bus = mock_mlx90641_at_address(address);
+        Mlx90641Camera::new(mock_bus, address)
+            .expect("A MLX90641 camera should be created after loading its data")
+    }
+
     #[test]
     fn smoke_test() {
         create_mlx90640();
+        create_mlx90641();
         // Test passes if we get this far.
     }
 

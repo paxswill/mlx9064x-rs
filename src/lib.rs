@@ -133,3 +133,12 @@ pub type Mlx90640Camera<I2C> = Camera<
     { mlx90640::WIDTH },
     { mlx90640::NUM_PIXELS * 2 },
 >;
+
+pub type Mlx90641Camera<I2C> = Camera<
+    mlx90641::Mlx90641,
+    mlx90641::Mlx90641Calibration,
+    I2C,
+    { mlx90641::HEIGHT },
+    { mlx90641::WIDTH },
+    { mlx90641::NUM_PIXELS * 2 },
+>;
