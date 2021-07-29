@@ -146,11 +146,10 @@ pub fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
     v_ptat_art: f32,
     delta_v: f32,
 ) -> f32 {
-    // Should probably change these in Calibration so they're already floats
-    let k_v_ptat = f32::from(calibration.k_v_ptat()) / 12f32.exp2();
-    let v_ptat_25 = f32::from(calibration.v_ptat_25());
+    let k_v_ptat = calibration.k_v_ptat() / 12f32.exp2();
+    let v_ptat_25 = calibration.v_ptat_25();
     let numerator = (v_ptat_art / (1f32 + k_v_ptat * delta_v)) - v_ptat_25;
-    let k_t_ptat = f32::from(calibration.k_t_ptat()) / 3f32.exp2();
+    let k_t_ptat = calibration.k_t_ptat() / 3f32.exp2();
     numerator / k_t_ptat + 25f32
 }
 
@@ -290,7 +289,7 @@ impl CommonIrData {
         // Labelled V_PTAT in the formulas, but T_a_PTAT in the memory map.
         let v_ptat_art = v_ptat_art(calibration, ram.t_a_ptat, ram.t_a_v_be);
         let t_a = ambient_temperature(calibration, v_ptat_art, delta_v);
-        let gain = f32::from(calibration.gain()) / f32::from(ram.gain);
+        let gain = calibration.gain() / f32::from(ram.gain);
         Self {
             gain,
             v_dd,

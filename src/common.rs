@@ -119,19 +119,19 @@ pub trait CalibrationData<'a> {
     }
 
     /// Voltage proportional to ambient temperature constant (K<sub>V<sub>PTAT</sub></sub>).
-    fn k_v_ptat(&self) -> i16;
+    fn k_v_ptat(&self) -> f32;
 
     /// Temperature proportional to ambient temperature constant (K<sub>T<sub>PTAT</sub></sub>).
-    fn k_t_ptat(&self) -> i16;
+    fn k_t_ptat(&self) -> f32;
 
     /// Voltage proportional to ambient temperature at 25℃ (V<sub>PTAT<sub>25</sub></sub>).
-    fn v_ptat_25(&self) -> i16;
+    fn v_ptat_25(&self) -> f32;
 
     /// Sensitivity proportional to ambient temperature (α<sub>PTAT</sub>).
     fn alpha_ptat(&self) -> u16;
 
     /// The gain constant. Usually written as <var>GAIN</var> in the datasheets.
-    fn gain(&self) -> i16;
+    fn gain(&self) -> f32;
 
     /// Sensitivity constant for ambient temperature (K<sub>S<sub>T<sub>a</sub></sub></sub>).
     fn k_s_ta(&self) -> f32;

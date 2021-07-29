@@ -33,15 +33,15 @@ pub struct Mlx90640Calibration {
 
     resolution: u8,
 
-    k_v_ptat: i16,
+    k_v_ptat: f32,
 
-    k_t_ptat: i16,
+    k_t_ptat: f32,
 
-    v_ptat_25: i16,
+    v_ptat_25: f32,
 
     alpha_ptat: u16,
 
-    gain: i16,
+    gain: f32,
 
     k_s_ta: f32,
 
@@ -305,10 +305,10 @@ impl Mlx90640Calibration {
             v_dd_25,
             resolution,
             k_v_ptat: k_v_ptat.into(),
-            k_t_ptat,
-            v_ptat_25,
+            k_t_ptat: k_t_ptat.into(),
+            v_ptat_25: v_ptat_25.into(),
             alpha_ptat: alpha_ptat.into(),
-            gain,
+            gain: gain.into(),
             k_s_ta,
             corner_temperatures,
             k_s_to,
@@ -349,11 +349,11 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
-    expose_member!(k_v_ptat, i16);
-    expose_member!(k_t_ptat, i16);
-    expose_member!(v_ptat_25, i16);
+    expose_member!(k_v_ptat, f32);
+    expose_member!(k_t_ptat, f32);
+    expose_member!(v_ptat_25, f32);
     expose_member!(alpha_ptat, u16);
-    expose_member!(gain, i16);
+    expose_member!(gain, f32);
     expose_member!(k_s_ta, f32);
 
     expose_member!(&corner_temperatures, [i16]);
@@ -626,12 +626,12 @@ pub(crate) mod test {
     datasheet_test!(v_dd_25, -13056);
     datasheet_test!(v_dd_0, 3.3);
     // NOTE: This is not the actual k_v_ptat, this is the unscaled value!
-    datasheet_test!(k_v_ptat, 22);
+    datasheet_test!(k_v_ptat, 22f32);
     // Again, unscaled value
-    datasheet_test!(k_t_ptat, 338);
-    datasheet_test!(v_ptat_25, 12273);
+    datasheet_test!(k_t_ptat, 338f32);
+    datasheet_test!(v_ptat_25, 12273f32);
     datasheet_test!(alpha_ptat, 9);
-    datasheet_test!(gain, 6383);
+    datasheet_test!(gain, 6383f32);
 
     #[test]
     fn pixel_offset() {
