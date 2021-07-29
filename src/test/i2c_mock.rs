@@ -324,7 +324,7 @@ pub(crate) fn mock_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
         eeprom_data,
         ram_data,
         // Setting this status to mean that Subpage 1 is the current subpage, and it is new data.
-        status_register: [0x00, 0x05],
+        status_register: [0x00, 0x09],
         // Default values for these taken from the datasheet
         control_register: [0x19, 0x01],
         i2c_config_register: [0x00, 0x00],
@@ -367,7 +367,7 @@ pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
         eeprom_data,
         ram_data,
         // The worked example uses subpage 0, so mark that as the current subpage with new data.
-        status_register: [0x00, 0x04],
+        status_register: [0x00, 0x08],
         control_register: [0x09, 0x01],
         i2c_config_register: [0x00, 0x00],
     }
