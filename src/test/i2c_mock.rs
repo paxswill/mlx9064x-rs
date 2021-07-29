@@ -332,7 +332,7 @@ pub(crate) fn mock_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
 }
 
 pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX90641_RAM_LENGTH> {
-    let eeprom_data = mlx90640_eeprom_data();
+    let eeprom_data = mlx90641_eeprom_data();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90641_RAM_LENGTH];
     ram_data[..(mlx90641::NUM_PIXELS * 2)]
