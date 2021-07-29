@@ -128,7 +128,7 @@ pub trait CalibrationData<'a> {
     fn v_ptat_25(&self) -> f32;
 
     /// Sensitivity proportional to ambient temperature (α<sub>PTAT</sub>).
-    fn alpha_ptat(&self) -> u16;
+    fn alpha_ptat(&self) -> f32;
 
     /// The gain constant. Usually written as <var>GAIN</var> in the datasheets.
     fn gain(&self) -> f32;

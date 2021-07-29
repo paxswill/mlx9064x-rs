@@ -120,11 +120,9 @@ pub fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
     t_a_ptat: i16,
     t_a_v_be: i16,
 ) -> f32 {
-    // Use i32 to prevent overflowing (which *will* happen if you stay as i16, these values
-    // are large enough).
-    let denom = t_a_ptat as i32 * calibration.alpha_ptat() as i32 + t_a_v_be as i32;
+    let denom = f32::from(t_a_ptat) * calibration.alpha_ptat() + f32::from(t_a_v_be);
     // Take the loss in precision when forcing a conversion to f32.
-    f32::from(t_a_ptat) / denom as f32 * 18f32.exp2()
+    f32::from(t_a_ptat) / denom * 18f32.exp2()
 }
 
 /// Calculate the ambient temperature ($T_a$)

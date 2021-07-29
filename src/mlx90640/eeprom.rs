@@ -40,7 +40,7 @@ pub struct Mlx90640Calibration {
 
     v_ptat_25: f32,
 
-    alpha_ptat: u16,
+    alpha_ptat: f32,
 
     gain: f32,
 
@@ -353,7 +353,7 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
     expose_member!(k_v_ptat, f32);
     expose_member!(k_t_ptat, f32);
     expose_member!(v_ptat_25, f32);
-    expose_member!(alpha_ptat, u16);
+    expose_member!(alpha_ptat, f32);
     expose_member!(gain, f32);
     expose_member!(k_s_ta, f32);
 
@@ -603,7 +603,7 @@ pub(crate) mod test {
     // Again, unscaled value
     datasheet_test!(k_t_ptat, 338f32);
     datasheet_test!(v_ptat_25, 12273f32);
-    datasheet_test!(alpha_ptat, 9);
+    datasheet_test!(alpha_ptat, 9f32);
     datasheet_test!(gain, 6383f32);
 
     #[test]
