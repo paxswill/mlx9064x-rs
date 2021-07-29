@@ -1,5 +1,7 @@
 # Unreleased
 
+* Added MLX90641 support.
+
 # v0.0.2
 
 * Added ambient temperature and image dimension access methods to base camera
