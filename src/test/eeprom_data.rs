@@ -50,7 +50,7 @@ const MLX90641_EEPROM_HEADER: &'static [u8] = b"\
     \xed\x22\xed\x22\x80\xc8\xed\x22\x41\x90\xed\x22\xda\x58\xed\x22";
 
 pub(crate) fn mlx90641_eeprom_data() -> [u8; EEPROM_LENGTH] {
-    let offset_0 = b"\xb7\xe8";
+    let offset_0 = b"\xf8\x49";
     let k_ta_with_k_v = b"\xb8\xc0";
     let sensitivity = b"\xff\xff";
     // This is different than the datasheet! It looks like they used the subpage 0 data, but wanted
@@ -65,7 +65,7 @@ pub(crate) fn mlx90641_eeprom_data() -> [u8; EEPROM_LENGTH] {
     let mut offset = header_slice.len();
     // Multiply by two to get number of bytes
     let pixel_data_length = mlx90641::NUM_PIXELS * 2;
-    for single_pixel_data in [offset_0, k_ta_with_k_v, sensitivity, offset_1] {
+    for single_pixel_data in [offset_0, sensitivity, k_ta_with_k_v, offset_1] {
         eeprom_data[offset..(offset + pixel_data_length)]
             .iter_mut()
             .zip(

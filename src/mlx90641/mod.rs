@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
 mod address;
+mod eeprom;
 mod hamming;
 
 pub use address::RamAddress;
+pub use eeprom::Mlx90641Calibration;
 pub use hamming::{add_checksum, validate_checksum};
 
 /// The height of the image captured by sensor in pixels.
