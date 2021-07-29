@@ -14,8 +14,9 @@ use crate::common::Address;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
 #[repr(u16)]
 pub(super) enum EepromAddress {
-    /// The start of the EEPROM address range. For calibration purposes, the 16 words (word size is
-    /// 16 bits) can be ignored.
+    /// The start of the EEPROM address range
+    ///
+    /// For calibration purposes, the first 16 words (word size is 16 bits) can be ignored.
     Base = 0x2400,
 
     /// Covers α PTAT and offset compensation scaling factors (row, column and remainder).

@@ -6,7 +6,7 @@ mod eeprom;
 pub use eeprom::Mlx90640Calibration;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
-use crate::register::{AccessPattern, ControlRegister, Subpage};
+use crate::register::{AccessPattern, Subpage};
 
 pub use address::RamAddress;
 
@@ -20,9 +20,7 @@ pub(crate) const WIDTH: usize = 32;
 pub(crate) const NUM_PIXELS: usize = HEIGHT * WIDTH;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Mlx90640 {
-    config: ControlRegister,
-}
+pub struct Mlx90640();
 
 impl MelexisCamera for Mlx90640 {
     type PixelRangeIterator = core::array::IntoIter<PixelAddressRange, 1>;
