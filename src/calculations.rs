@@ -144,11 +144,9 @@ pub fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
     v_ptat_art: f32,
     delta_v: f32,
 ) -> f32 {
-    let k_v_ptat = calibration.k_v_ptat() / 12f32.exp2();
     let v_ptat_25 = calibration.v_ptat_25();
-    let numerator = (v_ptat_art / (1f32 + k_v_ptat * delta_v)) - v_ptat_25;
-    let k_t_ptat = calibration.k_t_ptat() / 3f32.exp2();
-    numerator / k_t_ptat + 25f32
+    let numerator = (v_ptat_art / (1f32 + calibration.k_v_ptat() * delta_v)) - v_ptat_25;
+    numerator / calibration.k_t_ptat() + 25f32
 }
 
 /// The non-pixel values read from the camera's RAM for each frame.

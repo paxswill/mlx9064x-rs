@@ -201,7 +201,10 @@ impl Mlx90640Calibration {
         let gain = buf.get_i16();
         let v_ptat_25 = buf.get_i16();
         let (k_v_ptat, kt_ptat_bytes) = word_6_10_split(&mut buf);
-        let k_t_ptat = i16_from_bits(&kt_ptat_bytes, 10);
+        // k_v_ptat is scaled by 2^12
+        let k_v_ptat = f32::from(k_v_ptat) / 4096f32;
+        // k_t_ptat is scaled by 2^3
+        let k_t_ptat = f32::from(i16_from_bits(&kt_ptat_bytes, 10)) / 8f32;
         let k_v_dd = (buf.get_i8() as i16) << 5;
         // The data in EEPROM is unsigned, so we upgrade to a signed type as it's immediately sent
         // negative (by subtracting 256), then multipled by 2^5, and finally has 2^13 subtracted
@@ -305,8 +308,8 @@ impl Mlx90640Calibration {
             k_v_dd,
             v_dd_25,
             resolution,
-            k_v_ptat: k_v_ptat.into(),
-            k_t_ptat: k_t_ptat.into(),
+            k_v_ptat,
+            k_t_ptat,
             v_ptat_25: v_ptat_25.into(),
             alpha_ptat: alpha_ptat.into(),
             gain: gain.into(),
@@ -598,10 +601,8 @@ pub(crate) mod test {
     datasheet_test!(k_v_dd, -3168);
     datasheet_test!(v_dd_25, -13056);
     datasheet_test!(v_dd_0, 3.3);
-    // NOTE: This is not the actual k_v_ptat, this is the unscaled value!
-    datasheet_test!(k_v_ptat, 22f32);
-    // Again, unscaled value
-    datasheet_test!(k_t_ptat, 338f32);
+    datasheet_test!(k_v_ptat, 0.0053710938);
+    datasheet_test!(k_t_ptat, 42.25);
     datasheet_test!(v_ptat_25, 12273f32);
     datasheet_test!(alpha_ptat, 9f32);
     datasheet_test!(gain, 6383f32);
