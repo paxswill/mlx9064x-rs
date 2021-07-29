@@ -417,6 +417,7 @@ where
             &self.pixel_buffer,
             ram,
             subpage,
+            self.access_pattern,
             &mut valid_pixels,
             destination,
         );
@@ -439,6 +440,7 @@ where
             &self.pixel_buffer,
             ram,
             subpage,
+            self.access_pattern,
             &mut valid_pixels,
             destination,
         );
@@ -490,6 +492,7 @@ where
                 &self.pixel_buffer,
                 ram,
                 subpage,
+                self.access_pattern,
                 &mut valid_pixels,
                 destination,
             );

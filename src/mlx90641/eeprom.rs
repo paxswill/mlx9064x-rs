@@ -2,7 +2,7 @@
 // Copyright © 2021 Will Ross
 
 //! MLX90641-specific EEPROM handling
-
+use core::iter;
 use core::slice;
 
 use arrayvec::ArrayVec;
@@ -16,7 +16,7 @@ use num_traits::Float;
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
-use crate::register::Subpage;
+use crate::register::{AccessPattern, Subpage};
 use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
@@ -400,6 +400,24 @@ impl<'a> CalibrationData<'a> for Mlx90641Calibration {
     }
 
     expose_member!(temperature_gradient_coefficient, Option<f32>);
+
+    type AccessPatternCompensation = iter::Take<iter::Repeat<Option<&'a f32>>>;
+
+    /// The MLX90641 doesn't use access pattern compensation.
+    fn access_pattern_compensation_pixels(
+        &'a self,
+        _access_pattern: AccessPattern,
+    ) -> Self::AccessPatternCompensation {
+        iter::repeat(None).take(Self::Camera::NUM_PIXELS)
+    }
+
+    fn access_pattern_compensation_cp(
+        &self,
+        _subpage: Subpage,
+        _access_pattern: AccessPattern,
+    ) -> Option<f32> {
+        None
+    }
 }
 
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
@@ -442,7 +460,7 @@ pub(crate) mod test {
     use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
     use crate::mlx90641::Mlx90641;
-    use crate::register::Subpage;
+    use crate::register::{AccessPattern, Subpage};
     use crate::test::mlx90641_datasheet_eeprom;
 
     use super::Mlx90641Calibration;
@@ -692,5 +710,32 @@ pub(crate) mod test {
         assert_eq!(ct[5], 200);
         assert_eq!(ct[6], 400);
         assert_eq!(ct[7], 600);
+    }
+
+    #[test]
+    fn access_pattern_compensation() {
+        let e = datasheet_eeprom();
+        for compensation in e.access_pattern_compensation_pixels(AccessPattern::Interleave) {
+            assert!(
+                compensation.is_none(),
+                "There is no access pattern compensation for the 90641"
+            );
+        }
+        assert_eq!(
+            e.access_pattern_compensation_pixels(AccessPattern::Interleave)
+                .count(),
+            Mlx90641::NUM_PIXELS
+        );
+        for compensation in e.access_pattern_compensation_pixels(AccessPattern::Chess) {
+            assert!(
+                compensation.is_none(),
+                "There is no access pattern compensation for the 90641"
+            );
+        }
+        assert_eq!(
+            e.access_pattern_compensation_pixels(AccessPattern::Chess)
+                .count(),
+            Mlx90641::NUM_PIXELS
+        );
     }
 }

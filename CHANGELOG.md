@@ -11,6 +11,7 @@
 * The `address_enum_ops` and `expose_member` macros are no longer part of the
   documented API.
 * The `MelexisCamera` trait is now sealed.
+* Interleave mode compensation for the MLX90640 is now implemented.
 
 # v0.1.1
 

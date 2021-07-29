@@ -162,6 +162,25 @@ pub trait CalibrationData<'a> {
     ///
     /// Some devices do not support a TGC (it can also be disabled manually on other devices).
     fn temperature_gradient_coefficient(&self) -> Option<f32>;
+
+    type AccessPatternCompensation: Iterator<Item = Option<&'a f32>>;
+
+    /// A sequence of per-pixel correction values that are added to the pixel gain value.
+    ///
+    /// The MLX90640 can be used in interleaved mode, but for optimal performance a correction
+    /// needs to be applied. This value is summed with the pixel gain value and reference offset
+    /// (the reference offset being scaled relative to the temperature difference).
+    fn access_pattern_compensation_pixels(
+        &'a self,
+        access_pattern: AccessPattern,
+    ) -> Self::AccessPatternCompensation;
+
+    /// Equivalent to [`Self::access_pattern_compensation_pixels`] for compensation pixels.
+    fn access_pattern_compensation_cp(
+        &self,
+        subpage: Subpage,
+        access_pattern: AccessPattern,
+    ) -> Option<f32>;
 }
 /// Marker newtype for addresses accessible over I<sup>2</sup>C.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]

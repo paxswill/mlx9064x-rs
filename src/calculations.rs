@@ -118,6 +118,7 @@ use num_traits::Float;
 
 use crate::common::{Address, CalibrationData, MelexisCamera};
 use crate::register::Subpage;
+use crate::AccessPattern;
 
 /// Constant needed a few times for the final pixel temperature calculations.
 const KELVINS_TO_CELSIUS: f32 = 273.15;
@@ -399,10 +400,11 @@ pub fn per_pixel_v_ir(
     reference_offset: i16,
     k_v: f32,
     k_ta: f32,
+    access_mode_compensation: Option<f32>,
 ) -> f32 {
     let pixel_gain = f32::from(pixel_data) * common.gain;
     let mut pixel_offset = pixel_gain
-        - f32::from(reference_offset)
+        - (f32::from(reference_offset) + access_mode_compensation.unwrap_or(0.0f32))
             * (1f32 + k_ta * (common.t_a - 25f32))
             * (1f32 + k_v * (common.v_dd - 3.3f32));
     pixel_offset /= common.emissivity;
@@ -432,6 +434,7 @@ pub fn raw_pixels_to_ir_data<'a, Clb, Px>(
     pixel_data: &[u8],
     ram: RamData,
     subpage: Subpage,
+    access_pattern: AccessPattern,
     valid_pixels: &mut Px,
     destination: &mut [f32],
 ) -> f32
@@ -451,12 +454,16 @@ where
             calibration.offset_reference_cp(subpage),
             calibration.k_v_cp(subpage),
             calibration.k_ta_cp(subpage),
+            calibration.access_pattern_compensation_cp(subpage, access_pattern),
         );
         // Premultiplying by the TGC here
         tgc * compensation_pixel_offset
     });
     // At this point, we're now going to start calculating and copying over the pixel data. It
     // will *not* be actual temperatures, but it can be used for some imaging purposes.
+    let access_mode_compensation = calibration
+        .access_pattern_compensation_pixels(access_pattern)
+        .map(|o| o.copied());
     destination
         .iter_mut()
         // Chunk into two byte segments, for each 16-bit value
@@ -466,22 +473,35 @@ where
         .zip(calibration.offset_reference_pixels(subpage))
         .zip(calibration.k_v_pixels(subpage))
         .zip(calibration.k_ta_pixels(subpage))
+        .zip(access_mode_compensation)
+        //.zip(calibration.access_pattern_compensation_pixels(access_pattern))
         // filter out the pixels that aren't part of this subpage
         .filter(|_| valid_pixels.next().unwrap_or_default())
         // feeling a little lispy in here with all these parentheses
-        .for_each(|((((output, pixel_slice), reference_offset), k_v), k_ta)| {
-            // Safe to unwrap as this is from chunks_exact(2)
-            let pixel_bytes: [u8; 2] = pixel_slice.try_into().unwrap();
-            let pixel_data = i16::from_be_bytes(pixel_bytes);
-            let mut pixel_offset =
-                per_pixel_v_ir(pixel_data, &common, *reference_offset, *k_v, *k_ta);
-            // I hope the branch predictor/compiler is smart enough to realize there's
-            // almost always going to be only one hot branch here
-            if let Some(compensation_pixel_offset) = compensation_pixel_offset {
-                pixel_offset -= compensation_pixel_offset;
-            }
-            *output = pixel_offset;
-        });
+        .for_each(
+            |(
+                ((((output, pixel_slice), reference_offset), k_v), k_ta),
+                access_mode_compensation,
+            )| {
+                // Safe to unwrap as this is from chunks_exact(2)
+                let pixel_bytes: [u8; 2] = pixel_slice.try_into().unwrap();
+                let pixel_data = i16::from_be_bytes(pixel_bytes);
+                let mut pixel_offset = per_pixel_v_ir(
+                    pixel_data,
+                    &common,
+                    *reference_offset,
+                    *k_v,
+                    *k_ta,
+                    access_mode_compensation,
+                );
+                // I hope the branch predictor/compiler is smart enough to realize there's
+                // almost always going to be only one hot branch here
+                if let Some(compensation_pixel_offset) = compensation_pixel_offset {
+                    pixel_offset -= compensation_pixel_offset;
+                }
+                *output = pixel_offset;
+            },
+        );
     common.t_a
 }
 
@@ -640,6 +660,7 @@ pub fn raw_pixels_to_temperatures<'a, Clb, Px>(
     pixel_data: &[u8],
     ram: RamData,
     subpage: Subpage,
+    access_pattern: AccessPattern,
     valid_pixels: &mut Px,
     destination: &mut [f32],
 ) -> f32
@@ -659,6 +680,7 @@ where
             calibration.offset_reference_cp(subpage),
             calibration.k_v_cp(subpage),
             calibration.k_ta_cp(subpage),
+            calibration.access_pattern_compensation_cp(subpage, access_pattern),
         );
         // Premultiplying by the TGC here
         tgc * compensation_pixel_offset
@@ -674,6 +696,9 @@ where
     let t_ar = t_ar(common.t_a, t_r, emissivity);
     // At this point, we're now going to start calculating and copying over the pixel data. It
     // will *not* be actual temperatures, but it can be used for some imaging purposes.
+    let access_mode_compensation = calibration
+        .access_pattern_compensation_pixels(access_pattern)
+        .map(|o| o.copied());
     destination
         .iter_mut()
         // Chunk into two byte segments, for each 16-bit value
@@ -684,15 +709,26 @@ where
         .zip(calibration.k_v_pixels(subpage))
         .zip(calibration.k_ta_pixels(subpage))
         .zip(calibration.alpha_pixels(subpage))
+        .zip(access_mode_compensation)
         // filter out the pixels that aren't part of this subpage
         .filter(|_| valid_pixels.next().unwrap_or_default())
         // feeling a little lispy in here with all these parentheses
         .for_each(
-            |(((((output, pixel_slice), reference_offset), k_v), k_ta), alpha)| {
+            |(
+                (((((output, pixel_slice), reference_offset), k_v), k_ta), alpha),
+                access_mode_compensation,
+            )| {
                 // Safe to unwrap as this is from chunks_exact(2)
                 let pixel_bytes: [u8; 2] = pixel_slice.try_into().unwrap();
                 let pixel_data = i16::from_be_bytes(pixel_bytes);
-                let mut v_ir = per_pixel_v_ir(pixel_data, &common, *reference_offset, *k_v, *k_ta);
+                let mut v_ir = per_pixel_v_ir(
+                    pixel_data,
+                    &common,
+                    *reference_offset,
+                    *k_v,
+                    *k_ta,
+                    access_mode_compensation,
+                );
                 // I hope the branch predictor/compiler is smart enough to realize there's
                 // almost always going to be only one hot branch here
                 if let Some(compensation_pixel_offset) = compensation_pixel_offset {
@@ -833,7 +869,7 @@ mod test {
             t_a: 39.18440152,
         };
         let raw_pixel: i16 = 609;
-        let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
+        let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta, None);
         // Same deal as t_a, performing the same calculations as the datasheet (in an arbitrary
         // precision calculator) results in a different value than is in the datasheet's example.
         // In this case the datasheet has 700.882495690866
@@ -861,7 +897,7 @@ mod test {
             t_a: 42.022,
         };
         let raw_pixel: i16 = 972;
-        let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
+        let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta, None);
         // 641 datasheet (in section 11.2.2.7) rounds 1784.78049 to 1785
         assert_approx_eq!(f32, v_ir, 1784.78049, epsilon = 0.01);
     }

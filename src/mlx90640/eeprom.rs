@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
+use core::iter;
 use core::slice;
 
 use arrayvec::ArrayVec;
@@ -13,7 +14,7 @@ use num_traits::Float;
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
-use crate::register::Subpage;
+use crate::register::{AccessPattern, Subpage};
 use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
@@ -69,6 +70,10 @@ pub struct Mlx90640Calibration {
     k_ta_cp: f32,
 
     temperature_gradient_coefficient: Option<f32>,
+
+    interleave_correction_pixels: [f32; 6],
+
+    interleave_correction_cp: f32,
 }
 
 impl Mlx90640Calibration {
@@ -176,6 +181,25 @@ impl Mlx90640Calibration {
         Self::repeat_chessboard(source_data)
     }
 
+    fn get_access_pattern_corrections(data: &mut &[u8]) -> (f32, [f32; 6]) {
+        let word = data.get_u16();
+        // The correction factors are 5 bits, 5 bits, then 6 bits, for factors 3, 2, 1.
+        let chess_1_raw = i16_from_bits(&(word & 0x003F).to_be_bytes(), 6);
+        let chess_2_raw = i16_from_bits(&((word & 0x07C0) >> 6).to_be_bytes(), 5);
+        let chess_3_raw = i16_from_bits(&((word & 0xF800) >> 11).to_be_bytes(), 5);
+        // factor 1 is scaled by 2^4
+        let chess_1 = f32::from(chess_1_raw) / 16f32;
+        // factor 2 is scaled by 2 (no exponent)
+        let chess_2 = f32::from(chess_2_raw) / 2f32;
+        // factor 3 is scaled by 2^3
+        let chess_3 = f32::from(chess_3_raw) / 8f32;
+        // See the docstring for InterleaveCorrectionIter for the explanation for this pattern
+        let b = chess_2 - chess_3;
+        let c = chess_2 + chess_3;
+        let pattern = [-chess_3, b, -c, chess_3, -b, c];
+        (chess_1, pattern)
+    }
+
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
     /// EEPROM.
     ///
@@ -219,8 +243,8 @@ impl Mlx90640Calibration {
         let v_dd_25 = ((buf.get_u8() as i16) - 256) * (1 << 5) - (1 << 13);
         // Keep this value around for actual processing once we have kv_scale.
         let k_v_avg = word_to_i4s(&mut buf);
-        // TODO: Add interleaved mode compensation. Until then, skip that data
-        buf.advance(WORD_SIZE);
+        let (interleave_correction_cp, interleave_correction_pixels) =
+            Self::get_access_pattern_corrections(&mut buf);
         let lazy_k_ta_pixels = Self::generate_k_ta_pixels(&mut buf);
         let unpacked_scales = word_to_u4s(&mut buf);
         // The resolution control calibration value is just two bits in the high half of the byte.
@@ -333,6 +357,8 @@ impl Mlx90640Calibration {
             k_ta_pixels,
             k_ta_cp,
             temperature_gradient_coefficient,
+            interleave_correction_pixels,
+            interleave_correction_cp,
         })
     }
 }
@@ -414,6 +440,32 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
     }
 
     expose_member!(temperature_gradient_coefficient, Option<f32>);
+
+    type AccessPatternCompensation = PixelAccessPatternCompensation<'a>;
+
+    /// A sequence of per-pixel correction values that are added to the pixl gain value.
+    ///
+    /// The MLX90640 can be used in interleaved mode, but for optimal performance a correction
+    /// needs to be applied. This value is summed with the pixel gain value and reference offset
+    /// (the reference offset being scaled relative to the temperature difference).
+    fn access_pattern_compensation_pixels(
+        &'a self,
+        access_pattern: AccessPattern,
+    ) -> Self::AccessPatternCompensation {
+        PixelAccessPatternCompensation::new(access_pattern, &self.interleave_correction_pixels[..])
+    }
+
+    /// Equivalent to [`Self::access_pattern_compensation_pixels`] for compensation pixels.
+    fn access_pattern_compensation_cp(
+        &self,
+        subpage: Subpage,
+        access_pattern: AccessPattern,
+    ) -> Option<f32> {
+        match (subpage, access_pattern) {
+            (Subpage::One, AccessPattern::Interleave) => Some(self.interleave_correction_cp),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -453,6 +505,105 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
             })
         } else {
             None
+        }
+    }
+}
+
+/// An iterator for the interleaved reading pattern values
+///
+#[doc = include_str!("../katex.html")]
+///
+/// These values are only used if the interleaved access mode is being active. It's described in
+/// section 11.1.3.1 of the MLX90640 datasheet, but the formula is overly complicated:
+///
+/// $$
+/// \begin{split}
+/// IL\_{\textit{Pattern}} =& {} int\left(\frac{\mathtt{pixel\\_index} - 1}{32}\right) -
+/// int\left(\frac{int\left(\frac{\mathtt{pixel\\_index} - 1}{32}\right)}{2}\right) \* 2 \newline
+/// \textit{Conversion}\_{\textit{pattern}} =& \left(int\left(\frac{\mathtt{pixel\\_index} - 3}{4}\right)\right. \newline
+/// &\qquad {} - int\left(\frac{\mathtt{pixel\\_index} - 2}{4}\right) \newline
+/// &\qquad {} + int\left(\frac{\mathtt{pixel\\_index}}{4}\right) \newline
+/// &\qquad \left. {} - int\left(\frac{\mathtt{pixel\\_index} - 1}{4}\right)
+/// \right) * (1 - 2 * IL\_{\textit{Pattern}})
+/// \end{split}
+/// $$
+///
+/// Can be simplified to
+///
+/// $$
+/// \begin{split}
+/// IL\_{\textit{Pattern}} =& {} \mathtt{pixel\\_index} \bmod 2 \newline
+/// \textit{Conversion}\_{\textit{pattern}} =& \left(\mathtt{pixel\\_index} \bmod 2\right) \newline
+/// &\qquad {} * \left(\left(\mathtt{pixel\\_index} \bmod 4 \right) - 2\right) \newline
+/// &\qquad {} * \left(1 - \left(int\left(\frac{\mathtt{pixel\\_index}}{32}\right) \bmod 2 * 2\right)\right)
+/// \end{split}
+/// $$
+///
+/// Those values are used for the actual correction formula:
+///
+/// \begin{align*}
+/// \text{pix}\_{OS(i, j)} &= pix\_{gain(i, j)} \newline
+/// &\qquad \colorbox{yellow}{$ {} + IL\_{CHESS\_3} \* \left(2 * IL\_{\textit{Pattern}} - 1 \right)$} \newline
+/// &\qquad \colorbox{yellow}{${} - IL\_{CHESS\_2} \* \textit{Conversion}\_{\textit{pattern}}$} \newline
+/// &\qquad {} - \textit{offset}\_{(i, j)} \newline
+/// &\qquad {} \* (1 + K_{T\_{a}(i, j)} \* (T_a - T_{a_0})) \newline
+/// &\qquad {} \* (1 + K_{V(i, j)} \* (V_{DD} - V_{DD_0}))
+/// \end{align*}
+///
+/// This isn't stated in the datasheet, but if you actually calculate the values from
+/// section 11.2.3.1, you see that there are two, four element patterns. The patterns are
+/// alternated for each row, and the elements are repeated across the row.
+/// ```text
+/// -A  B -A -C
+///  A -B  A  C
+/// ```
+///
+/// Where $A = IL\_{CHESS\_3}$, $B = IL\_{CHESS\_2} - IL\_{CHESS\_3}$, and $C = IL\_{CHESS\_2} + IL\_{CHESS\_3}$
+#[derive(Clone, Debug)]
+pub enum PixelAccessPatternCompensation<'a> {
+    Chess(iter::Take<iter::Repeat<Option<&'a f32>>>),
+    Interleave {
+        index: usize,
+        /// The pattern values, split across two arrays of three elements
+        patterns: &'a [f32],
+    },
+}
+
+impl<'a> PixelAccessPatternCompensation<'a> {
+    /// Create a new interleaved correction iterator from a slice of correction constants
+    ///
+    /// The slice must be 6 elements long, with the values laid out as `[-A, B, -C, A, -B, C]`.
+    fn new(access_pattern: AccessPattern, patterns: &'a [f32]) -> Self {
+        match access_pattern {
+            AccessPattern::Chess => Self::Chess(iter::repeat(None).take(Mlx90640::NUM_PIXELS)),
+            AccessPattern::Interleave => Self::Interleave { index: 0, patterns },
+        }
+    }
+}
+
+impl<'a> Iterator for PixelAccessPatternCompensation<'a> {
+    type Item = Option<&'a f32>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            PixelAccessPatternCompensation::Chess(inner) => inner.next(),
+            PixelAccessPatternCompensation::Interleave { index, patterns } => {
+                if *index < Mlx90640::NUM_PIXELS {
+                    // We just need the even/odd-ness of the row index
+                    let row_sign = (*index / Mlx90640::WIDTH) % 2;
+                    let column_index = match *index % 4 {
+                        0 | 2 => 0,
+                        1 => 1,
+                        3 => 2,
+                        _ => unreachable!(),
+                    };
+                    let pattern_index = row_sign * 3 + column_index;
+                    *index += 1;
+                    Some(Some(&patterns[pattern_index]))
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -511,7 +662,7 @@ pub(crate) mod test {
 
     use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90640::Mlx90640;
-    use crate::register::Subpage;
+    use crate::register::{AccessPattern, Subpage};
     use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
     use super::Mlx90640Calibration;
@@ -1045,5 +1196,57 @@ pub(crate) mod test {
             example_eeprom().corner_temperatures(),
             mlx90640_example_data::CORNER_TEMPERATURES
         );
+    }
+
+    #[test]
+    fn access_pattern_compensation_chess() {
+        let e = datasheet_eeprom();
+        for compensation in e.access_pattern_compensation_pixels(AccessPattern::Chess) {
+            assert!(
+                compensation.is_none(),
+                "There is no access pattern compensation in chess mode"
+            );
+        }
+    }
+
+    #[test]
+    fn access_pattern_compensation_interleave() {
+        let e = datasheet_eeprom();
+        // Using the variable names described in the `PixelAccessPatternCompensation` docstring.
+        const IL_CHESS_3: f32 = 0.125;
+        const IL_CHESS_2: f32 = 3.0;
+        const A: f32 = IL_CHESS_3;
+        const B: f32 = IL_CHESS_2 - IL_CHESS_3;
+        const C: f32 = IL_CHESS_2 + IL_CHESS_3;
+        let compensation_iter = e
+            .access_pattern_compensation_pixels(AccessPattern::Interleave)
+            .enumerate();
+        let mut count = 0;
+        for (pixel_index, compensation) in compensation_iter {
+            let row = pixel_index / Mlx90640::WIDTH;
+            let column = pixel_index % Mlx90640::WIDTH;
+            // Start with the expected values for an even row
+            let expected = if column % 2 == 0 {
+                -A
+            } else if column % 4 == 3 {
+                -C
+            } else {
+                B
+            };
+            // Negate the value for an odd row
+            let expected = if row % 2 == 0 { expected } else { -expected };
+            assert_eq!(
+                Some(&expected),
+                compensation,
+                "[pixel {:?}]:\n{:>10}: `{:?}`,\n{:>10}: `{:?}`,",
+                pixel_index,
+                "expected",
+                Some(expected),
+                "actual",
+                compensation
+            );
+            count += 1;
+        }
+        assert_eq!(count, Mlx90640::NUM_PIXELS);
     }
 }
