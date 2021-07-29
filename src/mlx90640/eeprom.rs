@@ -10,6 +10,7 @@ use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::Subpage;
+use crate::util::i16_from_bits;
 
 use super::address::EepromAddress;
 use super::{NUM_PIXELS, WIDTH};
@@ -448,16 +449,6 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
     }
 }
 
-/// Create a i16 from some bytes representing a `num_bits`-bit signed integer.
-fn i16_from_bits(mut bytes: &[u8], num_bits: u8) -> i16 {
-    let num = match bytes.remaining() {
-        1 => i16::from(bytes.get_i8()),
-        _ => bytes.get_i16(),
-    };
-    let shift_amount = 16 - num_bits;
-    (num << shift_amount) >> shift_amount
-}
-
 /// Split a word into a 6-bit value and a 10-bit value.
 ///
 /// Further conversion for the second value is left to the caller.
@@ -519,15 +510,6 @@ pub(crate) mod test {
     pub(crate) fn eeprom() -> Mlx90640Calibration {
         let mut eeprom_bytes = mlx90640_eeprom_data();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
-    }
-
-    #[test]
-    fn i16_from_bits() {
-        assert_eq!(super::i16_from_bits(b"\x00\xff", 8), -1);
-        assert_eq!(super::i16_from_bits(b"\x03\xff", 10), -1);
-        // Now check that upper bits get ignored properly
-        assert_eq!(super::i16_from_bits(b"\xf0\xff", 8), -1);
-        assert_eq!(super::i16_from_bits(b"\xf3\xff", 10), -1);
     }
 
     #[test]
