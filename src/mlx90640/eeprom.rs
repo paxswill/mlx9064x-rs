@@ -22,7 +22,7 @@ const NUM_CORNER_TEMPERATURES: usize = 4;
 // It's defined as 1 in the datasheet(well, 2, but 1-indexed, so 1 when 0-indexed).
 const BASIC_TEMPERATURE_RANGE: usize = 1;
 
-/// The word size of the MLX990640 in terms of 8-bit bytes.
+/// The word size of the MLX90640 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
 
 /// MLX990640-specific calibration processing.
@@ -501,6 +501,7 @@ pub(crate) mod test {
     use arrayvec::ArrayVec;
 
     use crate::common::CalibrationData;
+    use crate::datasheet_test;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
     use crate::test::mlx90640_eeprom_data;
@@ -593,16 +594,6 @@ pub(crate) mod test {
     }
 
     // Ordering these tests in the same order as the data sheet's worked example.
-
-    macro_rules! datasheet_test {
-        ($name:ident, $value:literal) => {
-            #[test]
-            fn $name() {
-                assert_eq!(eeprom().$name(), $value);
-            }
-        };
-    }
-
     datasheet_test!(resolution, 2);
     datasheet_test!(k_v_dd, -3168);
     datasheet_test!(v_dd_25, -13056);
