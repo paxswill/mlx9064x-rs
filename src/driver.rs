@@ -12,7 +12,7 @@ use crate::common::*;
 use crate::error::Error;
 use crate::register::*;
 
-/// DRY macro for the set_* methods in `Camera` that modify a register field.
+/// DRY macro for the set_* methods in `CameraDriver` that modify a register field.
 ///
 /// Most of the fields are boolean values, so that's the default type. Otherwise, add the type in
 /// before the docstring.
@@ -49,7 +49,7 @@ macro_rules! set_register_field {
 /// The biggest impact to users of these modules is that one of the  `generate_image_*` functions
 /// will need to be called twice (once for each subpage) before a full image is available.
 #[derive(Clone, Debug)]
-pub struct Camera<Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_BYTES: usize> {
+pub struct CameraDriver<Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_BYTES: usize> {
     /// The I²C bus this camera is accessible on.
     bus: I2C,
 
@@ -82,13 +82,13 @@ pub struct Camera<Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const 
 }
 
 impl<'a, Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_PIXELS: usize>
-    Camera<Cam, Clb, I2C, HEIGHT, WIDTH, NUM_PIXELS>
+    CameraDriver<Cam, Clb, I2C, HEIGHT, WIDTH, NUM_PIXELS>
 where
     Cam: MelexisCamera,
     Clb: CalibrationData<'a>,
     I2C: i2c::WriteRead + i2c::Write,
 {
-    /// Create a new `Camera`, obtaining the calibration data from the camera over I²C.
+    /// Create a new `CameraDriver`, obtaining the calibration data from the camera over I²C.
     pub fn new(bus: I2C, address: u8) -> Result<Self, Error<I2C>>
     where
         Clb: FromI2C<I2C, Ok = Clb, Error = Error<I2C>>,
@@ -98,7 +98,7 @@ where
         Self::new_with_calibration(bus, address, calibration)
     }
 
-    /// Create a `Camera` for accessing the camera at the given I²C address.
+    /// Create a `CameraDriver` for accessing the camera at the given I²C address.
     ///
     /// MLX90964\*s can be configured to use any I²C address (except 0x00), but the default address
     /// is 0x33.
@@ -225,9 +225,10 @@ where
 
     /// Check if the camera is in subpage repeat mode.
     ///
-    /// This flag only has an effect if [subpages][Camera::subpages_enabled] is enabled. In subpage
-    /// repeat mode, only the subpage set in `selected_subpage` will be measured and updated. When
-    /// disabled, the active subpage will alternate between the two. The default is disabled.
+    /// This flag only has an effect if [subpages][CameraDriver::subpages_enabled] is enabled. In
+    /// subpage repeat mode, only the subpage set in `selected_subpage` will be measured and
+    /// updated. When disabled, the active subpage will alternate between the two. The default is
+    /// disabled.
     pub fn subpage_repeat(&mut self) -> Result<bool, Error<I2C>> {
         Ok(self.control_register()?.subpage_repeat)
     }
@@ -238,10 +239,12 @@ where
         "Enabled (or disable) subpage repeat mode."
     }
 
-    /// Get the currently selected subpage when [subpage repeat][Camera::subpage_repeat] is enabled.
+    /// Get the currently selected subpage when [subpage repeat] is enabled.
     ///
     /// This setting only has an effect when `subpage_repeat` is enabled. The default value is
     /// `Subpage::Zero`.
+    ///
+    /// [subpage repeat]: CameraDriver::subpage_repeat
     pub fn selected_subpage(&mut self) -> Result<Subpage, Error<I2C>> {
         Ok(self.control_register()?.subpage)
     }
@@ -250,7 +253,7 @@ where
         control_register,
         subpage,
         Subpage,
-        "Set the currently selected subpage when [subpage repeat][Camera::subpage_repeat] is enabled."
+        "Set the currently selected subpage when [subpage repeat][CameraDriver::subpage_repeat] is enabled."
     }
 
     /// Read the frame rate from the camera.
@@ -301,7 +304,7 @@ where
     ///
     /// The default emissivity is 1, unless a camera has a different value stored in EEPROM, in
     /// which case that value is used. The default can also be
-    /// [overridden][Camera::override_emissivity], but this change is not stored on the camera.
+    /// [overridden][CameraDriver::override_emissivity], but this change is not stored on the camera.
     pub fn effective_emissivity(&self) -> f32 {
         self.emissivity
     }
@@ -559,22 +562,22 @@ mod test {
     extern crate std;
 
     use crate::test::*;
-    use crate::{I2cRegister, Mlx90640Camera, Mlx90641Camera, StatusRegister};
+    use crate::{I2cRegister, Mlx90640Driver, Mlx90641Driver, StatusRegister};
 
-    fn create_mlx90640() -> Mlx90640Camera<MockCameraBus<MLX90640_RAM_LENGTH>> {
+    fn create_mlx90640() -> Mlx90640Driver<MockCameraBus<MLX90640_RAM_LENGTH>> {
         // Specifically using a non-default address to make sure assumptions aren't being made
         // about the address.
         let address: u8 = 0x30;
         let mock_bus = mock_mlx90640_at_address(address);
-        Mlx90640Camera::new(mock_bus, address)
+        Mlx90640Driver::new(mock_bus, address)
             .expect("A MLX90640 camera should be created after loading its data")
     }
 
-    fn create_mlx90641() -> Mlx90641Camera<MockCameraBus<MLX90641_RAM_LENGTH>> {
+    fn create_mlx90641() -> Mlx90641Driver<MockCameraBus<MLX90641_RAM_LENGTH>> {
         // Again, non default address, but different from the '640 mock as well
         let address: u8 = 0x28;
         let mock_bus = mock_mlx90641_at_address(address);
-        Mlx90641Camera::new(mock_bus, address)
+        Mlx90641Driver::new(mock_bus, address)
             .expect("A MLX90641 camera should be created after loading its data")
     }
 

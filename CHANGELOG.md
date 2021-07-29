@@ -1,6 +1,8 @@
 # Unreleased
 
 * Added MLX90641 support.
+* `Camera` renamed to `CameraDriver`, root level `-Camera` type aliases renamed
+  to `-Driver`, and `camera` module renamed to `driver`.
 
 # v0.0.2
 

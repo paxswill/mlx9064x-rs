@@ -5,7 +5,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use linux_embedded_hal::I2cdev;
-use mlx9064x::Mlx90640Camera;
+use mlx9064x::Mlx90640Driver;
 
 fn main() -> Result<(), AnyError> {
     let args: Vec<String> = env::args().collect();
@@ -22,7 +22,7 @@ fn main() -> Result<(), AnyError> {
     };
     let bus_path = Path::new(&args[1]);
     let bus = I2cdev::new(bus_path)?;
-    let mut camera = Mlx90640Camera::new(bus, address)?;
+    let mut camera = Mlx90640Driver::new(bus, address)?;
     let mut temperatures = vec![0f32; camera.height() * camera.width()];
     let delay = Duration::from_millis(500);
     camera.generate_image_if_ready(&mut temperatures)?;

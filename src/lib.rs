@@ -33,9 +33,10 @@
 //! data processing for you, and a low-level API if you need to go beyond what the high-level API
 //! can do for you.
 //!
-//! This library uses the [`embedded-hal`][embedded-hal] I²C traits, meaning you should be able to use this
-//! library on other platforms, as long as there's an `embedded-hal` I²C implementation available.
-//! This library is also `no_std` compatible (there is a large memory requirement though).
+//! This library uses the [`embedded-hal`][embedded-hal] I²C traits, meaning you should be able to
+//! use this library on other platforms, as long as there's an `embedded-hal` I²C implementation
+//! available. This library is also `no_std` compatible (there is a large memory requirement
+//! though).
 //!
 //! [embedded-hal]: https://docs.rs/embedded-hal/*/embedded_hal/blocking/i2c/index.html
 //!
@@ -43,12 +44,12 @@
 //! ```no_run
 //! use std::thread::sleep;
 //! use std::time::Duration;
-//! use mlx9064x::Mlx90640Camera;
+//! use mlx9064x::Mlx90640Driver;
 //! use linux_embedded_hal::I2cdev;
 //!
 //! let i2c_bus = I2cdev::new("/dev/i2c-1").expect("/dev/i2c-1 needs to be an I2C controller");
 //! // Default address for these cameras is 0x33
-//! let mut camera = Mlx90640Camera::new(i2c_bus, 0x33)?;
+//! let mut camera = Mlx90640Driver::new(i2c_bus, 0x33)?;
 //! // A buffer for storing the temperature "image"
 //! let mut temperatures = vec![0f32; camera.height() * camera.width()];
 //! camera.generate_image_if_ready(&mut temperatures)?;
@@ -65,18 +66,18 @@
 //! data is retrieved twice to cover both [subpages](#subpages-and-access-patterns), with a delay
 //! between the accesses to allow the next frame of data to become available.
 //!
-//! The high-level API is exposed through [`Camera`], and also makes it easy to configure the
+//! The high-level API is exposed through [`CameraDriver`], and also makes it easy to configure the
 //! camera settings like frame rate or access mode. If you need to tailor the functionality beyond
-//! what `Camera` provides for you, the low-level API is probably a better choice for you.
+//! what `CameraDriver` provides for you, the low-level API is probably a better choice for you.
 //!
 //! # Low-Level API
 //! The low-level API is the foundation for the high-level API, exposed for those cases where a
 //! more customized approach is needed. A common example is customizing how the calibration data is
 //! loaded. To reduce startup time and memory usage, you might want to pre-process the calibration
 //! data for a specific camera and store it in a microcontroller's flash memory. This can be done
-//! by implementing [`CalibrationData`][common::CalibrationData]. Because `Camera` is generic over
-//! `CalibrationData`, you can use your custom `CalibrationData` with the rest of the high-level
-//! API with almost no changes.
+//! by implementing [`CalibrationData`][common::CalibrationData]. Because `CameraDriver` is generic
+//! over `CalibrationData`, you can use your custom `CalibrationData` with the rest of the
+//! high-level API with almost no changes.
 //!
 //! Most users of the low-level API will probably find the [`common`], [`register`], and
 //! [`calculations`] modules most relevant to their needs, with camera-model specific constants and
@@ -110,8 +111,8 @@
 #![no_std]
 
 pub mod calculations;
-pub mod camera;
 pub mod common;
+pub mod driver;
 pub mod error;
 pub mod mlx90640;
 pub mod mlx90641;
@@ -120,12 +121,12 @@ pub mod register;
 mod test;
 mod util;
 
-pub use camera::Camera;
 pub use common::{Address, CalibrationData};
+pub use driver::CameraDriver;
 pub use error::Error;
 pub use register::*;
 
-pub type Mlx90640Camera<I2C> = Camera<
+pub type Mlx90640Driver<I2C> = CameraDriver<
     mlx90640::Mlx90640,
     mlx90640::Mlx90640Calibration,
     I2C,
@@ -134,7 +135,7 @@ pub type Mlx90640Camera<I2C> = Camera<
     { mlx90640::NUM_PIXELS * 2 },
 >;
 
-pub type Mlx90641Camera<I2C> = Camera<
+pub type Mlx90641Driver<I2C> = CameraDriver<
     mlx90641::Mlx90641,
     mlx90641::Mlx90641Calibration,
     I2C,
