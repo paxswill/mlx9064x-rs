@@ -10,6 +10,7 @@ use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::Subpage;
+use crate::util::i16_from_bits;
 
 use super::address::EepromAddress;
 use super::{NUM_PIXELS, WIDTH};
@@ -21,7 +22,7 @@ const NUM_CORNER_TEMPERATURES: usize = 4;
 // It's defined as 1 in the datasheet(well, 2, but 1-indexed, so 1 when 0-indexed).
 const BASIC_TEMPERATURE_RANGE: usize = 1;
 
-/// The word size of the MLX990640 in terms of 8-bit bytes.
+/// The word size of the MLX90640 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
 
 /// MLX990640-specific calibration processing.
@@ -33,15 +34,15 @@ pub struct Mlx90640Calibration {
 
     resolution: u8,
 
-    k_v_ptat: i16,
+    k_v_ptat: f32,
 
-    k_t_ptat: i16,
+    k_t_ptat: f32,
 
-    v_ptat_25: i16,
+    v_ptat_25: f32,
 
-    alpha_ptat: u16,
+    alpha_ptat: f32,
 
-    gain: i16,
+    gain: f32,
 
     k_s_ta: f32,
 
@@ -200,7 +201,10 @@ impl Mlx90640Calibration {
         let gain = buf.get_i16();
         let v_ptat_25 = buf.get_i16();
         let (k_v_ptat, kt_ptat_bytes) = word_6_10_split(&mut buf);
-        let k_t_ptat = i16_from_bits(&kt_ptat_bytes, 10);
+        // k_v_ptat is scaled by 2^12
+        let k_v_ptat = f32::from(k_v_ptat) / 4096f32;
+        // k_t_ptat is scaled by 2^3
+        let k_t_ptat = f32::from(i16_from_bits(&kt_ptat_bytes, 10)) / 8f32;
         let k_v_dd = (buf.get_i8() as i16) << 5;
         // The data in EEPROM is unsigned, so we upgrade to a signed type as it's immediately sent
         // negative (by subtracting 256), then multipled by 2^5, and finally has 2^13 subtracted
@@ -304,11 +308,11 @@ impl Mlx90640Calibration {
             k_v_dd,
             v_dd_25,
             resolution,
-            k_v_ptat: k_v_ptat.into(),
+            k_v_ptat,
             k_t_ptat,
-            v_ptat_25,
+            v_ptat_25: v_ptat_25.into(),
             alpha_ptat: alpha_ptat.into(),
-            gain,
+            gain: gain.into(),
             k_s_ta,
             corner_temperatures,
             k_s_to,
@@ -349,11 +353,11 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
-    expose_member!(k_v_ptat, i16);
-    expose_member!(k_t_ptat, i16);
-    expose_member!(v_ptat_25, i16);
-    expose_member!(alpha_ptat, u16);
-    expose_member!(gain, i16);
+    expose_member!(k_v_ptat, f32);
+    expose_member!(k_t_ptat, f32);
+    expose_member!(v_ptat_25, f32);
+    expose_member!(alpha_ptat, f32);
+    expose_member!(gain, f32);
     expose_member!(k_s_ta, f32);
 
     expose_member!(&corner_temperatures, [i16]);
@@ -448,16 +452,6 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
     }
 }
 
-/// Create a i16 from some bytes representing a `num_bits`-bit signed integer.
-fn i16_from_bits(mut bytes: &[u8], num_bits: u8) -> i16 {
-    let num = match bytes.remaining() {
-        1 => i16::from(bytes.get_i8()),
-        _ => bytes.get_i16(),
-    };
-    let shift_amount = 16 - num_bits;
-    (num << shift_amount) >> shift_amount
-}
-
 /// Split a word into a 6-bit value and a 10-bit value.
 ///
 /// Further conversion for the second value is left to the caller.
@@ -510,6 +504,7 @@ pub(crate) mod test {
     use arrayvec::ArrayVec;
 
     use crate::common::CalibrationData;
+    use crate::datasheet_test;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
     use crate::test::mlx90640_eeprom_data;
@@ -519,15 +514,6 @@ pub(crate) mod test {
     pub(crate) fn eeprom() -> Mlx90640Calibration {
         let mut eeprom_bytes = mlx90640_eeprom_data();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
-    }
-
-    #[test]
-    fn i16_from_bits() {
-        assert_eq!(super::i16_from_bits(b"\x00\xff", 8), -1);
-        assert_eq!(super::i16_from_bits(b"\x03\xff", 10), -1);
-        // Now check that upper bits get ignored properly
-        assert_eq!(super::i16_from_bits(b"\xf0\xff", 8), -1);
-        assert_eq!(super::i16_from_bits(b"\xf3\xff", 10), -1);
     }
 
     #[test]
@@ -611,27 +597,15 @@ pub(crate) mod test {
     }
 
     // Ordering these tests in the same order as the data sheet's worked example.
-
-    macro_rules! datasheet_test {
-        ($name:ident, $value:literal) => {
-            #[test]
-            fn $name() {
-                assert_eq!(eeprom().$name(), $value);
-            }
-        };
-    }
-
     datasheet_test!(resolution, 2);
     datasheet_test!(k_v_dd, -3168);
     datasheet_test!(v_dd_25, -13056);
     datasheet_test!(v_dd_0, 3.3);
-    // NOTE: This is not the actual k_v_ptat, this is the unscaled value!
-    datasheet_test!(k_v_ptat, 22);
-    // Again, unscaled value
-    datasheet_test!(k_t_ptat, 338);
-    datasheet_test!(v_ptat_25, 12273);
-    datasheet_test!(alpha_ptat, 9);
-    datasheet_test!(gain, 6383);
+    datasheet_test!(k_v_ptat, 0.0053710938);
+    datasheet_test!(k_t_ptat, 42.25);
+    datasheet_test!(v_ptat_25, 12273f32);
+    datasheet_test!(alpha_ptat, 9f32);
+    datasheet_test!(gain, 6383f32);
 
     #[test]
     fn pixel_offset() {

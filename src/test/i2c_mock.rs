@@ -6,14 +6,21 @@ use core::ops::RangeInclusive;
 use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
 
-use super::eeprom_data::{mlx90640_eeprom_data, EEPROM_LENGTH};
-use crate::{mlx90640, Address};
+use super::eeprom_data::{mlx90640_eeprom_data, mlx90641_eeprom_data, EEPROM_LENGTH};
+use crate::{mlx90640, mlx90641, Address};
 
 /// The number of bytes the MLX90640 has of RAM.
 ///
-/// The MLX90640 has its RAM from 0x0400 through 0x05BF, representing 768 pixels along with 64
+/// The MLX90640 has its RAM from 0x0400 through 0x07FF, representing 768 pixels along with 64
 /// other addresses (half of which are reserved). Each address corresponds to 16 bits of data.
 pub(crate) const MLX90640_RAM_LENGTH: usize = (0x0800 - 0x0400) * 2;
+
+/// The number of bytes the MLX90641 has of RAM.
+///
+/// The MLX90641 has its RAM from 0x0400 through 0x05BF, representing 192 pixels duplicated across
+/// two subpages along with 64 other addresses (half of which are reserved). Each address
+/// corresponds to 16 bits of data.
+pub(crate) const MLX90641_RAM_LENGTH: usize = (0x05C0 - 0x0400) * 2;
 
 const STATUS_REGISTER_ADDRESS: u16 = 0x8000;
 
@@ -320,6 +327,48 @@ pub(crate) fn mock_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
         status_register: [0x00, 0x05],
         // Default values for these taken from the datasheet
         control_register: [0x19, 0x01],
+        i2c_config_register: [0x00, 0x00],
+    }
+}
+
+pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX90641_RAM_LENGTH> {
+    let eeprom_data = mlx90641_eeprom_data();
+    // For the RAM, use the example data from the datasheet.
+    let mut ram_data = [0u8; MLX90641_RAM_LENGTH];
+    ram_data[..(mlx90641::NUM_PIXELS * 2)]
+        .iter_mut()
+        .zip(b"\x03\xcc".iter().copied().cycle())
+        .for_each(|(ram_byte, pixel_byte)| *ram_byte = pixel_byte);
+    // Copy in the non-pixel values manually, as the other values are reserved
+    let t_a_vbe = ((mlx90641::RamAddress::AmbientTemperatureVoltageBe - mlx90641::RamAddress::Base)
+        * 2) as usize;
+    let cp0 =
+        ((mlx90641::RamAddress::CompensationPixelZero - mlx90641::RamAddress::Base) * 2) as usize;
+    let gain = ((mlx90641::RamAddress::Gain - mlx90641::RamAddress::Base) * 2) as usize;
+    let t_a_ptat = ((mlx90641::RamAddress::AmbientTemperatureVoltage - mlx90641::RamAddress::Base)
+        * 2) as usize;
+    let cp1 =
+        ((mlx90641::RamAddress::CompensationPixelOne - mlx90641::RamAddress::Base) * 2) as usize;
+    let v_dd_pix =
+        ((mlx90641::RamAddress::PixelSupplyVoltage - mlx90641::RamAddress::Base) * 2) as usize;
+    ram_data[t_a_vbe..(t_a_vbe + 2)].copy_from_slice(b"\x4c\x54");
+    ram_data[cp0..(cp0 + 2)].copy_from_slice(b"\xff\x97");
+    ram_data[gain..(gain + 2)].copy_from_slice(b"\x26\x06");
+    ram_data[t_a_ptat..(t_a_ptat + 2)].copy_from_slice(b"\x06\xd8");
+    // The worked example only gives one compensation pixel value, so we're using it for both.
+    ram_data[cp1..(cp1 + 2)].copy_from_slice(b"\xff\x97");
+    ram_data[v_dd_pix..(v_dd_pix + 2)].copy_from_slice(b"\xcb\x8a");
+    MockCameraBus {
+        i2c_address,
+        rom_range: 0x0000..=0x03FF,
+        ram_range: (mlx90641::RamAddress::Base.into())..=(mlx90641::RamAddress::End.into()),
+        eeprom_range: 0x2400..=0x273F,
+        register_range: 0x8000..=0x8016,
+        eeprom_data,
+        ram_data,
+        // The worked example uses subpage 0, so mark that as the current subpage with new data.
+        status_register: [0x00, 0x04],
+        control_register: [0x09, 0x01],
         i2c_config_register: [0x00, 0x00],
     }
 }
