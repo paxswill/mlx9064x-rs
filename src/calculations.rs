@@ -630,10 +630,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use float_cmp::{approx_eq, F32Margin};
+    use float_cmp::approx_eq;
 
-    use crate::test::mlx90640_eeprom_data;
-    use crate::{mlx90640, CalibrationData, Subpage};
+    use crate::test::{mlx90640_eeprom_data, mlx90641_eeprom_data};
+    use crate::{mlx90640, mlx90641, CalibrationData, Subpage};
 
     fn mlx90640_calibration() -> mlx90640::Mlx90640Calibration {
         let eeprom_data = mlx90640_eeprom_data();
@@ -641,51 +641,82 @@ mod test {
             .expect("Mlx90640Calibration should be able to be created from the example data")
     }
 
+    fn mlx90641_calibration() -> mlx90641::Mlx90641Calibration {
+        let eeprom_data = mlx90641_eeprom_data();
+        mlx90641::Mlx90641Calibration::from_data(&eeprom_data)
+            .expect("Mlx90641Calibration should be able to be created from the example data")
+    }
+
     // The super bare, single function tests with magic number are using values from the worked
-    // example in the MLX90640 datasheet.
+    // example in the MLX90640 or MLX90641 datasheets.
 
     #[test]
     fn delta_v() {
-        let clb = mlx90640_calibration();
-        assert_eq!(super::delta_v(&clb, -13115), 0.018623737)
+        let clb_640 = mlx90640_calibration();
+        let clb_641 = mlx90641_calibration();
+        // Input argument is v_dd_pixel
+        assert_eq!(super::delta_v(&clb_640, -13115), 0.018623737);
+        // DIfference from datasheet: extra precision added (03)
+        assert_eq!(super::delta_v(&clb_641, -13430), -0.044005103);
     }
 
     #[test]
     fn v_dd() {
-        let clb = mlx90640_calibration();
+        let clb_640 = mlx90640_calibration();
+        let clb_641 = mlx90641_calibration();
         let resolution_correction = 0.5;
-        // Datasheet has ≈3.319
+        // MLX90640 datasheet has ≈3.319
         approx_eq!(
             f32,
-            super::v_dd(&clb, resolution_correction, 0.018623737),
+            super::v_dd(&clb_640, resolution_correction, 0.018623737),
             3.3186,
-            F32Margin::default()
+            epsilon = 0.0001
+        );
+        // MLX90641 datasheet has ≈ 3.25599
+        approx_eq!(
+            f32,
+            super::v_dd(&clb_641, resolution_correction, -0.0440051),
+            3.25599,
+            epsilon = 0.0001
         );
     }
 
     #[test]
     fn v_ptat_art() {
-        let clb = mlx90640_calibration();
-        assert_eq!(super::v_ptat_art(&clb, 1711, 19442), 12873.57952);
+        let clb_640 = mlx90640_calibration();
+        let clb_641 = mlx90641_calibration();
+        // Inputs are t_a_ptat (aka v_ptat) and t_a_v_be
+        assert_eq!(super::v_ptat_art(&clb_640, 1711, 19442), 12873.57952);
+        // difference from datasheet: precision added (2)
+        assert_eq!(super::v_ptat_art(&clb_641, 1752, 19540), 13007.712);
     }
 
     #[test]
     fn t_a() {
-        let clb = mlx90640_calibration();
-        let delta_v = super::delta_v(&clb, -13115);
-        let v_ptat_art = super::v_ptat_art(&clb, 1711, 19442);
+        let clb_640 = mlx90640_calibration();
+        let clb_641 = mlx90641_calibration();
+        let delta_v_640 = super::delta_v(&clb_640, -13115);
+        let delta_v_641 = super::delta_v(&clb_641, -13430);
+        let v_ptat_art_640 = super::v_ptat_art(&clb_640, 1711, 19442);
+        let v_ptat_art_641 = super::v_ptat_art(&clb_641, 1752, 19540);
         // The datasheet is a bit more precise than I can get with f32, so approx_eq here
         approx_eq!(
             f32,
-            super::ambient_temperature(&clb, v_ptat_art, delta_v),
+            super::ambient_temperature(&clb_640, v_ptat_art_640, delta_v_640),
             39.18440152,
+            epsilon = 0.000002
+        );
+        approx_eq!(
+            f32,
+            super::ambient_temperature(&clb_641, v_ptat_art_641, delta_v_641),
+            42.022,
             epsilon = 0.000002
         );
     }
 
     #[test]
     // also called "pixel offset" in a few places
-    fn v_ir() {
+    fn v_ir_640() {
         let clb = mlx90640_calibration();
         // The worked example uses pixel(12, 16) (and we use 0-indexing, so subtract one) and
         // subpage 1
@@ -711,7 +742,34 @@ mod test {
     }
 
     #[test]
-    fn pixel_temperature() {
+    // also called "pixel offset" in a few places
+    fn v_ir_641() {
+        let clb = mlx90641_calibration();
+        // The worked example uses pixel(6, 9) (and we use 0-indexing, so subtract one) and
+        // subpage 0
+        let pixel_index = 5 * mlx90641::WIDTH + 8;
+        let offset = clb
+            .offset_reference_pixels(Subpage::Zero)
+            .nth(pixel_index)
+            .unwrap();
+        let k_v = clb.k_v_pixels(Subpage::Zero).nth(pixel_index).unwrap();
+        let k_ta = clb.k_ta_pixels(Subpage::Zero).nth(pixel_index).unwrap();
+        // Taken from the worked example
+        let common = super::CommonIrData {
+            gain: 1.02445038,
+            v_dd: 3.25599,
+            emissivity: 0.949218,
+            t_a: 42.022,
+        };
+        let raw_pixel: i16 = 972;
+        let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
+        // I'm getting 700.89, which is close enough considering how many places to lose precision
+        // there are in this step.
+        approx_eq!(f32, v_ir, 1785f32, epsilon = 0.01);
+    }
+
+    #[test]
+    fn pixel_temperature_640() {
         let clb = mlx90640_calibration();
         let basic_index = clb.basic_range();
         let k_s_to = clb.k_s_to()[basic_index];
@@ -723,5 +781,19 @@ mod test {
         let t_ar = 9516495632.56;
         let t_o = super::per_pixel_temperature(v_ir, alpha, t_ar, k_s_to);
         assert_eq!(t_o, 80.36331);
+    }
+
+    #[test]
+    fn pixel_temperature_641() {
+        let clb = mlx90641_calibration();
+        let basic_index = clb.basic_range();
+        let k_s_to = clb.k_s_to()[basic_index];
+        let alpha = 3.32641806639731E-7;
+        // Pile of values from previous steps.
+        let v_ir = 1785f32;
+        let t_ar = 9899175739.92;
+        let t_o = super::per_pixel_temperature(v_ir, alpha, t_ar, k_s_to);
+        // Extended precision from earlier in the datasheet calculations
+        approx_eq!(f32, t_o, 80.129812, epsilon = 0.0001);
     }
 }
