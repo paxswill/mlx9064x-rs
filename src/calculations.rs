@@ -632,17 +632,17 @@ where
 mod test {
     use float_cmp::approx_eq;
 
-    use crate::test::{mlx90640_eeprom_data, mlx90641_eeprom_data};
+    use crate::test::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom};
     use crate::{mlx90640, mlx90641, CalibrationData, Subpage};
 
     fn mlx90640_calibration() -> mlx90640::Mlx90640Calibration {
-        let eeprom_data = mlx90640_eeprom_data();
+        let eeprom_data = mlx90640_datasheet_eeprom();
         mlx90640::Mlx90640Calibration::from_data(&eeprom_data)
             .expect("Mlx90640Calibration should be able to be created from the example data")
     }
 
     fn mlx90641_calibration() -> mlx90641::Mlx90641Calibration {
-        let eeprom_data = mlx90641_eeprom_data();
+        let eeprom_data = mlx90641_datasheet_eeprom();
         mlx90641::Mlx90641Calibration::from_data(&eeprom_data)
             .expect("Mlx90641Calibration should be able to be created from the example data")
     }

@@ -23,7 +23,7 @@ const MLX90640_EEPROM_HEADER: &'static [u8] = b"\
     \x23\x63\xe4\x46\xfb\xb5\x04\x4b\xf0\x20\x97\x97\x97\x97\x28\x89";
 
 /// Create a buffer with the example MLX909640 EEPROM data.
-pub(crate) fn mlx90640_eeprom_data() -> [u8; EEPROM_LENGTH] {
+pub(crate) fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     // Create the EEPROM data by starting with the header and then filling in the rest with the
     // pixel used in the worked example from the datasheet.
     let pixel_data = b"\x08\xa0";
@@ -49,7 +49,7 @@ const MLX90641_EEPROM_HEADER: &'static [u8] = b"\
     \xa0\x09\xbb\x53\xf1\x94\xfc\x00\x78\x14\xed\x22\xed\x22\xed\x22\
     \xed\x22\xed\x22\x80\xc8\xed\x22\x41\x90\xed\x22\xda\x58\xed\x22";
 
-pub(crate) fn mlx90641_eeprom_data() -> [u8; EEPROM_LENGTH] {
+pub(crate) fn mlx90641_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     let offset_0 = b"\xf8\x49";
     let k_ta_with_k_v = b"\xb8\xc0";
     let sensitivity = b"\xff\xff";
@@ -84,11 +84,11 @@ pub(crate) fn mlx90641_eeprom_data() -> [u8; EEPROM_LENGTH] {
 mod test {
     #[test]
     fn smoke_mlx90640_eeprom() {
-        super::mlx90640_eeprom_data();
+        super::mlx90640_datasheet_eeprom();
     }
 
     #[test]
     fn smoke_mlx90641_eeprom() {
-        super::mlx90641_eeprom_data();
+        super::mlx90641_datasheet_eeprom();
     }
 }

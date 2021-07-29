@@ -504,15 +504,14 @@ pub(crate) mod test {
     use arrayvec::ArrayVec;
 
     use crate::common::CalibrationData;
-    use crate::datasheet_test;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
-    use crate::test::mlx90640_eeprom_data;
+    use crate::test::mlx90640_datasheet_eeprom;
 
     use super::Mlx90640Calibration;
 
-    pub(crate) fn eeprom() -> Mlx90640Calibration {
-        let mut eeprom_bytes = mlx90640_eeprom_data();
+    fn datasheet_eeprom() -> Mlx90640Calibration {
+        let mut eeprom_bytes = mlx90640_datasheet_eeprom();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
@@ -593,23 +592,58 @@ pub(crate) mod test {
     /// Check that it can even create itself from a buffer.
     #[test]
     fn smoke() {
-        eeprom();
+        datasheet_eeprom();
     }
 
     // Ordering these tests in the same order as the data sheet's worked example.
-    datasheet_test!(resolution, 2);
-    datasheet_test!(k_v_dd, -3168);
-    datasheet_test!(v_dd_25, -13056);
-    datasheet_test!(v_dd_0, 3.3);
-    datasheet_test!(k_v_ptat, 0.0053710938);
-    datasheet_test!(k_t_ptat, 42.25);
-    datasheet_test!(v_ptat_25, 12273f32);
-    datasheet_test!(alpha_ptat, 9f32);
-    datasheet_test!(gain, 6383f32);
+    #[test]
+    fn resolution() {
+        assert_eq!(datasheet_eeprom().resolution(), 2);
+    }
+
+    #[test]
+    fn k_v_dd() {
+        assert_eq!(datasheet_eeprom().k_v_dd(), -3168);
+    }
+
+    #[test]
+    fn v_dd_25() {
+        assert_eq!(datasheet_eeprom().v_dd_25(), -13056);
+    }
+
+    #[test]
+    fn v_dd_0() {
+        assert_eq!(datasheet_eeprom().v_dd_0(), 3.3);
+    }
+
+    #[test]
+    fn k_v_ptat() {
+        assert_eq!(datasheet_eeprom().k_v_ptat(), 0.0053710938);
+    }
+
+    #[test]
+    fn k_t_ptat() {
+        assert_eq!(datasheet_eeprom().k_t_ptat(), 42.25);
+    }
+
+    #[test]
+    fn v_ptat_25() {
+        assert_eq!(datasheet_eeprom().v_ptat_25(), 12273f32);
+    }
+
+    #[test]
+    fn alpha_ptat() {
+        assert_eq!(datasheet_eeprom().alpha_ptat(), 9f32);
+    }
+    #[test]
+
+    fn gain() {
+        assert_eq!(datasheet_eeprom().gain(), 6383f32);
+    }
 
     #[test]
     fn pixel_offset() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let offsets0: ArrayVec<i16, NUM_PIXELS> =
             e.offset_reference_pixels(Subpage::One).copied().collect();
         let offsets1: ArrayVec<i16, NUM_PIXELS> =
@@ -623,7 +657,7 @@ pub(crate) mod test {
 
     #[test]
     fn pixel_k_ta() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let k_ta0: ArrayVec<f32, NUM_PIXELS> = e.k_ta_pixels(Subpage::One).copied().collect();
         let k_ta1: ArrayVec<f32, NUM_PIXELS> = e.k_ta_pixels(Subpage::Zero).copied().collect();
         // MLX90640 doesn't vary k_ta on subpage
@@ -635,7 +669,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_v_pixels() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // Again, no difference between subpages here
         assert_eq!(e.k_v_pixels(Subpage::Zero), e.k_v_pixels(Subpage::One));
         let index = 11 * WIDTH + 15;
@@ -644,19 +678,19 @@ pub(crate) mod test {
 
     #[test]
     fn emissivity() {
-        assert_eq!(eeprom().emissivity(), None);
+        assert_eq!(datasheet_eeprom().emissivity(), None);
     }
 
     #[test]
     fn offset_reference_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         assert_eq!(e.offset_reference_cp(Subpage::Zero), -75);
         assert_eq!(e.offset_reference_cp(Subpage::One), -77);
     }
 
     #[test]
     fn k_ta_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // k_ta doesn't vary on subpage
         assert_eq!(e.k_ta_cp(Subpage::Zero), e.k_ta_cp(Subpage::One));
         assert_eq!(e.k_ta_cp(Subpage::Zero), 0.00457763671875);
@@ -664,7 +698,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_v_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // Also no subpage difference here
         assert_eq!(e.k_v_cp(Subpage::Zero), e.k_v_cp(Subpage::One));
         assert_eq!(e.k_v_cp(Subpage::Zero), 0.5);
@@ -672,21 +706,27 @@ pub(crate) mod test {
 
     #[test]
     fn temperature_gradient_coefficient() {
-        assert_eq!(eeprom().temperature_gradient_coefficient(), Some(1f32));
+        assert_eq!(
+            datasheet_eeprom().temperature_gradient_coefficient(),
+            Some(1f32)
+        );
     }
 
     #[test]
     fn alpha_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         assert_eq!(e.alpha_cp(Subpage::Zero), 4.07453626394272E-9);
         assert_eq!(e.alpha_cp(Subpage::One), 3.851710062200835E-9);
     }
 
-    datasheet_test!(k_s_ta, -0.001953125);
+    #[test]
+    fn k_s_ta() {
+        assert_eq!(datasheet_eeprom().k_s_ta(), -0.001953125);
+    }
 
     #[test]
     fn pixel_alpha() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let alpha0: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::One).copied().collect();
         let alpha1: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::Zero).copied().collect();
         // MLX90640 doesn't vary alpha on subpage
@@ -698,13 +738,13 @@ pub(crate) mod test {
 
     #[test]
     fn k_s_to() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         assert_eq!(e.k_s_to()[1], -0.00080108642578125);
     }
 
     #[test]
     fn corner_temperatures() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let ct = e.corner_temperatures();
         // The first two values are hard-coded, but testing for completeness.
         assert_eq!(ct[0], -40);

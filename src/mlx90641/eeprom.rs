@@ -437,19 +437,18 @@ pub(crate) mod test {
     use bytes::Buf;
 
     use crate::common::CalibrationData;
-    use crate::datasheet_test;
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
     use crate::mlx90641::{NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
-    use crate::test::mlx90641_eeprom_data;
+    use crate::test::mlx90641_datasheet_eeprom;
 
     use super::Mlx90641Calibration;
 
     // The example is testing pixel (6, 9), so (5, 8) zero-indexed
     const TEST_PIXEL_INDEX: usize = 5 * WIDTH + 8;
 
-    pub(crate) fn eeprom() -> Mlx90641Calibration {
-        let mut eeprom_bytes = mlx90641_eeprom_data();
+    pub(crate) fn datasheet_eeprom() -> Mlx90641Calibration {
+        let mut eeprom_bytes = mlx90641_datasheet_eeprom();
         Mlx90641Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
@@ -505,24 +504,59 @@ pub(crate) mod test {
     /// Check that it can even create itself from a buffer.
     #[test]
     fn smoke() {
-        eeprom();
+        datasheet_eeprom();
     }
 
     // Ordering these tests in the same order as the data sheet's worked example.
-    datasheet_test!(resolution, 2);
-    datasheet_test!(k_v_dd, -3136);
-    datasheet_test!(v_dd_25, -13568);
-    datasheet_test!(v_dd_0, 3.3);
+    #[test]
+    fn resolution() {
+        assert_eq!(datasheet_eeprom().resolution(), 2);
+    }
+
+    #[test]
+    fn k_v_dd() {
+        assert_eq!(datasheet_eeprom().k_v_dd(), -3136);
+    }
+
+    #[test]
+    fn v_dd_25() {
+        assert_eq!(datasheet_eeprom().v_dd_25(), -13568);
+    }
+
+    #[test]
+    fn v_dd_0() {
+        assert_eq!(datasheet_eeprom().v_dd_0(), 3.3);
+    }
+
     // Slight variance from the datasheet's example: I added one more digit (the last 4)
-    datasheet_test!(k_v_ptat, 0.0056152344);
-    datasheet_test!(k_t_ptat, 42.75);
-    datasheet_test!(v_ptat_25, 12280f32);
-    datasheet_test!(alpha_ptat, 9f32);
-    datasheet_test!(gain, 9972f32);
+    #[test]
+    fn k_v_ptat() {
+        assert_eq!(datasheet_eeprom().k_v_ptat(), 0.0056152344);
+    }
+
+    #[test]
+    fn k_t_ptat() {
+        assert_eq!(datasheet_eeprom().k_t_ptat(), 42.75);
+    }
+
+    #[test]
+    fn v_ptat_25() {
+        assert_eq!(datasheet_eeprom().v_ptat_25(), 12280f32);
+    }
+
+    #[test]
+    fn alpha_ptat() {
+        assert_eq!(datasheet_eeprom().alpha_ptat(), 9f32);
+    }
+
+    #[test]
+    fn gain() {
+        assert_eq!(datasheet_eeprom().gain(), 9972f32);
+    }
 
     #[test]
     fn pixel_offset() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let offsets0: ArrayVec<i16, NUM_PIXELS> =
             e.offset_reference_pixels(Subpage::Zero).copied().collect();
         let offsets1: ArrayVec<i16, NUM_PIXELS> =
@@ -537,7 +571,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_ta_pixels() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let k_ta_pixels0: ArrayVec<f32, NUM_PIXELS> =
             e.k_ta_pixels(Subpage::Zero).copied().collect();
         let k_ta_pixels1: ArrayVec<f32, NUM_PIXELS> =
@@ -551,7 +585,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_v_pixels() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let k_v_pixels0: ArrayVec<f32, NUM_PIXELS> = e.k_v_pixels(Subpage::Zero).copied().collect();
         let k_v_pixels1: ArrayVec<f32, NUM_PIXELS> = e.k_v_pixels(Subpage::One).copied().collect();
         // Subpage is ignored for K_V
@@ -562,12 +596,12 @@ pub(crate) mod test {
     #[test]
     fn emissivity() {
         // Another variance from the datasheet: added two more digits (75)
-        assert_eq!(eeprom().emissivity(), Some(0.94921875));
+        assert_eq!(datasheet_eeprom().emissivity(), Some(0.94921875));
     }
 
     #[test]
     fn offset_reference_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // No difference between subpages
         assert_eq!(
             e.offset_reference_cp(Subpage::Zero),
@@ -578,7 +612,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_ta_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // k_ta doesn't vary on subpage
         assert_eq!(e.k_ta_cp(Subpage::Zero), e.k_ta_cp(Subpage::One));
         assert_eq!(e.k_ta_cp(Subpage::Zero), 0.0023193359);
@@ -586,7 +620,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_v_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // Also no subpage difference here
         assert_eq!(e.k_v_cp(Subpage::Zero), e.k_v_cp(Subpage::One));
         assert_eq!(e.k_v_cp(Subpage::Zero), 0.3125);
@@ -594,23 +628,29 @@ pub(crate) mod test {
 
     #[test]
     fn temperature_gradient_coefficient() {
-        assert_eq!(eeprom().temperature_gradient_coefficient(), Some(0f32));
+        assert_eq!(
+            datasheet_eeprom().temperature_gradient_coefficient(),
+            Some(0f32)
+        );
     }
 
     #[test]
     fn alpha_cp() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // MLX90641 doesn't vary on subpage
         let expected = 3.01952240988612E-9;
         assert_eq!(e.alpha_cp(Subpage::Zero), e.alpha_cp(Subpage::One));
         assert_eq!(e.alpha_cp(Subpage::One), expected);
     }
 
-    datasheet_test!(k_s_ta, -0.002197265625);
+    #[test]
+    fn k_s_ta() {
+        assert_eq!(datasheet_eeprom().k_s_ta(), -0.002197265625);
+    }
 
     #[test]
     fn pixel_alpha() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let alpha0: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::One).copied().collect();
         let alpha1: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::Zero).copied().collect();
         // MLX90641 doesn't vary alpha on subpage
@@ -621,7 +661,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_s_to() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         // The example is a bit lazy here
         // More adding precision here: the last digit (used to be 7) was replaced by "695"
         let expected: [f32; NUM_CORNER_TEMPERATURES] = [-0.00069999695; NUM_CORNER_TEMPERATURES];
@@ -632,7 +672,7 @@ pub(crate) mod test {
 
     #[test]
     fn corner_temperatures() {
-        let e = eeprom();
+        let e = datasheet_eeprom();
         let ct = e.corner_temperatures();
         assert_eq!(ct.len(), super::NUM_CORNER_TEMPERATURES);
         // The first five values are hard-coded, but testing for completeness.

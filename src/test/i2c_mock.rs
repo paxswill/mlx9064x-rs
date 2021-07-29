@@ -6,7 +6,7 @@ use core::ops::RangeInclusive;
 use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
 
-use super::eeprom_data::{mlx90640_eeprom_data, mlx90641_eeprom_data, EEPROM_LENGTH};
+use super::eeprom_data::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom, EEPROM_LENGTH};
 use crate::{mlx90640, mlx90641, Address};
 
 /// The number of bytes the MLX90640 has of RAM.
@@ -290,7 +290,7 @@ fn check_new_against_mask(existing: u16, mask: u16, new: u16) -> bool {
 }
 
 pub(crate) fn mock_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
-    let eeprom_data = mlx90640_eeprom_data();
+    let eeprom_data = mlx90640_datasheet_eeprom();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90640_RAM_LENGTH];
     ram_data[..(mlx90640::NUM_PIXELS * 2)]
@@ -332,7 +332,7 @@ pub(crate) fn mock_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
 }
 
 pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX90641_RAM_LENGTH> {
-    let eeprom_data = mlx90641_eeprom_data();
+    let eeprom_data = mlx90641_datasheet_eeprom();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90641_RAM_LENGTH];
     ram_data[..(mlx90641::NUM_PIXELS * 2)]

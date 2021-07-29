@@ -164,12 +164,12 @@ mod test {
     use core::convert::TryInto;
 
     use crate::error::LibraryError;
-    use crate::test::{mlx90641_eeprom_data, EEPROM_LENGTH};
+    use crate::test::{mlx90641_datasheet_eeprom, EEPROM_LENGTH};
 
     // Check against all of the example values
     fn eeprom_values() -> [u16; EEPROM_LENGTH] {
         let mut dest = [0u16; EEPROM_LENGTH];
-        let raw = mlx90641_eeprom_data();
+        let raw = mlx90641_datasheet_eeprom();
         raw.chunks_exact(2)
             .map(|chunk| {
                 let bytes: [u8; 2] = chunk.try_into().unwrap();

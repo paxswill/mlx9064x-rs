@@ -74,17 +74,6 @@ macro_rules! expose_member {
     };
 }
 
-#[cfg(test)]
-#[macro_export]
-macro_rules! datasheet_test {
-    ($name:ident, $value:literal) => {
-        #[test]
-        fn $name() {
-            assert_eq!(eeprom().$name(), $value);
-        }
-    };
-}
-
 /// Check if the n-th bit is set.
 ///
 /// Bits are 0-indexed, from the LSB.
