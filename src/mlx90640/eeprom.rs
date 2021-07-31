@@ -284,7 +284,7 @@ impl Mlx90640Calibration {
             .zip(alpha_pixels.iter_mut())
             .zip(lazy_k_ta_pixels)
             .zip(k_ta_pixels.iter_mut())
-            .for_each(|(((offset, alpha), k_ta_numerator), k_ta)| {
+            .for_each(|(((offset, alpha), k_ta_rc), k_ta)| {
                 // TODO: handle failed pixels (where the pixel data is 0x0000)
                 // TODO: outlier/deviant pixels
                 let high = buf.get_u8();
@@ -297,11 +297,10 @@ impl Mlx90640Calibration {
                 let alpha_remainder = (i16::from_be_bytes([high & 0x03, low]) << 6) >> 10;
                 *alpha += f32::from(alpha_remainder << alpha_correction_remainder_scale);
                 *alpha /= alpha_scale;
-                // To try to keep floating point errors down ad long as possible, do all the
+                // To try to keep floating point errors down as long as possible, do all the
                 // operations for the numerator as ints, then convert to floats for the final division.
-                let k_ta_remainder = i16::from(i8::from_ne_bytes([low & 0x0E]) >> 1);
-                let k_ta_numerator =
-                    f32::from(k_ta_numerator + (k_ta_remainder << k_ta_scale2_exp));
+                let k_ta_remainder = i16::from(i8::from_ne_bytes([low & 0x0E]) << 4 >> 5);
+                let k_ta_numerator = f32::from(k_ta_rc + (k_ta_remainder << k_ta_scale2_exp));
                 *k_ta = k_ta_numerator / k_ta_scale1;
             });
         Ok(Self {
