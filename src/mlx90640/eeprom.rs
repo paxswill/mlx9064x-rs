@@ -501,17 +501,24 @@ pub(crate) mod test {
     use std::{print, println};
 
     use arrayvec::ArrayVec;
+    use float_cmp::{approx_eq, ApproxEq};
 
     use crate::common::CalibrationData;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
-    use crate::test::mlx90640_datasheet_eeprom;
+    use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
     use super::Mlx90640Calibration;
 
     fn datasheet_eeprom() -> Mlx90640Calibration {
         let mut eeprom_bytes = mlx90640_datasheet_eeprom();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
+    }
+
+    fn example_eeprom() -> Mlx90640Calibration {
+        let mut example_bytes = &mlx90640_example_data::EEPROM_DATA[..];
+        Mlx90640Calibration::from_data(&mut example_bytes)
+            .expect("The example data should be parseable")
     }
 
     #[test]
@@ -592,115 +599,290 @@ pub(crate) mod test {
     #[test]
     fn smoke() {
         datasheet_eeprom();
+        example_eeprom();
     }
 
     // Ordering these tests in the same order as the data sheet's worked example.
     #[test]
     fn resolution() {
         assert_eq!(datasheet_eeprom().resolution(), 2);
+        assert_eq!(
+            example_eeprom().resolution(),
+            mlx90640_example_data::RESOLUTION_EE
+        );
     }
 
     #[test]
     fn k_v_dd() {
         assert_eq!(datasheet_eeprom().k_v_dd(), -3168);
+        assert_eq!(example_eeprom().k_v_dd(), mlx90640_example_data::K_V_DD);
     }
 
     #[test]
     fn v_dd_25() {
         assert_eq!(datasheet_eeprom().v_dd_25(), -13056);
+        assert_eq!(example_eeprom().v_dd_25(), mlx90640_example_data::V_DD_25);
     }
 
     #[test]
     fn v_dd_0() {
         assert_eq!(datasheet_eeprom().v_dd_0(), 3.3);
+        assert_eq!(example_eeprom().v_dd_0(), 3.3);
     }
 
     #[test]
     fn k_v_ptat() {
-        assert_eq!(datasheet_eeprom().k_v_ptat(), 0.0053710938);
+        approx_eq!(
+            f32,
+            datasheet_eeprom().k_v_ptat(),
+            0.0053710938,
+            epsilon = 0.000001
+        );
+        approx_eq!(
+            f32,
+            example_eeprom().k_v_ptat(),
+            mlx90640_example_data::K_V_PTAT,
+            epsilon = 0.000001
+        );
     }
 
     #[test]
     fn k_t_ptat() {
         assert_eq!(datasheet_eeprom().k_t_ptat(), 42.25);
+        assert_eq!(example_eeprom().k_t_ptat(), mlx90640_example_data::K_T_PTAT);
     }
 
     #[test]
     fn v_ptat_25() {
         assert_eq!(datasheet_eeprom().v_ptat_25(), 12273f32);
+        assert_eq!(
+            example_eeprom().v_ptat_25(),
+            mlx90640_example_data::V_PTAT_25
+        );
     }
 
     #[test]
     fn alpha_ptat() {
         assert_eq!(datasheet_eeprom().alpha_ptat(), 9f32);
+        assert_eq!(
+            example_eeprom().alpha_ptat(),
+            mlx90640_example_data::ALPHA_PTAT
+        );
     }
     #[test]
 
     fn gain() {
         assert_eq!(datasheet_eeprom().gain(), 6383f32);
+        assert_eq!(example_eeprom().gain(), mlx90640_example_data::GAIN_EE);
+    }
+
+    fn test_pixels_common<T: PartialEq + core::fmt::Debug + core::fmt::Display + Copy>(
+        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_expected: T,
+        example_expected: &[T; NUM_PIXELS],
+        subpage: Option<Subpage>,
+        check: &dyn Fn(T, T) -> bool,
+    ) {
+        if subpage.is_none() {
+            assert_eq!(datasheet_data[0], datasheet_data[1]);
+            assert_eq!(example_data[0], example_data[1]);
+        }
+        // Test the single pixel from the datasheet
+        let datasheet_index = 11 * WIDTH + 15;
+        let subpage_index: usize = subpage.unwrap_or(Subpage::Zero).into();
+        let pixel = datasheet_data[subpage_index][datasheet_index];
+        assert!(check(pixel, datasheet_expected));
+        // Check all the pixels from the full example
+        let offset_pairs = example_data[subpage_index]
+            .iter()
+            .zip(example_expected.iter());
+        for (index, (actual, expected)) in offset_pairs.enumerate() {
+            assert!(
+                check(*actual, *expected),
+                "[pixel {}]: Expected {}, Actual: {}",
+                index,
+                expected,
+                actual
+            );
+        }
+    }
+
+    fn test_pixels_approx<T>(
+        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_expected: T,
+        example_expected: &[T; NUM_PIXELS],
+        subpage: Option<Subpage>,
+    ) where
+        T: ApproxEq + PartialEq + core::fmt::Debug + core::fmt::Display + Copy,
+        <T as ApproxEq>::Margin: From<(f32, i32)>,
+    {
+        let check = |actual: T, expected: T| actual.approx_eq(expected, (0.0000001f32, 0));
+        test_pixels_common(
+            datasheet_data,
+            example_data,
+            datasheet_expected,
+            example_expected,
+            subpage,
+            &check,
+        );
+    }
+
+    fn test_pixels<T: PartialEq + core::fmt::Debug + core::fmt::Display + Copy>(
+        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_expected: T,
+        example_expected: &[T; NUM_PIXELS],
+        subpage: Option<Subpage>,
+    ) {
+        let check = |actual: T, expected: T| actual == expected;
+        test_pixels_common(
+            datasheet_data,
+            example_data,
+            datasheet_expected,
+            example_expected,
+            subpage,
+            &check,
+        );
     }
 
     #[test]
     fn pixel_offset() {
-        let e = datasheet_eeprom();
-        let offsets0: ArrayVec<i16, NUM_PIXELS> =
-            e.offset_reference_pixels(Subpage::One).copied().collect();
-        let offsets1: ArrayVec<i16, NUM_PIXELS> =
-            e.offset_reference_pixels(Subpage::Zero).copied().collect();
-        // MLX90640 doesn't vary offsets on subpage
-        assert_eq!(offsets0, offsets1);
-        let index = 11 * WIDTH + 15;
-        let pixel = offsets0[index];
-        assert_eq!(pixel, -75);
+        let datasheet = datasheet_eeprom();
+        let datasheet_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
+            datasheet
+                .offset_reference_pixels(Subpage::Zero)
+                .copied()
+                .collect(),
+            datasheet
+                .offset_reference_pixels(Subpage::One)
+                .copied()
+                .collect(),
+        ];
+        let example = example_eeprom();
+        let example_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
+            example
+                .offset_reference_pixels(Subpage::Zero)
+                .copied()
+                .collect(),
+            example
+                .offset_reference_pixels(Subpage::One)
+                .copied()
+                .collect(),
+        ];
+        test_pixels(
+            datasheet_offsets,
+            example_offsets,
+            -75,
+            &mlx90640_example_data::OFFSET_REFERENCE_PIXELS,
+            // MLX90640 doesn't vary offsets on subpage
+            None,
+        );
     }
 
     #[test]
     fn pixel_k_ta() {
-        let e = datasheet_eeprom();
-        let k_ta0: ArrayVec<f32, NUM_PIXELS> = e.k_ta_pixels(Subpage::One).copied().collect();
-        let k_ta1: ArrayVec<f32, NUM_PIXELS> = e.k_ta_pixels(Subpage::Zero).copied().collect();
-        // MLX90640 doesn't vary k_ta on subpage
-        assert_eq!(k_ta0, k_ta1);
-        let index = 11 * WIDTH + 15;
-        let pixel = k_ta0[index];
-        assert_eq!(pixel, 0.005126953125);
+        let datasheet = datasheet_eeprom();
+        let datasheet_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+            datasheet.k_ta_pixels(Subpage::Zero).copied().collect(),
+            datasheet.k_ta_pixels(Subpage::One).copied().collect(),
+        ];
+        let example = example_eeprom();
+        let example_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+            example.k_ta_pixels(Subpage::Zero).copied().collect(),
+            example.k_ta_pixels(Subpage::One).copied().collect(),
+        ];
+        test_pixels_approx(
+            datasheet_k_ta,
+            example_k_ta,
+            0.005126953125,
+            &mlx90640_example_data::K_TA_PIXELS,
+            // MLX90640 doesn't vary k_ta on subpage
+            None,
+        );
     }
 
     #[test]
     fn k_v_pixels() {
-        let e = datasheet_eeprom();
-        // Again, no difference between subpages here
-        assert_eq!(e.k_v_pixels(Subpage::Zero), e.k_v_pixels(Subpage::One));
-        let index = 11 * WIDTH + 15;
-        assert_eq!(e.k_v_pixels(Subpage::Zero).nth(index).unwrap(), &0.5);
+        let datasheet = datasheet_eeprom();
+        let datasheet_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+            datasheet.k_v_pixels(Subpage::Zero).copied().collect(),
+            datasheet.k_v_pixels(Subpage::One).copied().collect(),
+        ];
+        let example = example_eeprom();
+        let example_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+            example.k_v_pixels(Subpage::Zero).copied().collect(),
+            example.k_v_pixels(Subpage::One).copied().collect(),
+        ];
+        test_pixels_approx(
+            datasheet_k_v,
+            example_k_v,
+            0.5f32,
+            &mlx90640_example_data::K_V_PIXELS,
+            // MLX90640 doesn't vary k_v on subpage
+            None,
+        );
     }
 
     #[test]
     fn emissivity() {
         assert_eq!(datasheet_eeprom().emissivity(), None);
+        assert_eq!(example_eeprom().emissivity(), None);
     }
 
     #[test]
     fn offset_reference_cp() {
-        let e = datasheet_eeprom();
-        assert_eq!(e.offset_reference_cp(Subpage::Zero), -75);
-        assert_eq!(e.offset_reference_cp(Subpage::One), -77);
+        // datasheet
+        let datasheet = datasheet_eeprom();
+        assert_eq!(datasheet.offset_reference_cp(Subpage::Zero), -75);
+        assert_eq!(datasheet.offset_reference_cp(Subpage::One), -77);
+        // example
+        let example = example_eeprom();
+        assert_eq!(
+            example.offset_reference_cp(Subpage::Zero),
+            mlx90640_example_data::OFFSET_CP[0],
+        );
+        assert_eq!(
+            example.offset_reference_cp(Subpage::One),
+            mlx90640_example_data::OFFSET_CP[1],
+        );
     }
 
     #[test]
     fn k_ta_cp() {
-        let e = datasheet_eeprom();
-        // k_ta doesn't vary on subpage
-        assert_eq!(e.k_ta_cp(Subpage::Zero), e.k_ta_cp(Subpage::One));
-        assert_eq!(e.k_ta_cp(Subpage::Zero), 0.00457763671875);
+        // datasheet
+        let datasheet = datasheet_eeprom();
+        let expected = 0.00457763671875;
+        assert_eq!(datasheet.k_ta_cp(Subpage::Zero), expected);
+        assert_eq!(datasheet.k_ta_cp(Subpage::One), expected);
+        // example
+        let example = example_eeprom();
+        approx_eq!(
+            f32,
+            example.k_ta_cp(Subpage::Zero),
+            mlx90640_example_data::K_TA_CP,
+            epsilon = 0.000001
+        );
+        approx_eq!(
+            f32,
+            example.k_ta_cp(Subpage::One),
+            mlx90640_example_data::K_TA_CP,
+            epsilon = 0.000001
+        );
     }
 
     #[test]
     fn k_v_cp() {
-        let e = datasheet_eeprom();
-        // Also no subpage difference here
-        assert_eq!(e.k_v_cp(Subpage::Zero), e.k_v_cp(Subpage::One));
-        assert_eq!(e.k_v_cp(Subpage::Zero), 0.5);
+        // datasheet
+        let datasheet = datasheet_eeprom();
+        let expected = 0.5;
+        assert_eq!(datasheet.k_v_cp(Subpage::Zero), expected);
+        assert_eq!(datasheet.k_v_cp(Subpage::One), expected);
+        // example
+        let example = example_eeprom();
+        assert_eq!(example.k_v_cp(Subpage::Zero), mlx90640_example_data::K_V_CP);
+        assert_eq!(example.k_v_cp(Subpage::One), mlx90640_example_data::K_V_CP);
     }
 
     #[test]
@@ -709,36 +891,75 @@ pub(crate) mod test {
             datasheet_eeprom().temperature_gradient_coefficient(),
             Some(1f32)
         );
+        assert_eq!(
+            example_eeprom().temperature_gradient_coefficient(),
+            // 0 TGC means None
+            None,
+        );
     }
 
     #[test]
     fn alpha_cp() {
-        let e = datasheet_eeprom();
-        assert_eq!(e.alpha_cp(Subpage::Zero), 4.07453626394272E-9);
-        assert_eq!(e.alpha_cp(Subpage::One), 3.851710062200835E-9);
+        // datasheet
+        let datasheet = datasheet_eeprom();
+        assert_eq!(datasheet.alpha_cp(Subpage::Zero), 4.07453626394272E-9);
+        assert_eq!(datasheet.alpha_cp(Subpage::One), 3.851710062200835E-9);
+        // example
+        let example = example_eeprom();
+        assert_eq!(
+            example.alpha_cp(Subpage::Zero),
+            mlx90640_example_data::ALPHA_CP[0],
+        );
+        assert_eq!(
+            example.alpha_cp(Subpage::One),
+            mlx90640_example_data::ALPHA_CP[1],
+        );
     }
 
     #[test]
     fn k_s_ta() {
         assert_eq!(datasheet_eeprom().k_s_ta(), -0.001953125);
+        approx_eq!(
+            f32,
+            example_eeprom().k_s_ta(),
+            mlx90640_example_data::K_S_TA,
+            epsilon = 0.00000001
+        );
     }
 
     #[test]
     fn pixel_alpha() {
-        let e = datasheet_eeprom();
-        let alpha0: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::One).copied().collect();
-        let alpha1: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::Zero).copied().collect();
         // MLX90640 doesn't vary alpha on subpage
-        assert_eq!(alpha0, alpha1);
-        let index = 11 * WIDTH + 15;
-        let pixel = alpha0[index];
-        assert_eq!(pixel, 1.262233122690854E-7);
+        let datasheet = datasheet_eeprom();
+        let datasheet_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+            datasheet.alpha_pixels(Subpage::Zero).copied().collect(),
+            datasheet.alpha_pixels(Subpage::One).copied().collect(),
+        ];
+        let example = example_eeprom();
+        let example_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+            example.alpha_pixels(Subpage::Zero).copied().collect(),
+            example.alpha_pixels(Subpage::One).copied().collect(),
+        ];
+        test_pixels_approx(
+            datasheet_alpha,
+            example_alpha,
+            1.262233122690854E-7,
+            &mlx90640_example_data::ALPHA_PIXELS,
+            None,
+        );
     }
 
     #[test]
     fn k_s_to() {
-        let e = datasheet_eeprom();
-        assert_eq!(e.k_s_to()[1], -0.00080108642578125);
+        assert_eq!(datasheet_eeprom().k_s_to()[1], -0.00080108642578125);
+        let example = example_eeprom();
+        let example_pairs = example
+            .k_s_to()
+            .iter()
+            .zip(mlx90640_example_data::K_S_TO.iter());
+        for (actual, expected) in example_pairs {
+            approx_eq!(f32, *actual, *expected, epsilon = 0.0001);
+        }
     }
 
     #[test]
@@ -751,5 +972,11 @@ pub(crate) mod test {
         // These are loaded from EEPROM
         assert_eq!(ct[2], 160);
         assert_eq!(ct[3], 320);
+
+        // Full example test
+        assert_eq!(
+            example_eeprom().corner_temperatures(),
+            mlx90640_example_data::CORNER_TEMPERATURES
+        );
     }
 }
