@@ -49,7 +49,14 @@ macro_rules! set_register_field {
 /// The biggest impact to users of these modules is that one of the  `generate_image_*` functions
 /// will need to be called twice (once for each subpage) before a full image is available.
 #[derive(Clone, Debug)]
-pub struct CameraDriver<Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_BYTES: usize> {
+pub struct CameraDriver<
+    Cam,
+    Clb,
+    I2C,
+    const HEIGHT: usize,
+    const WIDTH: usize,
+    const NUM_BYTES: usize,
+> {
     /// The I²C bus this camera is accessible on.
     bus: I2C,
 
@@ -563,8 +570,8 @@ mod test {
 
     use float_cmp::approx_eq;
 
-    use crate::{mlx90640, mlx90641};
     use crate::test::*;
+    use crate::{mlx90640, mlx90641};
     use crate::{I2cRegister, Mlx90640Driver, Mlx90641Driver, StatusRegister};
 
     fn create_mlx90640() -> Mlx90640Driver<MockCameraBus<MLX90640_RAM_LENGTH>> {
@@ -647,5 +654,43 @@ mod test {
         // Test pixel is (6, 9)
         const PIXEL_INDEX: usize = 5 * mlx90641::WIDTH + 8;
         approx_eq!(f32, temperatures[PIXEL_INDEX], 80.129812, epsilon = 0.0001);
+    }
+
+    #[test]
+    fn mlx90640_example_integration() {
+        let i2c_address = 0x43;
+        let mut mocked = example_mlx90640_at_address(i2c_address);
+        mocked.set_data_available(false);
+        let mut cam = Mlx90640Driver::new(mocked.clone(), i2c_address).unwrap();
+        let mut temperatures = [f32::NAN; mlx90640::NUM_PIXELS];
+        // Make sure that nothing happens if the camera doesn't have data ready
+        let not_ready = cam.generate_image_if_ready(&mut temperatures);
+        assert!(!not_ready.unwrap());
+        for temperature in temperatures.iter() {
+            assert!(temperature.is_nan());
+        }
+        mocked.set_data_available(true);
+        let ready = cam.generate_image_if_ready(&mut temperatures);
+        assert!(ready.unwrap());
+        // Set the next frame of data
+        mocked.update_frame(
+            &mlx90640_example_data::FRAME_1_DATA[..],
+            &mlx90640_example_data::FRAME_1_STATUS_REGISTER[..],
+        );
+        mocked.set_data_available(true);
+        assert!(cam.generate_image_if_ready(&mut temperatures).unwrap());
+        // Check the results
+        let paired = temperatures
+            .iter()
+            .zip(mlx90640_example_data::TEMPERATURES.iter());
+        for (index, (actual, expected)) in paired.enumerate() {
+            assert!(
+                approx_eq!(f32, *actual, *expected, epsilon = 0.001),
+                "Pixel {}: Expected: {}, Actual: {}",
+                index,
+                *expected,
+                *actual
+            );
+        }
     }
 }
