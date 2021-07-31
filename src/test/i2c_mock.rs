@@ -7,6 +7,7 @@ use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
 
 use super::eeprom_data::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom, EEPROM_LENGTH};
+use super::mlx90640_example_data;
 use crate::{mlx90640, mlx90641, Address};
 
 /// The number of bytes the MLX90640 has of RAM.
@@ -91,6 +92,40 @@ pub(crate) struct MockCameraBus<const RAM_LENGTH: usize> {
     status_register: [u8; 2],
     control_register: [u8; 2],
     i2c_config_register: [u8; 2],
+}
+
+impl MockCameraBus<MLX90640_RAM_LENGTH> {
+    pub(crate) fn new_mlx90640(
+        i2c_address: u8,
+        eeprom: &[u8],
+        ram: &[u8],
+        control_register: &[u8],
+        status_register: &[u8],
+        i2c_register: &[u8],
+    ) -> Self {
+        let mut eeprom_data = [0u8; mlx90640_example_data::EEPROM_DATA.len()];
+        eeprom_data.copy_from_slice(eeprom);
+        let mut ram_data = [0u8; MLX90640_RAM_LENGTH];
+        ram_data.copy_from_slice(ram);
+        let mut control_register_owned = [0u8; 2];
+        control_register_owned.copy_from_slice(control_register);
+        let mut status_register_owned = [0u8; 2];
+        status_register_owned.copy_from_slice(status_register);
+        let mut i2c_register_owned = [0u8; 2];
+        i2c_register_owned.copy_from_slice(i2c_register);
+        MockCameraBus {
+            i2c_address: i2c_address,
+            rom_range: 0x0000..=0x03FF,
+            ram_range: (mlx90640::RamAddress::Base.into())..=(mlx90640::RamAddress::End.into()),
+            eeprom_range: 0x2400..=0x273F,
+            register_range: 0x8000..=0x8016,
+            eeprom_data,
+            ram_data,
+            status_register: status_register_owned,
+            control_register: control_register_owned,
+            i2c_config_register: i2c_register_owned,
+        }
+    }
 }
 
 impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
@@ -244,6 +279,25 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
             Err(MockError::UnknownMemoryAddress(address))
         }
     }
+
+    /// Replace the current RAM and status register from the given slices
+    ///
+    /// This is to simulate a new frame of data being made available. This function does *not*
+    /// explicitly set the "new data available" flag. The value in the given status register data
+    /// is used as-is.
+    pub(crate) fn update_frame(&mut self, ram_data: &[u8], status_register: &[u8]) {
+        self.ram_data.copy_from_slice(ram_data);
+        self.status_register.copy_from_slice(status_register);
+    }
+
+    /// Set the "new data available" flag in the status register to a new value
+    pub(crate) fn set_data_available(&mut self, available: bool) {
+        if available {
+            self.status_register[1] |= 0x8;
+        } else {
+            self.status_register[1] &= 0x7;
+        }
+    }
 }
 
 impl<const RAM_LENGTH: usize> i2c::Write for MockCameraBus<RAM_LENGTH> {
@@ -289,7 +343,7 @@ fn check_new_against_mask(existing: u16, mask: u16, new: u16) -> bool {
     (new & !mask) == (existing & !mask)
 }
 
-pub(crate) fn mock_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
+pub(crate) fn datasheet_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
     let eeprom_data = mlx90640_datasheet_eeprom();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90640_RAM_LENGTH];
@@ -315,20 +369,16 @@ pub(crate) fn mock_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
     ram_data[t_a_ptat..(t_a_ptat + 2)].copy_from_slice(b"\x06\xaf");
     ram_data[cp1..(cp1 + 2)].copy_from_slice(b"\xff\xc8");
     ram_data[v_dd_pix..(v_dd_pix + 2)].copy_from_slice(b"\xcc\xc5");
-    MockCameraBus {
+    MockCameraBus::new_mlx90640(
         i2c_address,
-        rom_range: 0x0000..=0x03FF,
-        ram_range: (mlx90640::RamAddress::Base.into())..=(mlx90640::RamAddress::End.into()),
-        eeprom_range: 0x2400..=0x273F,
-        register_range: 0x8000..=0x8016,
-        eeprom_data,
-        ram_data,
+        &eeprom_data[..],
+        &ram_data[..],
         // Setting this status to mean that Subpage 1 is the current subpage, and it is new data.
-        status_register: [0x00, 0x09],
+        b"\x19\x01",
         // Default values for these taken from the datasheet
-        control_register: [0x19, 0x01],
-        i2c_config_register: [0x00, 0x00],
-    }
+        b"\x00\x09",
+        b"\x00\x00",
+    )
 }
 
 pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX90641_RAM_LENGTH> {
@@ -371,4 +421,15 @@ pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
         control_register: [0x09, 0x01],
         i2c_config_register: [0x00, 0x00],
     }
+}
+
+pub(crate) fn example_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
+    MockCameraBus::new_mlx90640(
+        i2c_address,
+        &mlx90640_example_data::EEPROM_DATA[..],
+        &mlx90640_example_data::FRAME_0_DATA[..],
+        &mlx90640_example_data::CONTROL_REGISTER[..],
+        &mlx90640_example_data::FRAME_0_STATUS_REGISTER[..],
+        b"\x00\x00",
+    )
 }

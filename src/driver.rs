@@ -571,7 +571,7 @@ mod test {
         // Specifically using a non-default address to make sure assumptions aren't being made
         // about the address.
         let address: u8 = 0x30;
-        let mock_bus = mock_mlx90640_at_address(address);
+        let mock_bus = datasheet_mlx90640_at_address(address);
         Mlx90640Driver::new(mock_bus, address)
             .expect("A MLX90640 camera should be created after loading its data")
     }
@@ -595,7 +595,7 @@ mod test {
     fn read_register() {
         // Just picking addresses now
         let address = 0x10;
-        let mut mock_bus = mock_mlx90640_at_address(address);
+        let mut mock_bus = datasheet_mlx90640_at_address(address);
         let register: I2cRegister = super::read_register(&mut mock_bus, address).unwrap();
         assert_eq!(register, I2cRegister::default());
     }
@@ -604,7 +604,7 @@ mod test {
     fn read_write_register() {
         let address = 0x42;
         // Using the status register for this test as it has read-only sections at both ends.
-        let mut mock_bus = mock_mlx90640_at_address(address);
+        let mut mock_bus = datasheet_mlx90640_at_address(address);
         let mut status_register: StatusRegister =
             super::read_register(&mut mock_bus, address).unwrap();
         assert!(!status_register.overwrite_enabled);
@@ -626,7 +626,7 @@ mod test {
     }
 
     #[test]
-    fn mlx90640_integration() {
+    fn mlx90640_datasheet_integration() {
         let mut cam = create_mlx90640();
         let mut temperatures = [0f32; mlx90640::NUM_PIXELS];
         let res = cam.generate_image_if_ready(&mut temperatures);
@@ -638,7 +638,7 @@ mod test {
     }
 
     #[test]
-    fn mlx90641_integration() {
+    fn mlx90641_datasheet_integration() {
         let mut cam = create_mlx90641();
         let mut temperatures = [0f32; mlx90641::NUM_PIXELS];
         let res = cam.generate_image_if_ready(&mut temperatures);

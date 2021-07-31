@@ -6,6 +6,6 @@ pub mod mlx90640_example_data;
 
 pub(crate) use eeprom_data::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom, EEPROM_LENGTH};
 pub(crate) use i2c_mock::{
-    mock_mlx90640_at_address, mock_mlx90641_at_address, MockCameraBus, MLX90640_RAM_LENGTH,
-    MLX90641_RAM_LENGTH,
+    datasheet_mlx90640_at_address, example_mlx90640_at_address, mock_mlx90641_at_address,
+    MockCameraBus, MLX90640_RAM_LENGTH, MLX90641_RAM_LENGTH,
 };
