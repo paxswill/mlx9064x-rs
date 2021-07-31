@@ -267,8 +267,8 @@ impl Mlx90640Calibration {
         // is multipled by 10. Also convert to i16 for use in calculations.
         let corner_temperature_step = i16::from(unpacked_corner_temps[0] & 0x3) * 10;
         // corner temperatures need to be multipled by the step and converted to i16
-        let ct2 = i16::from(unpacked_corner_temps[1]) * corner_temperature_step;
-        let ct3 = i16::from(unpacked_corner_temps[2]) * corner_temperature_step + ct2;
+        let ct2 = i16::from(unpacked_corner_temps[2]) * corner_temperature_step;
+        let ct3 = i16::from(unpacked_corner_temps[1]) * corner_temperature_step + ct2;
         // k_s_to_scale needs 8 added to it, then take 2 raised to this value.
         let k_s_to_scale = f32::from(unpacked_corner_temps[3] + 8).exp2();
         // -40 and 0 are hard-coded values for CT0 and CT1 (labelled CT1 and CT2 in the datasheet)
