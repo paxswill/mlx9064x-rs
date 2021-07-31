@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
+extern crate alloc;
+
+use alloc::rc::Rc;
+use core::cell::{Ref, RefCell};
 use core::convert::TryInto;
 use core::ops::RangeInclusive;
 
@@ -12,9 +16,10 @@ use crate::{mlx90640, mlx90641, Address};
 
 /// The number of bytes the MLX90640 has of RAM.
 ///
-/// The MLX90640 has its RAM from 0x0400 through 0x07FF, representing 768 pixels along with 64
-/// other addresses (half of which are reserved). Each address corresponds to 16 bits of data.
-pub(crate) const MLX90640_RAM_LENGTH: usize = (0x0800 - 0x0400) * 2;
+/// The MLX90640 has its RAM from 0x0400 through 0x07FF, but only uses up through 0x073F. The used
+/// range representing 768 pixels along with 64 other addresses (half of which are reserved). Each
+/// address corresponds to 16 bits of data.
+pub(crate) const MLX90640_RAM_LENGTH: usize = (0x0740 - 0x0400) * 2;
 
 /// The number of bytes the MLX90641 has of RAM.
 ///
@@ -87,11 +92,11 @@ pub(crate) struct MockCameraBus<const RAM_LENGTH: usize> {
     ram_range: RangeInclusive<u16>,
     eeprom_range: RangeInclusive<u16>,
     register_range: RangeInclusive<u16>,
-    eeprom_data: [u8; EEPROM_LENGTH],
-    ram_data: [u8; RAM_LENGTH],
-    status_register: [u8; 2],
-    control_register: [u8; 2],
-    i2c_config_register: [u8; 2],
+    eeprom_data: Rc<RefCell<[u8; EEPROM_LENGTH]>>,
+    ram_data: Rc<RefCell<[u8; RAM_LENGTH]>>,
+    status_register: Rc<RefCell<[u8; 2]>>,
+    control_register: Rc<RefCell<[u8; 2]>>,
+    i2c_config_register: Rc<RefCell<[u8; 2]>>,
 }
 
 impl MockCameraBus<MLX90640_RAM_LENGTH> {
@@ -119,11 +124,11 @@ impl MockCameraBus<MLX90640_RAM_LENGTH> {
             ram_range: (mlx90640::RamAddress::Base.into())..=(mlx90640::RamAddress::End.into()),
             eeprom_range: 0x2400..=0x273F,
             register_range: 0x8000..=0x8016,
-            eeprom_data,
-            ram_data,
-            status_register: status_register_owned,
-            control_register: control_register_owned,
-            i2c_config_register: i2c_register_owned,
+            eeprom_data: Rc::new(RefCell::new(eeprom_data)),
+            ram_data: Rc::new(RefCell::new(ram_data)),
+            status_register: Rc::new(RefCell::new(status_register_owned)),
+            control_register: Rc::new(RefCell::new(control_register_owned)),
+            i2c_config_register: Rc::new(RefCell::new(i2c_register_owned)),
         }
     }
 }
@@ -145,7 +150,7 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
     }
 
     /// Access a slice containing `count` 16-bit words, starting at the given address.
-    pub(crate) fn get(&self, address: Address, byte_count: usize) -> Result<&[u8], MockError> {
+    pub(crate) fn get(&self, address: Address, byte_count: usize) -> Result<Ref<[u8]>, MockError> {
         let start_address: u16 = address.into();
         let end_address = start_address + (byte_count / 2) as u16;
         // classify the address and check if it's supposed to be read
@@ -161,7 +166,9 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
             if self.ram_range.contains(&(end_address - 1)) {
                 let slice_start = (start_address - self.ram_range.start()) as usize * 2;
                 let slice_end = slice_start + byte_count;
-                Ok(&self.ram_data[slice_start..slice_end])
+                let slice_ref = Ref::map(self.ram_data.borrow(), |r| &r[slice_start..slice_end]);
+                Ok(slice_ref)
+                //Ok(&self.ram_data[slice_start..slice_end])
             } else {
                 // Illegal, but use the end address as the given address.
                 Err(MockError::IllegalAccess(end_address.into()))
@@ -171,7 +178,8 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
             if self.eeprom_range.contains(&(end_address - 1)) {
                 let slice_start = (start_address - self.eeprom_range.start()) as usize * 2;
                 let slice_end = slice_start + byte_count;
-                Ok(&self.eeprom_data[slice_start..slice_end])
+                let slice_ref = Ref::map(self.eeprom_data.borrow(), |r| &r[slice_start..slice_end]);
+                Ok(slice_ref)
             } else {
                 Err(MockError::IllegalAccess(end_address.into()))
             }
@@ -182,9 +190,18 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
                 Err(MockError::IllegalAccess(end_address.into()))
             } else {
                 match start_address {
-                    STATUS_REGISTER_ADDRESS => Ok(&self.status_register[..]),
-                    CONTROL_REGISTER_ONE_ADDRESS => Ok(&self.control_register[..]),
-                    I2C_CONFIG_REGISTER_ADDRESS => Ok(&self.i2c_config_register[..]),
+                    STATUS_REGISTER_ADDRESS => {
+                        let slice_ref = Ref::map(self.status_register.borrow(), |r| &r[..]);
+                        Ok(slice_ref)
+                    }
+                    CONTROL_REGISTER_ONE_ADDRESS => {
+                        let slice_ref = Ref::map(self.control_register.borrow(), |r| &r[..]);
+                        Ok(slice_ref)
+                    }
+                    I2C_CONFIG_REGISTER_ADDRESS => {
+                        let slice_ref = Ref::map(self.i2c_config_register.borrow(), |r| &r[..]);
+                        Ok(slice_ref)
+                    }
                     _ => Err(MockError::IllegalAccess(address)),
                 }
             }
@@ -212,7 +229,7 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
             // anything other than 0x0000 is treated as an error.
             let slice_start = ((start_address - self.eeprom_range.start()) as usize) * 2;
             let slice_end = slice_start + data.len();
-            let existing_data = &mut self.eeprom_data[slice_start..slice_end];
+            let existing_data = &mut self.eeprom_data.borrow_mut()[slice_start..slice_end];
             // Create a mask of which bytes are writeable
             // At most 4 words will be present.
             let mut write_mask: ArrayVec<u8, { 4 * 2 }> = ArrayVec::new();
@@ -252,13 +269,18 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
             } else {
                 let new_word = u16::from_be_bytes(data.try_into().unwrap());
                 let (mask_bytes, existing_bytes) = match start_address {
-                    STATUS_REGISTER_ADDRESS => (STATUS_REGISTER_WRITE_MASK, self.status_register),
-                    CONTROL_REGISTER_ONE_ADDRESS => {
-                        (CONTROL_REGISTER_1_WRITE_MASK, self.control_register)
-                    }
-                    I2C_CONFIG_REGISTER_ADDRESS => {
-                        (I2C_CONFIG_REGISTER_WRITE_MASK, self.i2c_config_register)
-                    }
+                    STATUS_REGISTER_ADDRESS => (
+                        STATUS_REGISTER_WRITE_MASK,
+                        self.status_register.borrow().clone(),
+                    ),
+                    CONTROL_REGISTER_ONE_ADDRESS => (
+                        CONTROL_REGISTER_1_WRITE_MASK,
+                        self.control_register.borrow().clone(),
+                    ),
+                    I2C_CONFIG_REGISTER_ADDRESS => (
+                        I2C_CONFIG_REGISTER_WRITE_MASK,
+                        self.i2c_config_register.borrow().clone(),
+                    ),
                     _ => return Err(MockError::IllegalWriteAddress(address)),
                 };
                 let mask_word = u16::from_be_bytes(mask_bytes);
@@ -268,9 +290,15 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
                     return Err(MockError::IllegalWriteValue(bad_address, new_word));
                 }
                 match start_address {
-                    STATUS_REGISTER_ADDRESS => self.status_register.copy_from_slice(data),
-                    CONTROL_REGISTER_ONE_ADDRESS => self.control_register.copy_from_slice(data),
-                    I2C_CONFIG_REGISTER_ADDRESS => self.i2c_config_register.copy_from_slice(data),
+                    STATUS_REGISTER_ADDRESS => {
+                        self.status_register.borrow_mut().copy_from_slice(data)
+                    }
+                    CONTROL_REGISTER_ONE_ADDRESS => {
+                        self.control_register.borrow_mut().copy_from_slice(data)
+                    }
+                    I2C_CONFIG_REGISTER_ADDRESS => {
+                        self.i2c_config_register.borrow_mut().copy_from_slice(data)
+                    }
                     _ => unreachable!(),
                 }
                 Ok(())
@@ -286,16 +314,18 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
     /// explicitly set the "new data available" flag. The value in the given status register data
     /// is used as-is.
     pub(crate) fn update_frame(&mut self, ram_data: &[u8], status_register: &[u8]) {
-        self.ram_data.copy_from_slice(ram_data);
-        self.status_register.copy_from_slice(status_register);
+        self.ram_data.borrow_mut().copy_from_slice(ram_data);
+        self.status_register
+            .borrow_mut()
+            .copy_from_slice(status_register);
     }
 
     /// Set the "new data available" flag in the status register to a new value
     pub(crate) fn set_data_available(&mut self, available: bool) {
         if available {
-            self.status_register[1] |= 0x8;
+            self.status_register.borrow_mut()[1] |= 0x8;
         } else {
-            self.status_register[1] &= 0x7;
+            self.status_register.borrow_mut()[1] &= 0x7;
         }
     }
 }
@@ -334,7 +364,7 @@ impl<const RAM_LENGTH: usize> i2c::WriteRead for MockCameraBus<RAM_LENGTH> {
         let raw_address = self.extract_address(write_buffer)?;
         let address: Address = raw_address.into();
         let read_data = self.get(address, out_buffer.len())?;
-        out_buffer.copy_from_slice(read_data);
+        out_buffer.copy_from_slice(&read_data[..]);
         Ok(())
     }
 }
@@ -414,12 +444,12 @@ pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
         ram_range: (mlx90641::RamAddress::Base.into())..=(mlx90641::RamAddress::End.into()),
         eeprom_range: 0x2400..=0x273F,
         register_range: 0x8000..=0x8016,
-        eeprom_data,
-        ram_data,
+        eeprom_data: Rc::new(RefCell::new(eeprom_data)),
+        ram_data: Rc::new(RefCell::new(ram_data)),
         // The worked example uses subpage 0, so mark that as the current subpage with new data.
-        status_register: [0x00, 0x08],
-        control_register: [0x09, 0x01],
-        i2c_config_register: [0x00, 0x00],
+        status_register: Rc::new(RefCell::new([0x00, 0x08])),
+        control_register: Rc::new(RefCell::new([0x09, 0x01])),
+        i2c_config_register: Rc::new(RefCell::new([0x00, 0x00])),
     }
 }
 
