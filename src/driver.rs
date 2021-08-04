@@ -145,7 +145,7 @@ where
     }
 
     fn set_status_register(&mut self, register: StatusRegister) -> Result<(), Error<I2C>> {
-        write_register(&mut self.bus, self.address, register)
+        update_register(&mut self.bus, self.address, register)
     }
 
     fn control_register(&mut self) -> Result<ControlRegister, Error<I2C>> {
@@ -159,7 +159,7 @@ where
     }
 
     fn set_control_register(&mut self, register: ControlRegister) -> Result<(), Error<I2C>> {
-        write_register(&mut self.bus, self.address, register)?;
+        update_register(&mut self.bus, self.address, register)?;
         // Trigger yet another read to ensure we have the lastest value for the camera
         self.control_register()?;
         Ok(())
@@ -461,6 +461,27 @@ where
             Ok(false)
         }
     }
+
+    /// Synchronize with the camera's frame update timing
+    ///
+    /// This function ignores any new data, then forces a new measurement by the camera, only
+    /// returning when that measurement is complete. This can be used to synchronize frame access
+    /// form the controller to the update time of the camera.
+    pub fn synchronize(&mut self) -> Result<(), Error<I2C>> {
+        let mut status_register = StatusRegister {
+            last_updated_subpage: Subpage::Zero,
+            new_data: false,
+            overwrite_enabled: true,
+            start_measurement: true,
+        };
+        write_register(&mut self.bus, self.address, status_register)?;
+        // Spin while we wait for data
+        while !status_register.new_data {
+            status_register = read_register(&mut self.bus, self.address)?;
+            core::hint::spin_loop();
+        }
+        Ok(())
+    }
 }
 
 fn read_ram<Cam, I2C, const HEIGHT: usize>(
@@ -526,24 +547,38 @@ where
 
 fn write_register<R, I2C>(bus: &mut I2C, address: u8, register: R) -> Result<(), Error<I2C>>
 where
+    I2C: i2c::Write + i2c::WriteRead,
+    R: Register,
+{
+    let register_address = R::address();
+    let register_bytes: [u8; 2] = register.into();
+    write_raw_register(bus, address, register_address.as_bytes(), register_bytes)
+        .map_err(Error::I2cWriteError)?;
+    Ok(())
+}
+
+
+fn write_raw_register<I2C: i2c::Write>(
+    bus: &mut I2C,
+    i2c_address: u8,
+    register_address: [u8; 2],
+    register_data: [u8; 2],
+) -> Result<(), I2C::Error> {
+    let combined: [u8; 4] = [
+        register_address[0],
+        register_address[1],
+        register_data[0],
+        register_data[1],
+    ];
+    bus.write(i2c_address, &combined)?;
+    Ok(())
+}
+
+fn update_register<R, I2C>(bus: &mut I2C, address: u8, register: R) -> Result<(), Error<I2C>>
+where
     I2C: i2c::WriteRead + i2c::Write,
     R: Register,
 {
-    fn write_register<I2C: i2c::Write>(
-        bus: &mut I2C,
-        i2c_address: u8,
-        register_address: [u8; 2],
-        register_data: [u8; 2],
-    ) -> Result<(), I2C::Error> {
-        let combined: [u8; 4] = [
-            register_address[0],
-            register_address[1],
-            register_data[0],
-            register_data[1],
-        ];
-        bus.write(i2c_address, &combined)?;
-        Ok(())
-    }
     let register_address = R::address();
     let register_address_bytes = register_address.as_bytes();
     // Can't use read_register(), as it strips the unused bytes off
@@ -559,7 +594,7 @@ where
             *new_value &= mask;
             *new_value |= old_value & !mask;
         });
-    write_register(bus, address, register_address_bytes, new_bytes)
+    write_raw_register(bus, address, register_address_bytes, new_bytes)
         .map_err(Error::I2cWriteError)?;
     Ok(())
 }
@@ -616,7 +651,7 @@ mod test {
             super::read_register(&mut mock_bus, address).unwrap();
         assert!(!status_register.overwrite_enabled);
         status_register.overwrite_enabled = true;
-        super::write_register(&mut mock_bus, address, status_register).unwrap();
+        super::update_register(&mut mock_bus, address, status_register).unwrap();
     }
 
     #[test]
