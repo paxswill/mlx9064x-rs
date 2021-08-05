@@ -38,7 +38,7 @@ pub struct StatusRegister {
     /// This value must be enabled by the controller, and will then be reset by the camera once the
     /// measurement is complete. Each measurement covers one subpage, so if you want to retrieve
     /// both subpages you will need to trigger two measurements.
-    /// This value is only applicable in step mode, and the documentation has been removed from the
+    /// This value is only applicable in step mode, and the documentation has been removed from
     /// more recent datasheets. See `ControlRegister::step_mode` for more details.
     pub(crate) start_measurement: bool,
 }
@@ -55,7 +55,7 @@ impl Register for StatusRegister {
 }
 
 impl<'a> From<&'a [u8]> for StatusRegister {
-    /// Create a `StatusRegister` from the raw `u16` read from the camera.
+    /// Create a `StatusRegister` from the raw bytes read from the camera.
     ///
     /// This method will `panic` if there aren't enough bytes in the slice.
     fn from(buf: &'a [u8]) -> Self {
@@ -105,10 +105,11 @@ pub struct ControlRegister {
     /// If subpages are disabled, only one page will be updated. The default is enabled
     pub(crate) use_subpages: bool,
 
-    /// Enable "step mode".
+    /// Enable step mode
     ///
-    /// This mode is documented in older versions of the datasheet, but was later removed. In "step
-    /// mode", the camera is idle until signalled, then a single measurement is taken.
+    /// In step mode the camera is idle until signalled with [`StatusRegister::start_measurement`],
+    /// which then starts a single measurement. **The camera is not calibrated for this mode**, and
+    /// it is no longer documented by Melexis in recent datasheets.
     ///
     /// The default is continuous mode (ie "step mode" disabled).
     pub(crate) step_mode: bool,
