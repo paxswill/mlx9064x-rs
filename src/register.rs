@@ -582,9 +582,9 @@ impl Default for Resolution {
 pub enum AccessPattern {
     /// Pixels alternate between subpages, resulting in a chess or checker board pattern.
     ///
-    /// This is the default (and strongly recommended value) for the MLX909640. While the MLX909641
-    /// datasheet mentions this mode in the register section, no further mention is made in the
-    /// datasheet, so I'm not sure it's actually supported.
+    /// This is the default (and strongly recommended value) for the MLX90640. The MLX90641 updates
+    /// the entire frame at once with only the read location being alternated. This means that
+    /// chess mode has no benefit for the MLX90641, and this library doesn't support it.
     Chess = 1,
 
     /// Each row of pixels is in the same subpage, with the rows alternating between subpages.
