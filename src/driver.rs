@@ -88,11 +88,11 @@ pub struct CameraDriver<
     _camera: PhantomData<Cam>,
 }
 
-impl<'a, Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const BUFFER_SIZE: usize>
+impl<Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const BUFFER_SIZE: usize>
     CameraDriver<Cam, Clb, I2C, HEIGHT, WIDTH, BUFFER_SIZE>
 where
     Cam: MelexisCamera,
-    Clb: CalibrationData<'a>,
+    Clb: CalibrationData,
     I2C: i2c::WriteRead + i2c::Write,
 {
     /// Create a new `CameraDriver`, obtaining the calibration data from the camera over I²C.
@@ -365,7 +365,7 @@ where
     }
 
     pub fn generate_raw_image_subpage_to(
-        &'a mut self,
+        &mut self,
         subpage: Subpage,
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
@@ -386,7 +386,7 @@ where
     }
 
     pub fn generate_image_subpage_to(
-        &'a mut self,
+        &mut self,
         subpage: Subpage,
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
@@ -409,8 +409,8 @@ where
     /// Generate a thermal "image" from the camera's current data.
     ///
     /// This function does *not* check if there is new data, it just copies the
-    pub fn generate_image_to<'b: 'a>(
-        &'b mut self,
+    pub fn generate_image_to(
+        &mut self,
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
         let subpage = self.last_measured_subpage()?;
@@ -425,7 +425,7 @@ where
     ///
     /// The `Ok` value is a boolean for whether or not data was ready and copied.
     pub fn generate_image_if_ready(
-        &'a mut self,
+        &mut self,
         destination: &mut [f32],
     ) -> Result<bool, Error<I2C>> {
         // Not going through the helper methods on self to avoid infecting them with 'a

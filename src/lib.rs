@@ -109,6 +109,7 @@
 //!
 
 #![no_std]
+#![feature(generic_associated_types)]
 
 pub mod calculations;
 pub mod common;

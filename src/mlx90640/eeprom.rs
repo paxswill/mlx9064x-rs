@@ -348,7 +348,7 @@ where
     }
 }
 
-impl<'a> CalibrationData<'a> for Mlx90640Calibration {
+impl CalibrationData for Mlx90640Calibration {
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
@@ -367,9 +367,9 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
         BASIC_TEMPERATURE_RANGE
     }
 
-    type OffsetReferenceIterator = slice::Iter<'a, i16>;
+    type OffsetReferenceIterator<'a> = slice::Iter<'a, i16>;
 
-    fn offset_reference_pixels(&'a self, _subpage: Subpage) -> Self::OffsetReferenceIterator {
+    fn offset_reference_pixels<'a>(&'a self, _subpage: Subpage) -> Self::OffsetReferenceIterator<'a> {
         self.offset_reference_pixels.iter()
     }
 
@@ -377,9 +377,9 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
         self.offset_reference_cp[subpage as usize]
     }
 
-    type AlphaIterator = slice::Iter<'a, f32>;
+    type AlphaIterator<'a> = slice::Iter<'a, f32>;
 
-    fn alpha_pixels(&'a self, _subpage: Subpage) -> Self::AlphaIterator {
+    fn alpha_pixels<'a>(&'a self, _subpage: Subpage) -> Self::AlphaIterator<'a> {
         self.alpha_pixels.iter()
     }
 
@@ -387,9 +387,9 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
         self.alpha_cp[subpage as usize]
     }
 
-    type KvIterator = ChessboardIter<'a, f32>;
+    type KvIterator<'a> = ChessboardIter<'a, f32>;
 
-    fn k_v_pixels(&'a self, _subpage: Subpage) -> Self::KvIterator {
+    fn k_v_pixels<'a>(&'a self, _subpage: Subpage) -> Self::KvIterator<'a> {
         ChessboardIter::new(&self.k_v_pattern)
     }
 
@@ -397,9 +397,9 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
         self.k_v_cp
     }
 
-    type KtaIterator = slice::Iter<'a, f32>;
+    type KtaIterator<'a> = slice::Iter<'a, f32>;
 
-    fn k_ta_pixels(&'a self, _subpage: Subpage) -> Self::KtaIterator {
+    fn k_ta_pixels<'a>(&'a self, _subpage: Subpage) -> Self::KtaIterator<'a> {
         self.k_ta_pixels.iter()
     }
 

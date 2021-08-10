@@ -72,7 +72,7 @@ const KELVINS_TO_CELSIUS: f32 = 273.15;
 ///
 /// The constants $V_{DD_{25}}$ and $K_{V_{DD}}$ are retrieved from the `calibration` argument,
 /// while $V_{DD_{pix}}$ (`v_dd_pixel`) is read from the camera's RAM.
-pub fn delta_v<'a, Clb: CalibrationData<'a>>(calibration: &'a Clb, v_dd_pixel: i16) -> f32 {
+pub fn delta_v<Clb: CalibrationData>(calibration: &Clb, v_dd_pixel: i16) -> f32 {
     f32::from(v_dd_pixel - calibration.v_dd_25()) / f32::from(calibration.k_v_dd())
 }
 
@@ -95,8 +95,8 @@ pub fn delta_v<'a, Clb: CalibrationData<'a>>(calibration: &'a Clb, v_dd_pixel: i
 /// [`MelexisCamera::resolution_correction`][mlx-cam-res].
 ///
 /// [mlx-cam-res]: crate::common::MelexisCamera::resolution_correction
-pub fn v_dd<'a, Clb: CalibrationData<'a>>(
-    calibration: &'a Clb,
+pub fn v_dd<Clb: CalibrationData>(
+    calibration: &Clb,
     resolution_correction: f32,
     delta_v: f32,
 ) -> f32 {
@@ -115,8 +115,8 @@ pub fn v_dd<'a, Clb: CalibrationData<'a>>(
 ///
 /// $Alpha_{PTAT}$ is retrieved from the `calibration` argument, while $T_{a_{PTAT}}$ (`t_a_ptat`)
 /// and $T_{a_{V_{BE}}}$ (`t_a_v_be`) are read from the camera's RAM.
-pub fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
-    calibration: &'a Clb,
+pub fn v_ptat_art<Clb: CalibrationData>(
+    calibration: &Clb,
     t_a_ptat: i16,
     t_a_v_be: i16,
 ) -> f32 {
@@ -139,8 +139,8 @@ pub fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
 /// $V_{PTAT_{25}}$, are taken from `calibration`, while
 /// $V_{PTAT_{art}}$ (`v_ptat_art`) and $\Delta V$ (`delta_v`) are the results of
 /// [`v_ptat_art`] and [`delta_v`] respectively.
-pub fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
-    calibration: &'a Clb,
+pub fn ambient_temperature<Clb: CalibrationData>(
+    calibration: &Clb,
     v_ptat_art: f32,
     delta_v: f32,
 ) -> f32 {
@@ -271,14 +271,14 @@ impl CommonIrData {
     /// (`calibration`, `emissivity` in some cases, and half of `resolution_correction`), the
     /// device's control register (the other half of `resolution_correction`), and the current
     /// frame's RAM.
-    pub fn new<'a, Clb>(
+    pub fn new<Clb: CalibrationData>(
         resolution_correction: f32,
         emissivity: f32,
-        calibration: &'a Clb,
+        calibration: &Clb,
         ram: &RamData,
     ) -> Self
     where
-        Clb: CalibrationData<'a>,
+        Clb: CalibrationData,
     {
         let delta_v = delta_v(calibration, ram.v_dd_pixel);
         let v_dd = v_dd(calibration, resolution_correction, delta_v);
@@ -354,8 +354,8 @@ pub fn per_pixel_v_ir(
 /// the temperatures of each pixel) can be appropriate if an "image" is all that is required (with
 /// an example use case of machine vision).
 #[allow(clippy::too_many_arguments)]
-pub fn raw_pixels_to_ir_data<'a, Clb, Px>(
-    calibration: &'a Clb,
+pub fn raw_pixels_to_ir_data<Clb, Px>(
+    calibration: &Clb,
     emissivity: f32,
     resolution_correction: f32,
     pixel_data: &[u8],
@@ -365,7 +365,7 @@ pub fn raw_pixels_to_ir_data<'a, Clb, Px>(
     destination: &mut [f32],
 ) -> f32
 where
-    Clb: CalibrationData<'a>,
+    Clb: CalibrationData,
     Px: Iterator<Item = bool>,
 {
     // Knock out the values common to all pixels first.
@@ -442,9 +442,9 @@ pub fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
 /// common factor used when calculating $T\_o$. In section 11.2.2.8 of the datasheet,
 /// $1 + K\_{S\_{T\_a}} \* (T\_a - T\_{a\_0})$ is common to all pixel sensitivity calculation, so
 /// calculating it once is done to improve performance.
-pub fn sensitivity_correction_coefficient<'a, Clb>(calibration: &'a Clb, t_a: f32) -> f32
+pub fn sensitivity_correction_coefficient<Clb>(calibration: &Clb, t_a: f32) -> f32
 where
-    Clb: CalibrationData<'a>,
+    Clb: CalibrationData,
 {
     let k_s_ta = calibration.k_s_ta();
     let t_a0 = 25f32;
@@ -504,15 +504,15 @@ pub fn per_pixel_temperature(v_ir: f32, alpha: f32, t_ar: f32, k_s_to: f32) -> f
 /// the `destination` array in-place, replacing the $V\_{IR}$ data with the temperatures. The
 /// ambient temperature (`t_a`, $T\_a$) needs to be given from the same frame that produced the IR
 /// data.
-pub fn raw_ir_to_temperatures<'a, Clb, Px>(
-    calibration: &'a Clb,
+pub fn raw_ir_to_temperatures<Clb, Px>(
+    calibration: &Clb,
     emissivity: f32,
     t_a: f32,
     subpage: Subpage,
     valid_pixels: &mut Px,
     destination: &mut [f32],
 ) where
-    Clb: CalibrationData<'a>,
+    Clb: CalibrationData,
     Px: Iterator<Item = bool>,
 {
     // TODO: this step could probably be optimized a little bit (if needed) by pushing this
@@ -549,8 +549,8 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
 /// This function combines [`raw_pixels_to_ir_data`] and [`raw_ir_to_temperatures`], performing all
 /// per-pixel operations in a single pass.
 #[allow(clippy::too_many_arguments)]
-pub fn raw_pixels_to_temperatures<'a, Clb, Px>(
-    calibration: &'a Clb,
+pub fn raw_pixels_to_temperatures<Clb, Px>(
+    calibration: &Clb,
     emissivity: f32,
     resolution_correction: f32,
     pixel_data: &[u8],
@@ -560,7 +560,7 @@ pub fn raw_pixels_to_temperatures<'a, Clb, Px>(
     destination: &mut [f32],
 ) -> f32
 where
-    Clb: CalibrationData<'a>,
+    Clb: CalibrationData,
     Px: Iterator<Item = bool>,
 {
     // Knock out the values common to all pixels first.
