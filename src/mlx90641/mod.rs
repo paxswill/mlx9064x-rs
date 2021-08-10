@@ -14,13 +14,13 @@ pub use address::RamAddress;
 pub use eeprom::Mlx90641Calibration;
 
 /// The height of the image captured by sensor in pixels.
-pub(crate) const HEIGHT: usize = 12;
+pub const HEIGHT: usize = 12;
 
 /// The width of the image captured by the sensor in pixels.
-pub(crate) const WIDTH: usize = 16;
+pub const WIDTH: usize = 16;
 
 /// The total number of pixels an MLX90640 has.
-pub(crate) const NUM_PIXELS: usize = HEIGHT * WIDTH;
+pub const NUM_PIXELS: usize = HEIGHT * WIDTH;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90641();

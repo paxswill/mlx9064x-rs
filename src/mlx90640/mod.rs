@@ -11,13 +11,13 @@ use crate::register::{AccessPattern, Subpage};
 pub use address::RamAddress;
 
 /// The height of the image captured by sensor in pixels.
-pub(crate) const HEIGHT: usize = 24;
+pub const HEIGHT: usize = 24;
 
 /// The width of the image captured by the sensor in pixels.
-pub(crate) const WIDTH: usize = 32;
+pub const WIDTH: usize = 32;
 
 /// The total number of pixels an MLX90640 has.
-pub(crate) const NUM_PIXELS: usize = HEIGHT * WIDTH;
+pub const NUM_PIXELS: usize = HEIGHT * WIDTH;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640();
