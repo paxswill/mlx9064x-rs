@@ -17,21 +17,22 @@ tasks:
       chmod +x ./rustup-init
       ./rustup-init \
         --profile minimal \
+        --default-toolchain nightly \
         --quiet \
         -y
   - test: |
       cd mlx9064x
       source $HOME/.cargo/env
       # Test with and without std
-      cargo test
-      cargo test --no-default-features
+      cargo +nightly test
+      cargo +nightly test --no-default-features
   # TODO: Add clippy and rustfmt lints. When doing that, make sure to add those
   # components to the rustup task above.
   - test-docs: |
       cd mlx9064x
       source $HOME/.cargo/env
       # Ensure all doc comments are well formed (even private ones)
-      cargo rustdoc -- \
+      cargo +nightly rustdoc -- \
         --document-private-items \
         --deny broken_intra_doc_links \
         --deny private_intra_doc_links \
