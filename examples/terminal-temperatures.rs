@@ -5,31 +5,46 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use linux_embedded_hal::I2cdev;
-use mlx9064x::Mlx90640Driver;
+use mlx9064x::{Mlx90640Driver, Mlx90641Driver};
 
 fn main() -> Result<(), AnyError> {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 3 {
+    if args.len() != 4 {
         return Err(AnyError::String(
-            "Two arguments required: <I2C bus> <camera address>".to_string(),
+            "Three arguments required: [640|641] <I2C bus> <camera address>".to_string(),
         ));
     }
-    let address: u8 = if args[2].starts_with("0x") {
-        let hex_digits = args[2].split_at(2).1;
+    let address: u8 = if args[3].starts_with("0x") {
+        let hex_digits = args[3].split_at(2).1;
         u8::from_str_radix(&hex_digits, 16)?
     } else {
-        args[2].parse()?
+        args[3].parse()?
     };
-    let bus_path = Path::new(&args[1]);
+    let bus_path = Path::new(&args[2]);
     let bus = I2cdev::new(bus_path)?;
-    let mut camera = Mlx90640Driver::new(bus, address)?;
-    let mut temperatures = vec![0f32; camera.height() * camera.width()];
-    let delay = Duration::from_millis(500);
-    camera.generate_image_if_ready(&mut temperatures)?;
-    sleep(delay);
-    camera.generate_image_if_ready(&mut temperatures)?;
-
-    let width = 32;
+    let (temperatures, width) = match args[1].as_ref() {
+        "640" => {
+            let mut camera = Mlx90640Driver::new(bus, address)?;
+            let mut temperatures = vec![0f32; camera.height() * camera.width()];
+            let delay = Duration::from_millis(500);
+            camera.generate_image_if_ready(&mut temperatures)?;
+            sleep(delay);
+            camera.generate_image_if_ready(&mut temperatures)?;
+            (temperatures, camera.width())
+        }
+        "641" => {
+            let mut camera = Mlx90641Driver::new(bus, address)?;
+            let mut temperatures = vec![0f32; camera.height() * camera.width()];
+            let delay = Duration::from_millis(500);
+            camera.generate_image_if_ready(&mut temperatures)?;
+            sleep(delay);
+            camera.generate_image_if_ready(&mut temperatures)?;
+            (temperatures, camera.width())
+        }
+        _ => {
+            return Err(AnyError::String("The second argument must be either 640 or 641".to_string()));
+        }
+    };
     print_temperatures(&temperatures, width);
     println!();
     Ok(())
