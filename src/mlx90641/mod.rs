@@ -19,7 +19,7 @@ pub const HEIGHT: usize = 12;
 /// The width of the image captured by the sensor in pixels.
 pub const WIDTH: usize = 16;
 
-/// The total number of pixels an MLX90640 has.
+/// The total number of pixels an MLX90641 has.
 pub const NUM_PIXELS: usize = HEIGHT * WIDTH;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,11 +29,9 @@ impl MelexisCamera for Mlx90641 {
     type PixelRangeIterator = SubpageInterleave;
     type PixelsInSubpageIterator = AllPixels<NUM_PIXELS>;
 
-    fn pixel_ranges(subpage: Subpage, access_pattern: AccessPattern) -> Self::PixelRangeIterator {
-        match access_pattern {
-            AccessPattern::Chess => panic!("The chess pattern is not documented for the MLX90641"),
-            AccessPattern::Interleave => SubpageInterleave::new(subpage),
-        }
+    fn pixel_ranges(subpage: Subpage, _access_pattern: AccessPattern) -> Self::PixelRangeIterator {
+        // The 90641 updates an entire frame at a time and only vary the data location on subpage
+        SubpageInterleave::new(subpage)
     }
 
     fn pixels_in_subpage(
@@ -77,29 +75,38 @@ impl MelexisCamera for Mlx90641 {
 
 #[derive(Clone, Copy, Debug)]
 pub struct SubpageInterleave {
-    current_address: u16,
+    stride_count: u16,
+    base_address: u16,
 }
 
 impl SubpageInterleave {
     /// Length of each section of pixels with a common subpage
     ///
-    /// The datasheet only documents interleaved access mode, and in that mode pixels alternate
+    /// The MLX90641 updates the entire frame at a time, but interleaves the data in memory. This
+    /// means the access pattern doesn't really matter, the subpage only changes where to read
+    /// from, but every pixel is written to.
+    /// The datasheet documents the interleaved access mode, and in that mode pixels alternate
     /// subpages every 32 pixels, but each pixel is present in both subpages. In other words,
     /// starting at 0x0400, there are pixels 0 through 31 for subpage 0. Then there are pixels 0
     /// through 31 for subpage 1. Then pixels 32-63 for subpage 0, and so on.
     // Multiply by two to get the number of bytes.
     const STRIDE_LENGTH: u16 = 32 * 2;
 
-    /// The end of the range of valid pixels.
-    const PIXEL_END_ADDRESS: u16 = 0x0580;
+    /// The beginning of the range of valid pixels.
+    const PIXEL_START_ADDRESS: u16 = RamAddress::Base as u16;
+
+    /// The number of strides in each frame.
+    const NUM_STRIDES: u16 = (HEIGHT / 2) as u16;
 
     fn new(subpage: Subpage) -> Self {
         let starting_address: u16 = match subpage {
-            Subpage::Zero => RamAddress::Base as u16,
-            Subpage::One => RamAddress::Base as u16 + Self::STRIDE_LENGTH,
+            Subpage::Zero => Self::PIXEL_START_ADDRESS,
+            // We need to divide by two to get the *address* offset
+            Subpage::One => Self::PIXEL_START_ADDRESS + (Self::STRIDE_LENGTH / 2),
         };
         Self {
-            current_address: starting_address,
+            stride_count: 0,
+            base_address: starting_address,
         }
     }
 }
@@ -108,15 +115,15 @@ impl iter::Iterator for SubpageInterleave {
     type Item = PixelAddressRange;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.current_address.cmp(&Self::PIXEL_END_ADDRESS) {
+        // There are two frame rows per stride
+        match self.stride_count.cmp(&Self::NUM_STRIDES) {
             Ordering::Less => {
                 let next_value = PixelAddressRange {
-                    start_address: self.current_address.into(),
+                    start_address: (self.base_address + self.stride_count * Self::STRIDE_LENGTH).into(),
+                    buffer_offset: (self.stride_count * Self::STRIDE_LENGTH) as usize,
                     length: Self::STRIDE_LENGTH as usize,
                 };
-                // Skip forward *two* Strides, as the stride immediately after this one is for the
-                // next subpage.
-                self.current_address += Self::STRIDE_LENGTH * 2;
+                self.stride_count += 1;
                 Some(next_value)
             }
             _ => None,

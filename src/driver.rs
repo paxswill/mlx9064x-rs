@@ -500,13 +500,8 @@ where
         Cam::pixel_ranges(subpage, access_pattern)
             .into_iter()
             .collect();
-    // Use the first pixel range's starting address as the first.
-    // This is a weak assumption, but it holds so far with MLX90640.
-    // TODO when '641 support is added, make sure this tested extensively.
-    let base_address: usize = pixel_ranges[0].start_address.into();
     for range in pixel_ranges.iter() {
-        let offset: usize = range.start_address.into();
-        let offset = offset - base_address;
+        let offset = range.buffer_offset;
         let address_bytes = range.start_address.as_bytes();
         bus.write_read(
             i2c_address,
@@ -727,5 +722,58 @@ mod test {
                 *actual
             );
         }
+    }
+
+    fn create_sentinel_buffer() -> [u8; mlx90641::NUM_PIXELS * 2] {
+        let mut buf = [0u8; mlx90641::NUM_PIXELS * 2];
+        // Initialize to 0xDEADBEEF to mark untouched memory
+        buf.chunks_exact_mut(4).for_each(|chunk| {
+            chunk[0] = 0xDE;
+            chunk[1] = 0xAD;
+            chunk[2] = 0xBE;
+            chunk[3] = 0xEF;
+        });
+        buf
+    }
+
+    fn check_sentinel_buffer(buf: &[u8]) {
+        assert!(buf.len() % 4 == 0);
+        // If there's a block of two bytes that haven't been updated, fail
+        for (index, chunk) in buf.chunks_exact(4).enumerate() {
+            assert_ne!(chunk[0..2], [0xDE, 0xAD], "Failed at byte index {}", index * 4);
+            assert_ne!(chunk[2..4], [0xBE, 0xEF], "Failed at byte index {}", index * 4 + 2);
+        }
+    }
+
+    #[test]
+    fn mlx90641_ram_access_subpage_0() {
+        let mut buf = create_sentinel_buffer();
+        let i2c_address = 0x47;
+        let mut mock_bus = mock_mlx90641_at_address(i2c_address);
+        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::HEIGHT }>(
+            &mut mock_bus,
+            i2c_address,
+            crate::AccessPattern::Interleave,
+            crate::Subpage::Zero,
+            &mut buf
+        );
+        assert!(ram_data_result.is_ok());
+        check_sentinel_buffer(&buf);
+    }
+
+    #[test]
+    fn mlx90641_ram_access_subpage_1() {
+        let mut buf = create_sentinel_buffer();
+        let i2c_address = 0x49;
+        let mut mock_bus = mock_mlx90641_at_address(i2c_address);
+        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::HEIGHT }>(
+            &mut mock_bus,
+            i2c_address,
+            crate::AccessPattern::Interleave,
+            crate::Subpage::One,
+            &mut buf
+        );
+        assert!(ram_data_result.is_ok());
+        check_sentinel_buffer(&buf);
     }
 }

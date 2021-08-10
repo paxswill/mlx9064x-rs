@@ -324,6 +324,7 @@ pub trait MelexisCamera {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PixelAddressRange {
     pub(crate) start_address: Address,
+    pub(crate) buffer_offset: usize,
     pub(crate) length: usize,
 }
 

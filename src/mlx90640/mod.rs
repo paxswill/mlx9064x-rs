@@ -31,6 +31,7 @@ impl MelexisCamera for Mlx90640 {
         // everything.
         core::array::IntoIter::new([PixelAddressRange {
             start_address: RamAddress::Base.into(),
+            buffer_offset: 0,
             // Each pixel is two bytes
             length: NUM_PIXELS * 2,
         }])
