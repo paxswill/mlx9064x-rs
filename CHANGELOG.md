@@ -1,5 +1,9 @@
 # Unreleased
 
+# v0.1.0
+
+* Improved/fixed MLX90641 support.
+
 # v0.0.4
 
 * Bug fixes to 90640 EEPROM handling
