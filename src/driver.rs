@@ -88,8 +88,8 @@ pub struct CameraDriver<
     _camera: PhantomData<Cam>,
 }
 
-impl<'a, Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const NUM_PIXELS: usize>
-    CameraDriver<Cam, Clb, I2C, HEIGHT, WIDTH, NUM_PIXELS>
+impl<'a, Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const BUFFER_SIZE: usize>
+    CameraDriver<Cam, Clb, I2C, HEIGHT, WIDTH, BUFFER_SIZE>
 where
     Cam: MelexisCamera,
     Clb: CalibrationData<'a>,
@@ -130,7 +130,7 @@ where
             bus,
             address,
             calibration,
-            pixel_buffer: [0u8; NUM_PIXELS],
+            pixel_buffer: [0u8; BUFFER_SIZE],
             resolution_correction,
             ambient_temperature: None,
             emissivity,
