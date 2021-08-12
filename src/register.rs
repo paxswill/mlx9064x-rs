@@ -22,16 +22,42 @@ pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
 /// Represents the possible states of the status register (0x8000).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct StatusRegister {
+    last_updated_subpage: Subpage,
+
+    new_data: bool,
+
+    overwrite_enabled: bool,
+
+    start_measurement: bool,
+}
+
+impl StatusRegister {
     /// The subpage which was last updated by the camera. Read-only.
-    pub(crate) last_updated_subpage: Subpage,
+    pub fn last_updated_subpage(&self) -> Subpage {
+        self.last_updated_subpage
+    }
 
     /// Set when there is new data available in RAM. Read-write.
     ///
-    /// This flag is set to true by the camera, and can only be reset by the controller.
-    pub(crate) new_data: bool,
+    /// This flag is set to by the camera, and can only be reset by the controller.
+    pub fn new_data(&self) -> bool {
+        self.new_data
+    }
+
+    /// Reset the data available flag.
+    pub fn reset_new_data(&mut self) {
+        self.new_data = false
+    }
 
     /// Whether data in RAM can be overwritten.
-    pub(crate) overwrite_enabled: bool,
+    pub fn overwrite_enabled(&self) -> bool {
+        self.overwrite_enabled
+    }
+
+    /// Set whether or not data in RAM can be overwritten by the camera.
+    pub fn set_overwrite_enabled(&mut self, overwrite_enabled: bool) {
+        self.overwrite_enabled = overwrite_enabled
+    }
 
     /// Start a measurement in step mode.
     ///
@@ -40,7 +66,14 @@ pub struct StatusRegister {
     /// both subpages you will need to trigger two measurements.
     /// This value is only applicable in step mode, and the documentation has been removed from
     /// more recent datasheets. See `ControlRegister::step_mode` for more details.
-    pub(crate) start_measurement: bool,
+    pub fn start_measurement(&self) -> bool {
+        self.start_measurement
+    }
+
+    /// Signal to the camera that a step mode measurement is to be started.
+    pub fn set_start_measurement(&mut self) {
+        self.start_measurement = true
+    }
 }
 
 impl Register for StatusRegister {
@@ -87,6 +120,7 @@ impl From<StatusRegister> for [u8; 2] {
         register |= subpage_int as u16;
         register |= (status.new_data as u16) << 3;
         register |= (status.overwrite_enabled as u16) << 4;
+        register |= (status.start_measurement as u16) << 5;
         register.to_be_bytes()
     }
 }
@@ -100,60 +134,27 @@ pub struct ControlRegister {
     // The fields in this struct are laid out in least to most significant bits they occupy in the
     // control register.
 
-    /// Whether or not to use subpages.
-    ///
-    /// If subpages are disabled, only one page will be updated. The default is enabled
-    pub(crate) use_subpages: bool,
+    use_subpages: bool,
 
-    /// Enable step mode
-    ///
-    /// In step mode the camera is idle until signalled with [`StatusRegister::start_measurement`],
-    /// which then starts a single measurement. **The camera is not calibrated for this mode**, and
-    /// it is no longer documented by Melexis in recent datasheets.
-    ///
-    /// The default is continuous mode (ie "step mode" disabled).
-    pub(crate) step_mode: bool,
+    step_mode: bool,
 
-    /// Enabled data hold.
-    ///
-    /// By default data is transferred into RAM for each frame, but if this flag is enabled, data
-    /// will only be written into RAM when the `StatusRegister::overwrite_enabled` flag is set.
-    /// The default is disabled, meaning data will be written into RAM for every measurement.
-    pub(crate) data_hold: bool,
+    data_hold: bool,
 
-    /// Whether or not to automatically alternate between subpages.
-    ///
-    /// This value only has an effect when `use_subpages` is enabled. The default is disabled.
-    pub(crate) subpage_repeat: bool,
+    subpage_repeat: bool,
 
-    /// Which subpage to use.
-    ///
-    /// This value only has an effect if *both* `use_subpages` and `subpage_repeat` are enabled.
-    /// The default is [`0`][Subpage::Zero].
-    pub(crate) subpage: Subpage,
+    subpage: Subpage,
 
     // `subpage` takes up three bits.
 
-    /// The frame rate the camera should run at.
-    ///
-    /// See the note on `FrameRate` for I²C bus clock rate requirements. Teh default is
-    /// [2Hz][FrameRate::Two].
-    pub(crate) frame_rate: FrameRate,
+    frame_rate: FrameRate,
 
-    // `frame_rate` takes up three bits
+    // `frame_rate` takes up three bits.
 
-    /// The resolution to run the internal ADC at.
-    ///
-    /// The default is [18 bits][Resolution::Eighteen].
-    pub(crate) resolution: Resolution,
+    resolution: Resolution,
 
     // `resolution` takes up two bits.
 
-    /// Which access pattern to use.
-    ///
-    /// The default for the MLX90640 is the [chess pattern][AccessPattern::Chess] mode, while the
-    /// default for the MLX90641 is [interleaved][AccessPattern::Interleave].
-    pub(crate) access_pattern: AccessPattern,
+    access_pattern: AccessPattern,
 
     // The rest of the bits are reserved.
 }
@@ -187,6 +188,115 @@ impl ControlRegister {
             // This is the only value specific to the '641
             access_pattern: AccessPattern::Interleave,
         }
+    }
+
+    /// Check if subpages are enabled.
+    ///
+    /// If subpages are disabled, only one page will be updated.
+    ///
+    /// The default is to use subpages.
+    pub fn use_subpages(&self) -> bool {
+        self.use_subpages
+    }
+
+    /// Enable or disable the use of subpages.
+    pub fn set_use_subpages(&mut self, use_subpages: bool) {
+        self.use_subpages = use_subpages
+    }
+
+    /// Check if step mode is enabled.
+    ///
+    /// In step mode the camera is idle until signalled with [`StatusRegister::start_measurement`],
+    /// which then starts a single measurement. The camera is not calibrated for step mode, and the
+    /// values are inaccurate. Melexis no longer documents step mode because of this.
+    ///
+    /// The default is continuous mode (i.e. step mode disabled).
+    pub fn step_mode(&self) -> bool {
+        self.step_mode
+    }
+
+    /// Enable or disable step mode.
+    ///
+    /// It is not recommended to enable step mode, see [`step_mode`] for more details.
+    pub fn set_step_mode(&mut self, step_mode: bool) {
+        self.step_mode = step_mode;
+    }
+
+    /// Check if data holding is enabled.
+    ///
+    /// By default data is transferred into RAM for each frame, but if this flag is enabled data
+    /// will only be written into RAM when the `StatusRegister::overwrite_enabled` flag is set.
+    pub fn data_hold(&self) -> bool {
+        self.data_hold
+    }
+
+    /// Enable or disable data holding.
+    pub fn set_data_hold(&mut self, data_hold: bool) {
+        self.data_hold = data_hold;
+    }
+
+    /// Check to see if the camera automatically alternates between subpages.
+    ///
+    /// This value only has an effect when `use_subpages` is enabled. The default is disabled,
+    /// meaning the camera automatically alternates between subpages.
+    pub fn subpage_repeat(&self) -> bool {
+        self.subpage_repeat
+    }
+
+    /// Enable or disable subpage repetition.
+    pub fn set_subpage_repeat(&mut self, subpage_repeat: bool) {
+        self.subpage_repeat = subpage_repeat;
+    }
+
+    /// Check which subpage will be written to.
+    ///
+    /// This value only has an effect if *both* [`use_subpages`] and [`subpage_repeat`] are
+    /// enabled. The default is [`0`][Subpage::Zero].
+    pub fn subpage(&self) -> Subpage {
+        self.subpage
+    }
+
+    /// Set the subpage to update.
+    pub fn set_subpage(&mut self, subpage: Subpage) {
+        self.subpage = subpage;
+    }
+
+    /// The frame rate the camera runs at.
+    ///
+    /// See the note on `FrameRate` for I²C bus clock rate requirements. The default is
+    /// [2Hz][FrameRate::Two].
+    pub fn frame_rate(&self) -> FrameRate {
+        self.frame_rate
+    }
+
+    /// Set the camera's frame rate.
+    pub fn set_frame_rate(&mut self, frame_rate: FrameRate) {
+        self.frame_rate = frame_rate;
+    }
+
+    /// The resolution to run the internal ADC at.
+    ///
+    /// The default is [18 bits][Resolution::Eighteen].
+    pub fn resolution(&self) -> Resolution {
+        self.resolution
+    }
+
+    /// Set the camera's resolution.
+    pub fn set_resolution(&mut self, resolution: Resolution) {
+        self.resolution = resolution;
+    }
+
+    /// The [access pattern][AccessPattern] used by the camera.
+    ///
+    /// The default for the MLX90640 is the [chess pattern][AccessPattern::Chess] mode, while the
+    /// default for the MLX90641 is [interleaved][AccessPattern::Interleave].
+    pub fn access_pattern(&self) -> AccessPattern {
+        self.access_pattern
+    }
+
+    /// Set the access pattern to use.
+    pub fn set_access_pattern(&mut self, access_pattern: AccessPattern) {
+        self.access_pattern = access_pattern;
     }
 }
 
@@ -264,21 +374,49 @@ impl From<ControlRegister> for [u8; 2] {
 /// Represents the possible states of the I²C configuration register (0x800F).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct I2cRegister {
-    /// Is Fast Mode+ (FM+) enabled?
+    fast_mode_plus: bool,
+
+    i2c_threshold_halved: bool,
+
+    sda_current_limiter: bool,
+}
+
+impl I2cRegister {
+    /// Check if I²C Fast Mode+ enabled.
     ///
     /// Defaults to enabled.
-    pub(crate) fast_mode_plus: bool,
+    pub fn fast_mode_plus(&self) -> bool {
+        self.fast_mode_plus
+    }
 
-    /// Halve the I²C threshold level?
-    ///
-    /// Defaults to disabled.
-    // I don't know what this actually means.
-    pub(crate) i2c_threshold_halved: bool,
+    /// Enable or disable I²C Fast Mode+.
+    pub fn set_fast_mode_plus(&mut self, fast_mode_plus: bool) {
+        self.fast_mode_plus = fast_mode_plus;
+    }
 
-    /// Whether or not to enable the SDA current limit.
+    /// Check if the I²C threshold level is halved.
     ///
-    /// The default is for it to be enabled
-    pub(crate) sda_current_limiter: bool,
+    /// The default is disabled.
+    pub fn i2c_threshold_halved(&self) -> bool {
+        self.i2c_threshold_halved
+    }
+
+    /// Enable or disable halving the I²C threshold level.
+    pub fn set_i2c_threshold_halved(&mut self, i2c_threshold_halved: bool) {
+        self.i2c_threshold_halved = i2c_threshold_halved;
+    }
+
+    /// Check if the I²C current limit is enabled.
+    ///
+    /// The defualt is enabled.
+    pub fn sda_current_limiter(&self) -> bool {
+        self.sda_current_limiter
+    }
+
+    /// Enable or disable the I²C current limiter.
+    pub fn set_sda_current_limiter(&mut self, sda_current_limiter: bool) {
+        self.sda_current_limiter = sda_current_limiter;
+    }
 }
 
 impl Default for I2cRegister {
@@ -631,12 +769,46 @@ mod test {
     fn status_register_new_data() {
         assert_register_field!(StatusRegister, 0x0008, new_data, true);
         assert_register_field!(StatusRegister, 0x0000, new_data, false);
+        // Testing each subpage individually to ensure the current subpage is preserved when
+        // resetting the data ready flag.
+        // Subpage 0
+        let mut subpage0_ready: StatusRegister = (&[0x00, 0x08][..]).into();
+        assert_eq!(subpage0_ready.last_updated_subpage(), Subpage::Zero);
+        assert!(subpage0_ready.new_data());
+        subpage0_ready.reset_new_data();
+        assert!(!subpage0_ready.new_data());
+        let subpage0_bytes: [u8; 2] = subpage0_ready.into();
+        assert_eq!(subpage0_bytes, [0x00, 0x00]);
+        // Subpage 1
+        let mut subpage1_ready: StatusRegister = (&[0x00, 0x09][..]).into();
+        assert_eq!(subpage1_ready.last_updated_subpage(), Subpage::One);
+        assert!(subpage1_ready.new_data());
+        subpage1_ready.reset_new_data();
+        assert!(!subpage1_ready.new_data());
+        let subpage1_bytes: [u8; 2] = subpage1_ready.into();
+        assert_eq!(subpage1_bytes, [0x00, 0x01]);
     }
 
     #[test]
     fn status_register_overwrite() {
         assert_register_field!(StatusRegister, 0x0010, overwrite_enabled, true);
         assert_register_field!(StatusRegister, 0x0000, overwrite_enabled, false);
+        let mut status_register: StatusRegister = (&[0x00, 0x00][..]).into();
+        assert!(!status_register.overwrite_enabled());
+        status_register.set_overwrite_enabled(true);
+        assert!(status_register.overwrite_enabled());
+        status_register.set_overwrite_enabled(false);
+        assert!(!status_register.overwrite_enabled());
+    }
+
+    #[test]
+    fn status_register_start_measurement() {
+        assert_register_field!(StatusRegister, 0x0020, start_measurement, true);
+        assert_register_field!(StatusRegister, 0x0000, start_measurement, false);
+        let mut status_register: StatusRegister = (&[0x00, 0x00][..]).into();
+        assert!(!status_register.start_measurement());
+        status_register.set_start_measurement();
+        assert!(status_register.start_measurement());
     }
 
     #[test]
@@ -653,30 +825,60 @@ mod test {
     fn control_register_use_subpages() {
         assert_register_field!(ControlRegister, 0x0001, use_subpages, true);
         assert_register_field!(ControlRegister, 0x0000, use_subpages, false);
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert!(control_register.use_subpages());
+        control_register.set_use_subpages(false);
+        assert!(!control_register.use_subpages());
+        control_register.set_use_subpages(true);
+        assert!(control_register.use_subpages());
     }
 
     #[test]
     fn control_register_step_mode() {
         assert_register_field!(ControlRegister, 0x0002, step_mode, true);
         assert_register_field!(ControlRegister, 0x0000, step_mode, false);
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert!(!control_register.step_mode());
+        control_register.set_step_mode(true);
+        assert!(control_register.step_mode());
+        control_register.set_step_mode(false);
+        assert!(!control_register.step_mode());
     }
 
     #[test]
     fn control_register_data_hold() {
         assert_register_field!(ControlRegister, 0x0004, data_hold, true);
         assert_register_field!(ControlRegister, 0x0000, data_hold, false);
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert!(!control_register.data_hold());
+        control_register.set_data_hold(true);
+        assert!(control_register.data_hold());
+        control_register.set_data_hold(false);
+        assert!(!control_register.data_hold());
     }
 
     #[test]
     fn control_register_subpage_repeat() {
         assert_register_field!(ControlRegister, 0x0008, subpage_repeat, true);
         assert_register_field!(ControlRegister, 0x0000, subpage_repeat, false);
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert!(!control_register.subpage_repeat());
+        control_register.set_subpage_repeat(true);
+        assert!(control_register.subpage_repeat());
+        control_register.set_subpage_repeat(false);
+        assert!(!control_register.subpage_repeat());
     }
 
     #[test]
     fn control_register_subpage() {
         assert_register_field!(ControlRegister, 0x0000, subpage, Subpage::Zero);
         assert_register_field!(ControlRegister, 0x0010, subpage, Subpage::One);
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert_eq!(control_register.subpage(), Subpage::Zero);
+        control_register.set_subpage(Subpage::One);
+        assert_eq!(control_register.subpage(), Subpage::One);
+        control_register.set_subpage(Subpage::Zero);
+        assert_eq!(control_register.subpage(), Subpage::Zero);
     }
 
     #[test]
@@ -689,6 +891,24 @@ mod test {
         assert_register_field!(ControlRegister, 0x0280, frame_rate, FrameRate::Sixteen);
         assert_register_field!(ControlRegister, 0x0300, frame_rate, FrameRate::ThirtyTwo);
         assert_register_field!(ControlRegister, 0x0380, frame_rate, FrameRate::SixtyFour);
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert_eq!(control_register.frame_rate(), FrameRate::Two);
+        control_register.set_frame_rate(FrameRate::Half);
+        assert_eq!(control_register.frame_rate(), FrameRate::Half);
+        control_register.set_frame_rate(FrameRate::One);
+        assert_eq!(control_register.frame_rate(), FrameRate::One);
+        control_register.set_frame_rate(FrameRate::Two);
+        assert_eq!(control_register.frame_rate(), FrameRate::Two);
+        control_register.set_frame_rate(FrameRate::Four);
+        assert_eq!(control_register.frame_rate(), FrameRate::Four);
+        control_register.set_frame_rate(FrameRate::Eight);
+        assert_eq!(control_register.frame_rate(), FrameRate::Eight);
+        control_register.set_frame_rate(FrameRate::Sixteen);
+        assert_eq!(control_register.frame_rate(), FrameRate::Sixteen);
+        control_register.set_frame_rate(FrameRate::ThirtyTwo);
+        assert_eq!(control_register.frame_rate(), FrameRate::ThirtyTwo);
+        control_register.set_frame_rate(FrameRate::SixtyFour);
+        assert_eq!(control_register.frame_rate(), FrameRate::SixtyFour);
     }
 
     #[test]
@@ -697,6 +917,16 @@ mod test {
         assert_register_field!(ControlRegister, 0x0400, resolution, Resolution::Seventeen);
         assert_register_field!(ControlRegister, 0x0800, resolution, Resolution::Eighteen);
         assert_register_field!(ControlRegister, 0x0C00, resolution, Resolution::Nineteen);
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert_eq!(control_register.resolution(), Resolution::Eighteen);
+        control_register.set_resolution(Resolution::Sixteen);
+        assert_eq!(control_register.resolution(), Resolution::Sixteen);
+        control_register.set_resolution(Resolution::Seventeen);
+        assert_eq!(control_register.resolution(), Resolution::Seventeen);
+        control_register.set_resolution(Resolution::Eighteen);
+        assert_eq!(control_register.resolution(), Resolution::Eighteen);
+        control_register.set_resolution(Resolution::Nineteen);
+        assert_eq!(control_register.resolution(), Resolution::Nineteen);
     }
 
     #[test]
@@ -713,6 +943,12 @@ mod test {
             access_pattern,
             AccessPattern::Chess
         );
+        let mut control_register = ControlRegister::default_mlx90640();
+        assert_eq!(control_register.access_pattern(), AccessPattern::Chess);
+        control_register.set_access_pattern(AccessPattern::Interleave);
+        assert_eq!(control_register.access_pattern(), AccessPattern::Interleave);
+        // Also check the MLX90641 default
+        assert_eq!(ControlRegister::default_mlx90641().access_pattern(), AccessPattern::Interleave);
     }
 
     #[test]
@@ -720,12 +956,24 @@ mod test {
         // "not disabled"
         assert_register_field!(I2cRegister, 0x0000, fast_mode_plus, true);
         assert_register_field!(I2cRegister, 0x0001, fast_mode_plus, false);
+        let mut i2c_register = I2cRegister::default();
+        assert!(i2c_register.fast_mode_plus());
+        i2c_register.set_fast_mode_plus(false);
+        assert!(!i2c_register.fast_mode_plus());
+        i2c_register.set_fast_mode_plus(true);
+        assert!(i2c_register.fast_mode_plus());
     }
 
     #[test]
     fn i2c_register_threshold() {
         assert_register_field!(I2cRegister, 0x0000, i2c_threshold_halved, false);
         assert_register_field!(I2cRegister, 0x0002, i2c_threshold_halved, true);
+        let mut i2c_register = I2cRegister::default();
+        assert!(!i2c_register.i2c_threshold_halved());
+        i2c_register.set_i2c_threshold_halved(true);
+        assert!(i2c_register.i2c_threshold_halved());
+        i2c_register.set_i2c_threshold_halved(false);
+        assert!(!i2c_register.i2c_threshold_halved());
     }
 
     #[test]
@@ -733,6 +981,12 @@ mod test {
         // the other "not disabled" flag
         assert_register_field!(I2cRegister, 0x0000, sda_current_limiter, true);
         assert_register_field!(I2cRegister, 0x0004, sda_current_limiter, false);
+        let mut i2c_register = I2cRegister::default();
+        assert!(i2c_register.sda_current_limiter());
+        i2c_register.set_sda_current_limiter(false);
+        assert!(!i2c_register.sda_current_limiter());
+        i2c_register.set_sda_current_limiter(true);
+        assert!(i2c_register.sda_current_limiter());
     }
 
     #[test]

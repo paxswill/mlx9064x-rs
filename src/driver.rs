@@ -30,8 +30,8 @@ macro_rules! set_register_field {
         #[doc = $doc]
         pub fn [< set_ $field >](&mut self, new_value: $typ) -> Result<(), Error<I2C>> {
             let mut current = self.$register_access()?;
-            if current.$field != new_value {
-                current.$field = new_value;
+            if current.$field() != new_value {
+                current.[< set_ $field >](new_value);
                 self.[< set_ $register_access >](current)
             } else {
                 Ok(())
@@ -121,9 +121,11 @@ where
         // can't implement From<I2C:Error>
         let control: ControlRegister = read_register(&mut bus, address)?;
         // Cache these values
-        let resolution_correction =
-            Cam::resolution_correction(calibration.resolution(), control.resolution.as_raw() as u8);
-        let access_pattern = control.access_pattern;
+        let resolution_correction = Cam::resolution_correction(
+            calibration.resolution(),
+            control.resolution().as_raw() as u8,
+        );
+        let access_pattern = control.access_pattern();
         // Choose an emissivity value to start with.
         let emissivity = calibration.emissivity().unwrap_or(1f32);
         Ok(Self {
@@ -153,8 +155,8 @@ where
         // Update the resolution as well
         let calibrated_resolution = self.calibration.resolution();
         self.resolution_correction =
-            Cam::resolution_correction(calibrated_resolution, register.resolution.as_raw() as u8);
-        self.access_pattern = register.access_pattern;
+            Cam::resolution_correction(calibrated_resolution, register.resolution().as_raw() as u8);
+        self.access_pattern = register.access_pattern();
         Ok(register)
     }
 
@@ -167,14 +169,14 @@ where
 
     /// Get the last measured subpage.
     pub fn last_measured_subpage(&mut self) -> Result<Subpage, Error<I2C>> {
-        Ok(self.status_register()?.last_updated_subpage)
+        Ok(self.status_register()?.last_updated_subpage())
     }
 
     /// Check if there is new data available, and if so, which subpage.
     pub fn data_available(&mut self) -> Result<Option<Subpage>, Error<I2C>> {
         let register = self.status_register()?;
-        Ok(if register.new_data {
-            Some(register.last_updated_subpage)
+        Ok(if register.new_data() {
+            Some(register.last_updated_subpage())
         } else {
             None
         })
@@ -186,7 +188,7 @@ where
     /// This flag can only be reset by the controller.
     pub fn reset_data_available(&mut self) -> Result<(), Error<I2C>> {
         let mut current = self.status_register()?;
-        current.new_data = false;
+        current.reset_new_data();
         self.set_status_register(current)
     }
 
@@ -194,7 +196,7 @@ where
     ///
     /// This flag is only effective when `data_hold_enabled` is active.
     pub fn overwrite_enabled(&mut self) -> Result<bool, Error<I2C>> {
-        Ok(self.status_register()?.overwrite_enabled)
+        Ok(self.status_register()?.overwrite_enabled())
     }
 
     set_register_field! {
@@ -207,7 +209,7 @@ where
     ///
     /// When disabled, only one page will be measured. The default is to use subpages.
     pub fn subpages_enabled(&mut self) -> Result<bool, Error<I2C>> {
-        Ok(self.control_register()?.use_subpages)
+        Ok(self.control_register()?.use_subpages())
     }
 
     set_register_field! {
@@ -221,7 +223,7 @@ where
     /// When this flag (bit 2 on 0x800D) is set, data is not copied to RAM unless the
     /// `enable_overwrite` flag is set. The default is for this mode to be disabled.
     pub fn data_hold_enabled(&mut self) -> Result<bool, Error<I2C>> {
-        Ok(self.control_register()?.data_hold)
+        Ok(self.control_register()?.data_hold())
     }
 
     set_register_field! {
@@ -237,7 +239,7 @@ where
     /// updated. When disabled, the active subpage will alternate between the two. The default is
     /// disabled.
     pub fn subpage_repeat(&mut self) -> Result<bool, Error<I2C>> {
-        Ok(self.control_register()?.subpage_repeat)
+        Ok(self.control_register()?.subpage_repeat())
     }
 
     set_register_field! {
@@ -253,7 +255,7 @@ where
     ///
     /// [subpage repeat]: CameraDriver::subpage_repeat
     pub fn selected_subpage(&mut self) -> Result<Subpage, Error<I2C>> {
-        Ok(self.control_register()?.subpage)
+        Ok(self.control_register()?.subpage())
     }
 
     set_register_field! {
@@ -267,7 +269,7 @@ where
     ///
     /// The default frame rate is [2 FPS][FrameRate::Two].
     pub fn frame_rate(&mut self) -> Result<FrameRate, Error<I2C>> {
-        Ok(self.control_register()?.frame_rate)
+        Ok(self.control_register()?.frame_rate())
     }
 
     set_register_field! {
@@ -282,7 +284,7 @@ where
     ///
     /// The default resolution is [18 bits][Resolution::Eighteen].
     pub fn resolution(&mut self) -> Result<Resolution, Error<I2C>> {
-        Ok(self.control_register()?.resolution)
+        Ok(self.control_register()?.resolution())
     }
 
     set_register_field! {
@@ -297,7 +299,7 @@ where
     /// The default for the MLX90640 is the chess patterm while the default for the MLX90641 is the
     /// interleaved pattern.
     pub fn access_pattern(&mut self) -> Result<AccessPattern, Error<I2C>> {
-        Ok(self.control_register()?.access_pattern)
+        Ok(self.control_register()?.access_pattern())
     }
 
     set_register_field! {
@@ -433,8 +435,8 @@ where
         let bus = &mut self.bus;
         let pixel_buffer = &mut self.pixel_buffer;
         let mut status_register: StatusRegister = read_register(bus, address)?;
-        if status_register.new_data {
-            let subpage = status_register.last_updated_subpage;
+        if status_register.new_data() {
+            let subpage = status_register.last_updated_subpage();
             let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
             let ram = read_ram::<Cam, I2C, HEIGHT>(
                 bus,
@@ -454,7 +456,7 @@ where
                 destination,
             );
             self.ambient_temperature = Some(ambient_temperature);
-            status_register.new_data = false;
+            status_register.reset_new_data();
             write_register(bus, address, status_register)?;
             Ok(true)
         } else {
@@ -468,15 +470,13 @@ where
     /// returning when that measurement is complete. This can be used to synchronize frame access
     /// form the controller to the update time of the camera.
     pub fn synchronize(&mut self) -> Result<(), Error<I2C>> {
-        let mut status_register = StatusRegister {
-            last_updated_subpage: Subpage::Zero,
-            new_data: false,
-            overwrite_enabled: true,
-            start_measurement: true,
-        };
+        let mut status_register = self.status_register()?;
+        status_register.reset_new_data();
+        status_register.set_overwrite_enabled(true);
+        status_register.set_start_measurement();
         write_register(&mut self.bus, self.address, status_register)?;
         // Spin while we wait for data
-        while !status_register.new_data {
+        while !status_register.new_data() {
             status_register = read_register(&mut self.bus, self.address)?;
             core::hint::spin_loop();
         }
@@ -644,8 +644,8 @@ mod test {
         let mut mock_bus = datasheet_mlx90640_at_address(address);
         let mut status_register: StatusRegister =
             super::read_register(&mut mock_bus, address).unwrap();
-        assert!(!status_register.overwrite_enabled);
-        status_register.overwrite_enabled = true;
+        assert!(!status_register.overwrite_enabled());
+        status_register.set_overwrite_enabled(true);
         super::update_register(&mut mock_bus, address, status_register).unwrap();
     }
 

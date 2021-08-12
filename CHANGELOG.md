@@ -1,5 +1,7 @@
 # Unreleased
 
+* Register access methods have been exposed for the low-level API.
+
 # v0.1.0
 
 * Improved/fixed MLX90641 support.
