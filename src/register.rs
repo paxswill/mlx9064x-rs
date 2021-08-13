@@ -20,43 +20,51 @@ pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
 }
 
 /// Represents the possible states of the status register (0x8000).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct StatusRegister {
-    last_updated_subpage: Subpage,
-
-    new_data: bool,
-
-    overwrite_enabled: bool,
-
-    start_measurement: bool,
-}
+#[derive(Clone, Copy, Debug)]
+pub struct StatusRegister(u16);
 
 impl StatusRegister {
+    // Technically it's 0x0007, but only the first bit is used.
+    const SUBPAGE_MASK: u16 = 0x0001;
+
+    const NEW_DATA_MASK: u16 = 0x0008;
+
+    const OVERWRITE_ENABLED_MASK: u16 = 0x0010;
+
+    const STEP_MODE_MASK: u16 = 0x0020;
+
     /// The subpage which was last updated by the camera. Read-only.
     pub fn last_updated_subpage(&self) -> Subpage {
-        self.last_updated_subpage
+        // The three LSB are for the subpage, but only the LSB is used and the other bits are
+        // reserved. Safe to unwrap as the only allowed subpage values are 0 and 1, and we're
+        // masking off everything except a single bit.
+        Subpage::try_from_primitive((self.0 & Self::SUBPAGE_MASK) as usize).unwrap()
     }
 
     /// Set when there is new data available in RAM. Read-write.
     ///
     /// This flag is set to by the camera, and can only be reset by the controller.
     pub fn new_data(&self) -> bool {
-        self.new_data
+        self.0 & Self::NEW_DATA_MASK > 0
     }
 
     /// Reset the data available flag.
     pub fn reset_new_data(&mut self) {
-        self.new_data = false
+        self.0 &= !Self::NEW_DATA_MASK
     }
 
     /// Whether data in RAM can be overwritten.
     pub fn overwrite_enabled(&self) -> bool {
-        self.overwrite_enabled
+        self.0 & Self::OVERWRITE_ENABLED_MASK > 0
     }
 
     /// Set whether or not data in RAM can be overwritten by the camera.
     pub fn set_overwrite_enabled(&mut self, overwrite_enabled: bool) {
-        self.overwrite_enabled = overwrite_enabled
+        if overwrite_enabled {
+            self.0 |= Self::OVERWRITE_ENABLED_MASK
+        } else {
+            self.0 &= !Self::OVERWRITE_ENABLED_MASK
+        }
     }
 
     /// Start a measurement in step mode.
@@ -67,19 +75,29 @@ impl StatusRegister {
     /// This value is only applicable in step mode, and the documentation has been removed from
     /// more recent datasheets. See `ControlRegister::step_mode` for more details.
     pub fn start_measurement(&self) -> bool {
-        self.start_measurement
+        self.0 & Self::STEP_MODE_MASK > 0
     }
 
     /// Signal to the camera that a step mode measurement is to be started.
     pub fn set_start_measurement(&mut self) {
-        self.start_measurement = true
+        self.0 |= Self::STEP_MODE_MASK
+    }
+}
+
+impl PartialEq for StatusRegister {
+    fn eq(&self, other: &Self) -> bool {
+        let mask = Self::SUBPAGE_MASK
+            | Self::NEW_DATA_MASK
+            | Self::OVERWRITE_ENABLED_MASK
+            | Self::STEP_MODE_MASK;
+        (self.0 & mask) == (other.0 & mask)
     }
 }
 
 impl Register for StatusRegister {
     fn write_mask() -> [u8; 2] {
-        // Note that the three least significant bits are read-only.
-        [0x00, 0x38]
+        // The subpage bits are read-only, so they are not included in the write mask
+        (Self::NEW_DATA_MASK | Self::OVERWRITE_ENABLED_MASK | Self::STEP_MODE_MASK).to_be_bytes()
     }
 
     fn address() -> Address {
@@ -97,97 +115,50 @@ impl<'a> From<&'a [u8]> for StatusRegister {
             .try_into()
             .expect("Not enough bytes in status register buffer");
         let raw = u16::from_be_bytes(int_bytes);
-        // Only the first bit is used, the other two bits for this value are "Melxis" reserved
-        let subpage = 0x0001 & raw;
-        let new_data = is_bit_set(raw, 3);
-        let overwrite_enabled = is_bit_set(raw, 4);
-        let start_measurement = is_bit_set(raw, 5);
-        Self {
-            // Safe to unwrap, as there are only two possible values, 0 or 1, as above we're
-            // masking off all but the first bit.
-            last_updated_subpage: Subpage::try_from_primitive(subpage as usize).unwrap(),
-            new_data,
-            overwrite_enabled,
-            start_measurement,
-        }
+        Self(raw)
     }
 }
 
 impl From<StatusRegister> for [u8; 2] {
     fn from(status: StatusRegister) -> Self {
-        let mut register = 0u16;
-        let subpage_int: usize = status.last_updated_subpage.into();
-        register |= subpage_int as u16;
-        register |= (status.new_data as u16) << 3;
-        register |= (status.overwrite_enabled as u16) << 4;
-        register |= (status.start_measurement as u16) << 5;
-        register.to_be_bytes()
+        status.0.to_be_bytes()
     }
 }
 
 /// Represents the possible states of the control register (0x800D).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-// skip formatting in here as rustfmt will remove the extra blank lines around the "extra" bit
-// comments.
-#[rustfmt::skip]
-pub struct ControlRegister {
-    // The fields in this struct are laid out in least to most significant bits they occupy in the
-    // control register.
-
-    use_subpages: bool,
-
-    step_mode: bool,
-
-    data_hold: bool,
-
-    subpage_repeat: bool,
-
-    subpage: Subpage,
-
-    // `subpage` takes up three bits.
-
-    frame_rate: FrameRate,
-
-    // `frame_rate` takes up three bits.
-
-    resolution: Resolution,
-
-    // `resolution` takes up two bits.
-
-    access_pattern: AccessPattern,
-
-    // The rest of the bits are reserved.
-}
+#[derive(Clone, Copy, Debug)]
+pub struct ControlRegister(u16);
 
 impl ControlRegister {
+    const USE_SUBPAGES_MASK: u16 = 0x0001;
+
+    const STEP_MODE_MASK: u16 = 0x0002;
+
+    const DATA_HOLD_MASK: u16 = 0x0004;
+
+    const SUBPAGE_REPEAT_MASK: u16 = 0x0008;
+
+    // Technically the mask is 0x0070, but the other bits are reserved
+    const SUBPAGE_MASK: u16 = 0x0010;
+
+    const FRAME_RATE_MASK: u16 = 0x0380;
+
+    const RESOLUTION_MASK: u16 = 0x0C00;
+
+    const ACCESS_PATTERN_MASK: u16 = 0x1000;
+
+    const MLX90640_DEFAULT: u16 = 0x1901;
+
+    const MLX90641_DEFAULT: u16 = 0x0901;
+
     /// The default settings (as documented in the datasheet) for the MLX90640.
     pub fn default_mlx90640() -> Self {
-        Self {
-            use_subpages: true,
-            step_mode: false,
-            data_hold: false,
-            subpage_repeat: false,
-            subpage: Subpage::Zero,
-            frame_rate: FrameRate::default(),
-            resolution: Resolution::default(),
-            // This is the only value specific to the '640
-            access_pattern: AccessPattern::Chess,
-        }
+        Self(Self::MLX90640_DEFAULT)
     }
 
     /// The default settings (as documented in the datasheet) for the MLX90641.
     pub fn default_mlx90641() -> Self {
-        Self {
-            use_subpages: true,
-            step_mode: false,
-            data_hold: false,
-            subpage_repeat: false,
-            subpage: Subpage::Zero,
-            frame_rate: FrameRate::default(),
-            resolution: Resolution::default(),
-            // This is the only value specific to the '641
-            access_pattern: AccessPattern::Interleave,
-        }
+        Self(Self::MLX90641_DEFAULT)
     }
 
     /// Check if subpages are enabled.
@@ -196,12 +167,16 @@ impl ControlRegister {
     ///
     /// The default is to use subpages.
     pub fn use_subpages(&self) -> bool {
-        self.use_subpages
+        self.0 & Self::USE_SUBPAGES_MASK > 0
     }
 
     /// Enable or disable the use of subpages.
     pub fn set_use_subpages(&mut self, use_subpages: bool) {
-        self.use_subpages = use_subpages
+        if use_subpages {
+            self.0 |= Self::USE_SUBPAGES_MASK
+        } else {
+            self.0 &= !Self::USE_SUBPAGES_MASK
+        }
     }
 
     /// Check if step mode is enabled.
@@ -212,14 +187,18 @@ impl ControlRegister {
     ///
     /// The default is continuous mode (i.e. step mode disabled).
     pub fn step_mode(&self) -> bool {
-        self.step_mode
+        self.0 & Self::STEP_MODE_MASK > 0
     }
 
     /// Enable or disable step mode.
     ///
     /// It is not recommended to enable step mode, see [`step_mode`] for more details.
     pub fn set_step_mode(&mut self, step_mode: bool) {
-        self.step_mode = step_mode;
+        if step_mode {
+            self.0 |= Self::STEP_MODE_MASK
+        } else {
+            self.0 &= !Self::STEP_MODE_MASK
+        }
     }
 
     /// Check if data holding is enabled.
@@ -227,12 +206,16 @@ impl ControlRegister {
     /// By default data is transferred into RAM for each frame, but if this flag is enabled data
     /// will only be written into RAM when the `StatusRegister::overwrite_enabled` flag is set.
     pub fn data_hold(&self) -> bool {
-        self.data_hold
+        self.0 & Self::DATA_HOLD_MASK > 0
     }
 
     /// Enable or disable data holding.
     pub fn set_data_hold(&mut self, data_hold: bool) {
-        self.data_hold = data_hold;
+        if data_hold {
+            self.0 |= Self::DATA_HOLD_MASK
+        } else {
+            self.0 &= !Self::DATA_HOLD_MASK
+        }
     }
 
     /// Check to see if the camera automatically alternates between subpages.
@@ -240,12 +223,16 @@ impl ControlRegister {
     /// This value only has an effect when `use_subpages` is enabled. The default is disabled,
     /// meaning the camera automatically alternates between subpages.
     pub fn subpage_repeat(&self) -> bool {
-        self.subpage_repeat
+        self.0 & Self::SUBPAGE_REPEAT_MASK > 0
     }
 
     /// Enable or disable subpage repetition.
     pub fn set_subpage_repeat(&mut self, subpage_repeat: bool) {
-        self.subpage_repeat = subpage_repeat;
+        if subpage_repeat {
+            self.0 |= Self::SUBPAGE_REPEAT_MASK
+        } else {
+            self.0 &= !Self::SUBPAGE_REPEAT_MASK
+        }
     }
 
     /// Check which subpage will be written to.
@@ -253,12 +240,15 @@ impl ControlRegister {
     /// This value only has an effect if *both* [`use_subpages`] and [`subpage_repeat`] are
     /// enabled. The default is [`0`][Subpage::Zero].
     pub fn subpage(&self) -> Subpage {
-        self.subpage
+        let subpage_num = (self.0 & Self::SUBPAGE_MASK) >> (Self::SUBPAGE_MASK.trailing_zeros());
+        // Safe to unwrap as only 0 and 1 are allowable values, and all but one bit are masked off
+        Subpage::try_from_primitive(subpage_num as usize).unwrap()
     }
 
     /// Set the subpage to update.
     pub fn set_subpage(&mut self, subpage: Subpage) {
-        self.subpage = subpage;
+        let subpage_num = subpage as u16;
+        self.0 = self.0 & !Self::SUBPAGE_MASK | (subpage_num << Self::SUBPAGE_MASK.trailing_zeros())
     }
 
     /// The frame rate the camera runs at.
@@ -266,24 +256,30 @@ impl ControlRegister {
     /// See the note on `FrameRate` for I²C bus clock rate requirements. The default is
     /// [2Hz][FrameRate::Two].
     pub fn frame_rate(&self) -> FrameRate {
-        self.frame_rate
+        let raw = (self.0 & Self::FRAME_RATE_MASK) >> Self::FRAME_RATE_MASK.trailing_zeros();
+        // Safe to unwrap as there are only eight values, and only three bits are unmasked
+        FrameRate::from_raw(raw).unwrap()
     }
 
     /// Set the camera's frame rate.
     pub fn set_frame_rate(&mut self, frame_rate: FrameRate) {
-        self.frame_rate = frame_rate;
+        let raw = frame_rate.as_raw();
+        self.0 = self.0 & !Self::FRAME_RATE_MASK | (raw << Self::FRAME_RATE_MASK.trailing_zeros())
     }
 
     /// The resolution to run the internal ADC at.
     ///
     /// The default is [18 bits][Resolution::Eighteen].
     pub fn resolution(&self) -> Resolution {
-        self.resolution
+        let raw = (self.0 & Self::RESOLUTION_MASK) >> (Self::RESOLUTION_MASK.trailing_zeros());
+        // Safe to unwrap as there are only four values, and only two bits are unmasked
+        Resolution::from_raw(raw).unwrap()
     }
 
     /// Set the camera's resolution.
     pub fn set_resolution(&mut self, resolution: Resolution) {
-        self.resolution = resolution;
+        let raw = resolution.as_raw();
+        self.0 = self.0 & !Self::RESOLUTION_MASK | (raw << Self::RESOLUTION_MASK.trailing_zeros())
     }
 
     /// The [access pattern][AccessPattern] used by the camera.
@@ -291,12 +287,31 @@ impl ControlRegister {
     /// The default for the MLX90640 is the [chess pattern][AccessPattern::Chess] mode, while the
     /// default for the MLX90641 is [interleaved][AccessPattern::Interleave].
     pub fn access_pattern(&self) -> AccessPattern {
-        self.access_pattern
+        let raw =
+            (self.0 & Self::ACCESS_PATTERN_MASK) >> (Self::ACCESS_PATTERN_MASK.trailing_zeros());
+        // Safe to unwrap as only 0 and 1 are allowable values, and all but one bit are masked off
+        AccessPattern::try_from_primitive(raw as u8).unwrap()
     }
 
     /// Set the access pattern to use.
     pub fn set_access_pattern(&mut self, access_pattern: AccessPattern) {
-        self.access_pattern = access_pattern;
+        let raw = access_pattern as u8;
+        self.0 = self.0 & !Self::ACCESS_PATTERN_MASK
+            | ((raw as u16) << Self::ACCESS_PATTERN_MASK.trailing_zeros())
+    }
+}
+
+impl PartialEq for ControlRegister {
+    fn eq(&self, other: &Self) -> bool {
+        let mask = Self::USE_SUBPAGES_MASK
+            | Self::STEP_MODE_MASK
+            | Self::DATA_HOLD_MASK
+            | Self::SUBPAGE_REPEAT_MASK
+            | Self::SUBPAGE_MASK
+            | Self::FRAME_RATE_MASK
+            | Self::RESOLUTION_MASK
+            | Self::ACCESS_PATTERN_MASK;
+        (self.0 & mask) == (other.0 & mask)
     }
 }
 
@@ -318,56 +333,13 @@ impl<'a> From<&'a [u8]> for ControlRegister {
             .try_into()
             .expect("Not enough bytes in control register buffer");
         let raw = u16::from_be_bytes(int_bytes);
-        let use_subpages = is_bit_set(raw, 0);
-        let step_mode = is_bit_set(raw, 1);
-        let data_hold = is_bit_set(raw, 2);
-        let subpage_repeat = is_bit_set(raw, 3);
-        let subpage = if is_bit_set(raw, 4) {
-            Subpage::One
-        } else {
-            Subpage::Zero
-        };
-        // Unwrapping is safe here as the only values valid for FrameRate are 0-7, and we're
-        // masking off all but 3 bits.
-        let frame_rate = FrameRate::from_raw((raw & 0x0380) >> 7).unwrap();
-        // Unwrap: Same as deal as frame_rate, except now it's two bits and there's only four
-        // values.
-        let resolution = Resolution::from_raw((raw & 0x0C00) >> 10).unwrap();
-        let access_pattern = if is_bit_set(raw, 12) {
-            AccessPattern::Chess
-        } else {
-            AccessPattern::Interleave
-        };
-        Self {
-            use_subpages,
-            step_mode,
-            data_hold,
-            subpage_repeat,
-            subpage,
-            frame_rate,
-            resolution,
-            access_pattern,
-        }
+        Self(raw)
     }
 }
 
 impl From<ControlRegister> for [u8; 2] {
     fn from(register: ControlRegister) -> Self {
-        let mut raw = 0u16;
-        raw |= register.use_subpages as u16;
-        raw |= (register.step_mode as u16) << 1;
-        raw |= (register.data_hold as u16) << 2;
-        raw |= (register.subpage_repeat as u16) << 3;
-        let subpage_int: usize = register.subpage.into();
-        raw |= (subpage_int as u16) << 4;
-        let frame_rate_int: u8 = register.frame_rate.as_raw() as u8;
-        raw |= (frame_rate_int as u16) << 7;
-        let resolution_int: u8 = register.resolution.as_raw() as u8;
-        raw |= (resolution_int as u16) << 10;
-        if register.access_pattern == AccessPattern::Chess {
-            raw |= 1u16 << 12;
-        }
-        raw.to_be_bytes()
+        register.0.to_be_bytes()
     }
 }
 
@@ -741,7 +713,7 @@ mod test {
             let value: u16 = $value;
             let bytes = value.to_be_bytes();
             let packed: $register = From::from(&bytes[..]);
-            assert_eq!(packed.$field, $expected);
+            assert_eq!(packed.$field(), $expected);
             let unpacked: [u8; 2] = packed.into();
             assert_eq!(unpacked, bytes);
         };
@@ -948,7 +920,10 @@ mod test {
         control_register.set_access_pattern(AccessPattern::Interleave);
         assert_eq!(control_register.access_pattern(), AccessPattern::Interleave);
         // Also check the MLX90641 default
-        assert_eq!(ControlRegister::default_mlx90641().access_pattern(), AccessPattern::Interleave);
+        assert_eq!(
+            ControlRegister::default_mlx90641().access_pattern(),
+            AccessPattern::Interleave
+        );
     }
 
     #[test]
