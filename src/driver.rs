@@ -147,23 +147,27 @@ where
     }
 
     fn set_status_register(&mut self, register: StatusRegister) -> Result<(), Error<I2C>> {
-        update_register(&mut self.bus, self.address, register)
+        write_register(&mut self.bus, self.address, register)
     }
 
-    fn control_register(&mut self) -> Result<ControlRegister, Error<I2C>> {
-        let register: ControlRegister = read_register(&mut self.bus, self.address)?;
+    fn update_control_register(&mut self, register: &ControlRegister) {
         // Update the resolution as well
         let calibrated_resolution = self.calibration.resolution();
         self.resolution_correction =
             Cam::resolution_correction(calibrated_resolution, register.resolution().as_raw() as u8);
         self.access_pattern = register.access_pattern();
+    }
+
+    fn control_register(&mut self) -> Result<ControlRegister, Error<I2C>> {
+        let register: ControlRegister = read_register(&mut self.bus, self.address)?;
+        // Update the resolution as well
+        self.update_control_register(&register);
         Ok(register)
     }
 
     fn set_control_register(&mut self, register: ControlRegister) -> Result<(), Error<I2C>> {
-        update_register(&mut self.bus, self.address, register)?;
-        // Trigger yet another read to ensure we have the lastest value for the camera
-        self.control_register()?;
+        self.update_control_register(&register);
+        write_register(&mut self.bus, self.address, register)?;
         Ok(())
     }
 
@@ -421,11 +425,10 @@ where
 
     /// Generate a thermal "image" from the camera's current data, if there's new data.
     ///
-    // This function first checks to see if there is new data available, and if there is it copies
-    // that data into the provided `ndarray::ArrayViewMut`. It will then clear the data ready flag
-    // afterwards, signaliing to the camera that we are ready for more data.
-    ///
-    /// The `Ok` value is a boolean for whether or not data was ready and copied.
+    /// This function first checks to see if there is new data available, and if there is it copies
+    /// that data into the provided buffer. It will then clear the data ready flag afterwards,
+    /// signaliing to the camera that we are ready for more data. The `Ok` value is a boolean for
+    /// whether or not data was ready and copied.
     pub fn generate_image_if_ready(
         &'a mut self,
         destination: &mut [f32],
@@ -565,31 +568,6 @@ fn write_raw_register<I2C: i2c::Write>(
         register_data[1],
     ];
     bus.write(i2c_address, &combined)?;
-    Ok(())
-}
-
-fn update_register<R, I2C>(bus: &mut I2C, address: u8, register: R) -> Result<(), Error<I2C>>
-where
-    I2C: i2c::WriteRead + i2c::Write,
-    R: Register,
-{
-    let register_address = R::address();
-    let register_address_bytes = register_address.as_bytes();
-    // Can't use read_register(), as it strips the unused bytes off
-    let mut existing_value = [0u8; 2];
-    bus.write_read(address, &register_address_bytes, &mut existing_value)
-        .map_err(Error::I2cWriteReadError)?;
-    let mut new_bytes: [u8; 2] = register.into();
-    new_bytes
-        .iter_mut()
-        .zip(R::write_mask())
-        .zip(existing_value)
-        .for_each(|((new_value, mask), old_value)| {
-            *new_value &= mask;
-            *new_value |= old_value & !mask;
-        });
-    write_raw_register(bus, address, register_address_bytes, new_bytes)
-        .map_err(Error::I2cWriteError)?;
     Ok(())
 }
 
