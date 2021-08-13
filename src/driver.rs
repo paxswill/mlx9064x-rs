@@ -632,8 +632,15 @@ mod test {
         // Just picking addresses now
         let address = 0x10;
         let mut mock_bus = datasheet_mlx90640_at_address(address);
+        mock_bus.clear_recent_operations();
         let register: I2cRegister = super::read_register(&mut mock_bus, address).unwrap();
         assert_eq!(register, I2cRegister::default());
+        let ops = mock_bus.recent_operations();
+        assert_eq!(
+            ops.len(),
+            1,
+            "Only one operation should be performed to read a register"
+        )
     }
 
     #[test]
@@ -641,11 +648,14 @@ mod test {
         let address = 0x42;
         // Using the status register for this test as it has read-only sections at both ends.
         let mut mock_bus = datasheet_mlx90640_at_address(address);
+        mock_bus.clear_recent_operations();
         let mut status_register: StatusRegister =
             super::read_register(&mut mock_bus, address).unwrap();
+        assert_eq!(mock_bus.recent_operations().len(), 1);
         assert!(!status_register.overwrite_enabled());
         status_register.set_overwrite_enabled(true);
-        super::update_register(&mut mock_bus, address, status_register).unwrap();
+        super::write_register(&mut mock_bus, address, status_register).unwrap();
+        assert_eq!(mock_bus.recent_operations().len(), 2);
     }
 
     #[test]
@@ -784,5 +794,37 @@ mod test {
         );
         assert!(ram_data_result.is_ok());
         check_sentinel_buffer(&buf);
+    }
+
+    #[test]
+    fn get_register_flag_minimal_operations() {
+        let i2c_address = 0x49;
+        let mut mocked = example_mlx90640_at_address(i2c_address);
+        mocked.set_data_available(false);
+        let mut cam = Mlx90640Driver::new(mocked.clone(), i2c_address).unwrap();
+        mocked.clear_recent_operations();
+        cam.frame_rate().unwrap();
+        let ops = mocked.recent_operations();
+        assert_eq!(
+            ops.len(),
+            1,
+            "There should only be one operation to check a register"
+        );
+    }
+
+    #[test]
+    fn set_register_flag_minimal_operations() {
+        let i2c_address = 0x49;
+        let mut mocked = example_mlx90640_at_address(i2c_address);
+        mocked.set_data_available(false);
+        let mut cam = Mlx90640Driver::new(mocked.clone(), i2c_address).unwrap();
+        mocked.clear_recent_operations();
+        cam.set_frame_rate(crate::FrameRate::SixtyFour).unwrap();
+        let ops = mocked.recent_operations();
+        assert_eq!(
+            ops.len(),
+            2,
+            "There should only be two operations to update a register"
+        );
     }
 }
