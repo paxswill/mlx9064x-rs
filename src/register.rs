@@ -192,7 +192,7 @@ impl ControlRegister {
 
     /// Enable or disable step mode.
     ///
-    /// It is not recommended to enable step mode, see [`step_mode`] for more details.
+    /// It is not recommended to enable step mode, see [`step_mode`][Self::step_mode] for more details.
     pub fn set_step_mode(&mut self, step_mode: bool) {
         if step_mode {
             self.0 |= Self::STEP_MODE_MASK
@@ -237,8 +237,8 @@ impl ControlRegister {
 
     /// Check which subpage will be written to.
     ///
-    /// This value only has an effect if *both* [`use_subpages`] and [`subpage_repeat`] are
-    /// enabled. The default is [`0`][Subpage::Zero].
+    /// This value only has an effect if *both* [`use_subpages`][Self::use_subpages] and
+    /// [`subpage_repeat`][Self::subpage_repeat] are enabled. The default is [`0`][Subpage::Zero].
     pub fn subpage(&self) -> Subpage {
         let subpage_num = (self.0 & Self::SUBPAGE_MASK) >> (Self::SUBPAGE_MASK.trailing_zeros());
         // Safe to unwrap as only 0 and 1 are allowable values, and all but one bit are masked off
