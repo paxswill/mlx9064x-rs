@@ -2,6 +2,7 @@
 // Copyright © 2021 Will Ross
 extern crate alloc;
 
+use alloc::collections::VecDeque;
 use alloc::rc::Rc;
 use core::cell::{Ref, RefCell};
 use core::convert::TryInto;
@@ -47,6 +48,8 @@ const I2C_CONFIG_REGISTER_ADDRESS: u16 = 0x800F;
 // Only the last four bits of the I2C config register are documented.
 const I2C_CONFIG_REGISTER_WRITE_MASK: [u8; 2] = [0x00, 0x0F];
 
+const RECENT_OPERATIONS_QUEUE_LENGTH: usize = 32;
+
 #[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u16)]
@@ -85,6 +88,12 @@ pub(crate) enum MockError {
     IllegalOperation,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum I2cOperation {
+    Write { address: Address, length: usize },
+    Read { address: Address, length: usize },
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct MockCameraBus<const RAM_LENGTH: usize> {
     i2c_address: u8,
@@ -97,6 +106,7 @@ pub(crate) struct MockCameraBus<const RAM_LENGTH: usize> {
     status_register: Rc<RefCell<[u8; 2]>>,
     control_register: Rc<RefCell<[u8; 2]>>,
     i2c_config_register: Rc<RefCell<[u8; 2]>>,
+    recent_operations: Rc<RefCell<VecDeque<I2cOperation>>>,
 }
 
 impl MockCameraBus<MLX90640_RAM_LENGTH> {
@@ -129,6 +139,7 @@ impl MockCameraBus<MLX90640_RAM_LENGTH> {
             status_register: Rc::new(RefCell::new(status_register_owned)),
             control_register: Rc::new(RefCell::new(control_register_owned)),
             i2c_config_register: Rc::new(RefCell::new(i2c_register_owned)),
+            recent_operations: Rc::new(RefCell::new(VecDeque::new())),
         }
     }
 }
@@ -328,6 +339,20 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
             self.status_register.borrow_mut()[1] &= 0x7;
         }
     }
+
+    fn add_operation(&self, operation: I2cOperation) {
+        let mut recent_ops = self.recent_operations.borrow_mut();
+        recent_ops.push_front(operation);
+        recent_ops.truncate(RECENT_OPERATIONS_QUEUE_LENGTH);
+    }
+
+    pub(crate) fn recent_operations(&self) -> Ref<VecDeque<I2cOperation>> {
+        self.recent_operations.borrow()
+    }
+
+    pub(crate) fn clear_recent_operations(&self) {
+        self.recent_operations.borrow_mut().clear()
+    }
 }
 
 impl<const RAM_LENGTH: usize> i2c::Write for MockCameraBus<RAM_LENGTH> {
@@ -341,7 +366,12 @@ impl<const RAM_LENGTH: usize> i2c::Write for MockCameraBus<RAM_LENGTH> {
         let raw_address = self.extract_address(bytes)?;
         let address: Address = raw_address.into();
         let payload = &bytes[2..];
-        self.set(address, payload)
+        self.set(address, payload)?;
+        self.add_operation(I2cOperation::Write {
+            address,
+            length: payload.len(),
+        });
+        Ok(())
     }
 }
 
@@ -363,6 +393,10 @@ impl<const RAM_LENGTH: usize> i2c::WriteRead for MockCameraBus<RAM_LENGTH> {
         }
         let raw_address = self.extract_address(write_buffer)?;
         let address: Address = raw_address.into();
+        self.add_operation(I2cOperation::Read {
+            address,
+            length: out_buffer.len(),
+        });
         let read_data = self.get(address, out_buffer.len())?;
         out_buffer.copy_from_slice(&read_data[..]);
         Ok(())
@@ -450,6 +484,7 @@ pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
         status_register: Rc::new(RefCell::new([0x00, 0x08])),
         control_register: Rc::new(RefCell::new([0x09, 0x01])),
         i2c_config_register: Rc::new(RefCell::new([0x00, 0x00])),
+        recent_operations: Rc::new(RefCell::new(VecDeque::new())),
     }
 }
 
