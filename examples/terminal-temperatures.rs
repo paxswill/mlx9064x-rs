@@ -42,7 +42,9 @@ fn main() -> Result<(), AnyError> {
             (temperatures, camera.width())
         }
         _ => {
-            return Err(AnyError::String("The second argument must be either 640 or 641".to_string()));
+            return Err(AnyError::String(
+                "The second argument must be either 640 or 641".to_string(),
+            ));
         }
     };
     print_temperatures(&temperatures, width);

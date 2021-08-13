@@ -552,7 +552,6 @@ where
     Ok(())
 }
 
-
 fn write_raw_register<I2C: i2c::Write>(
     bus: &mut I2C,
     i2c_address: u8,
@@ -740,8 +739,18 @@ mod test {
         assert!(buf.len() % 4 == 0);
         // If there's a block of two bytes that haven't been updated, fail
         for (index, chunk) in buf.chunks_exact(4).enumerate() {
-            assert_ne!(chunk[0..2], [0xDE, 0xAD], "Failed at byte index {}", index * 4);
-            assert_ne!(chunk[2..4], [0xBE, 0xEF], "Failed at byte index {}", index * 4 + 2);
+            assert_ne!(
+                chunk[0..2],
+                [0xDE, 0xAD],
+                "Failed at byte index {}",
+                index * 4
+            );
+            assert_ne!(
+                chunk[2..4],
+                [0xBE, 0xEF],
+                "Failed at byte index {}",
+                index * 4 + 2
+            );
         }
     }
 
@@ -755,7 +764,7 @@ mod test {
             i2c_address,
             crate::AccessPattern::Interleave,
             crate::Subpage::Zero,
-            &mut buf
+            &mut buf,
         );
         assert!(ram_data_result.is_ok());
         check_sentinel_buffer(&buf);
@@ -771,7 +780,7 @@ mod test {
             i2c_address,
             crate::AccessPattern::Interleave,
             crate::Subpage::One,
-            &mut buf
+            &mut buf,
         );
         assert!(ram_data_result.is_ok());
         check_sentinel_buffer(&buf);

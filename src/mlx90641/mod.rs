@@ -119,7 +119,8 @@ impl iter::Iterator for SubpageInterleave {
         match self.stride_count.cmp(&Self::NUM_STRIDES) {
             Ordering::Less => {
                 let next_value = PixelAddressRange {
-                    start_address: (self.base_address + self.stride_count * Self::STRIDE_LENGTH).into(),
+                    start_address: (self.base_address + self.stride_count * Self::STRIDE_LENGTH)
+                        .into(),
                     buffer_offset: (self.stride_count * Self::STRIDE_LENGTH) as usize,
                     length: Self::STRIDE_LENGTH as usize,
                 };
