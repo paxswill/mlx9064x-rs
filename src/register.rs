@@ -1,4 +1,5 @@
 use core::convert::{TryFrom, TryInto};
+use core::time::Duration;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
@@ -606,6 +607,14 @@ impl From<FrameRate> for f32 {
             FrameRate::ThirtyTwo => 32f32,
             FrameRate::SixtyFour => 64f32,
         }
+    }
+}
+
+impl From<FrameRate> for Duration {
+    /// Convert a frame rate into the per-frame duration.
+    fn from(frame_rate: FrameRate) -> Self {
+        let frequency: f32 = frame_rate.into();
+        Duration::from_secs_f32(frequency.recip())
     }
 }
 

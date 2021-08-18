@@ -1,6 +1,7 @@
 # Unreleased
 
 * Register access methods have been exposed for the low-level API.
+* Implemented `From` for `FrameRate` to `Duration`.
 
 # v0.1.0
 
