@@ -33,5 +33,9 @@ std = ["arrayvec/std", "bytes/std"]
 examples = ["anyhow", "linux-embedded-hal", "std"]
 
 [[example]]
+name = "true-frame-rate"
+required-features = ["examples"]
+
+[[example]]
 name = "terminal-temperatures"
 required-features = ["examples"]
