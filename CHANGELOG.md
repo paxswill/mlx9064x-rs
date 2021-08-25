@@ -1,7 +1,10 @@
 # Unreleased
 
+# v0.1.1
+
 * Register access methods have been exposed for the low-level API.
 * Implemented `From` for `FrameRate` to `Duration`.
+* Reduced the number of I2C operations performed for common tasks.
 
 # v0.1.0
 
