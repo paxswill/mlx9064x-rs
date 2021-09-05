@@ -5,9 +5,9 @@ sources:
   - "https://git.sr.ht/~paxswill/mlx9064x"
 environment:
   # No incremental builds, as CI is from scratch
-  CARGO_BUILD_INCREMENTAL: "0"
+  CARGO_BUILD_INCREMENTAL: "false"
   # Debug info can slow down the build, and we don't need it for CI
-  CARGO_PROFILE_test_DEBUG: "0"
+  CARGO_PROFILE_test_DEBUG: "false"
 tasks:
   - install_rustup: |
       curl \
