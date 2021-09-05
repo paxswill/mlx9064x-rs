@@ -3,6 +3,11 @@ arch: "amd64"
 shell: false
 sources:
   - "https://git.sr.ht/~paxswill/mlx9064x"
+environment:
+  # No incremental builds, as CI is from scratch
+  CARGO_BUILD_INCREMENTAL: "0"
+  # Debug info can slow down the build, and we don't need it for CI
+  CARGO_PROFILE_test_DEBUG: "0"
 tasks:
   - install_rustup: |
       curl \
@@ -19,6 +24,11 @@ tasks:
         --profile minimal \
         --quiet \
         -y
+  - build-test: |
+      cd mlx9064x
+      source $HOME/.cargo/env
+      # Just build the tests without running them
+      cargo test --no-run
   - test: |
       cd mlx9064x
       source $HOME/.cargo/env
