@@ -1,5 +1,5 @@
-![Crates.io](https://img.shields.io/crates/v/mlx9064x)
-![docs.rs](https://img.shields.io/docsrs/mlx9064x?label=docs.rs)
+[![Crates.io](https://img.shields.io/crates/v/mlx9064x)](https://crates.io/crates/mlx9064x)
+[![docs.rs](https://img.shields.io/docsrs/mlx9064x?label=docs.rs)](https://docs.rs/mlx9064x/)
 [![builds.sr.ht status](https://builds.sr.ht/~paxswill/mlx9064x.svg)](https://builds.sr.ht/~paxswill/mlx9064x?)
 
 # mlx9064x
