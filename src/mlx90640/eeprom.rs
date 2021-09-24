@@ -3,14 +3,13 @@
 use core::slice;
 
 use arrayvec::ArrayVec;
-use bytes::Buf;
 use embedded_hal::blocking::i2c;
 
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::Subpage;
-use crate::util::i16_from_bits;
+use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
 use super::{NUM_PIXELS, WIDTH};
@@ -79,7 +78,7 @@ impl Mlx90640Calibration {
     /// and remainder scaling factors.
     /// The calculated array, the remainder scaling factor, and the value occupying the 4 bits
     /// preceding the scaling factors are returned (in that order).
-    fn calculate_bulk_pixel_calibration<B: Buf>(data: &mut B) -> ([i16; NUM_PIXELS], u8, u8) {
+    fn calculate_bulk_pixel_calibration(data: &mut &[u8]) -> ([i16; NUM_PIXELS], u8, u8) {
         let (extra_value, row_scale, column_scale, remainder_scale) = {
             let scales = word_to_u4s(data);
             (scales[0], scales[1], scales[2], scales[3])
@@ -164,7 +163,7 @@ impl Mlx90640Calibration {
     /// this value is chosen from four values, determined by if the row and column indices are even
     /// or odd. The rest of the calculation is performed later, with the rest of the per-pixel
     /// calculations.
-    fn generate_k_ta_pixels<B: Buf>(data: &mut B) -> impl Iterator<Item = i16> {
+    fn generate_k_ta_pixels(data: &mut &[u8]) -> impl Iterator<Item = i16> {
         let source_data: ArrayVec<i8, 4> = (0..4).map(|_| data.get_i8()).collect();
         let source_data = source_data.into_inner().unwrap();
         Self::repeat_chessboard(source_data)
@@ -177,7 +176,7 @@ impl Mlx90640Calibration {
     pub fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
         let mut buf = data;
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
-        if buf.remaining() < eeprom_length {
+        if buf.len() < eeprom_length {
             return Err(LibraryError::Other(
                 "Not enough space left in buffer to be a full EEPROM dump",
             ));
@@ -454,7 +453,7 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
 /// Split a word into a 6-bit value and a 10-bit value.
 ///
 /// Further conversion for the second value is left to the caller.
-fn word_6_10_split<B: Buf>(data: &mut B) -> (i8, [u8; 2]) {
+fn word_6_10_split(data: &mut &[u8]) -> (i8, [u8; 2]) {
     let mut word = [data.get_u8(), data.get_u8()];
     // Copy out the 6-bit value, and shift it over. As signed right shifts are aritmetic, the sign
     // bit gets extended, and we get the value we wanted.
@@ -465,7 +464,7 @@ fn word_6_10_split<B: Buf>(data: &mut B) -> (i8, [u8; 2]) {
 }
 
 /// Extract four unsigned, 4-bit integers from a buffer
-fn word_to_u4s<B: Buf>(data: &mut B) -> [u8; 4] {
+fn word_to_u4s(data: &mut &[u8]) -> [u8; 4] {
     let high = data.get_u8();
     let low = data.get_u8();
     [(high & 0xF0) >> 4, high & 0xF, (low & 0xF0) >> 4, low & 0xF]
@@ -485,7 +484,7 @@ fn u8_to_i4s(byte: u8) -> [i8; 2] {
 }
 
 /// Split a word (2 bytes) from a buffer into four, 4-bit signed integers.
-fn word_to_i4s<B: Buf>(data: &mut B) -> [i8; 4] {
+fn word_to_i4s(data: &mut &[u8]) -> [i8; 4] {
     let high = data.get_u8();
     let low = data.get_u8();
     let high = u8_to_i4s(high);

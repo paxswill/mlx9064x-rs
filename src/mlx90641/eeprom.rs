@@ -6,14 +6,13 @@
 use core::slice;
 
 use arrayvec::ArrayVec;
-use bytes::Buf;
 use embedded_hal::blocking::i2c;
 
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::Subpage;
-use crate::util::i16_from_bits;
+use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
 use super::hamming::validate_checksum;
@@ -79,8 +78,7 @@ pub struct Mlx90641Calibration {
 }
 
 impl Mlx90641Calibration {
-    pub fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
-        let mut buf = data;
+    pub fn from_data(mut buf: &[u8]) -> Result<Self, LibraryError> {
         // Much like the MLX90640 implementation, this is a mess of a function as the data is
         // scattered across the EEPROM.
         // Skip the first 16 words, they're not used for calibration data
@@ -169,7 +167,7 @@ impl Mlx90641Calibration {
     /// on for three words, starting at 0x2419. Each scale value also need to be added to 20.
     /// $\textit{Row}\_{\textit{max}}$ is stored as an unsigned 11-bit integer, with one value per
     /// word, starting at 0x241C.
-    fn get_sensitivity_reference<B: Buf>(buf: &mut B) -> Result<[f32; 6], LibraryError> {
+    fn get_sensitivity_reference(buf: &mut &[u8]) -> Result<[f32; 6], LibraryError> {
         let mut scales: ArrayVec<u8, 6> = ArrayVec::new();
         for _ in 0..3 {
             let (first_scale, second_scale) = get_6_5_split(buf)?;
@@ -188,7 +186,7 @@ impl Mlx90641Calibration {
     ///
     /// These two values are stored in one word in the EEPROM, with the upper five bits being the
     /// scale, and the lower six bits the unscaled value.
-    fn get_scaled_cp_constant<B: Buf>(buf: &mut B) -> Result<f32, LibraryError> {
+    fn get_scaled_cp_constant(buf: &mut &[u8]) -> Result<f32, LibraryError> {
         let word = get_hamming_u16(buf)?;
         let raw_scale = (word & 0x07C0) >> 6;
         let value_bytes = (word & 0x003F).to_be_bytes();
@@ -203,7 +201,7 @@ impl Mlx90641Calibration {
     /// The values are returned as a tuple, with the resolution first, followed by the thermal
     /// gradient compensation (TGC) value. The TGC is pre-scaled, and needs no further calculations
     /// applied.
-    fn get_resolution_with_tgc<B: Buf>(buf: &mut B) -> Result<(u8, f32), LibraryError> {
+    fn get_resolution_with_tgc(buf: &mut &[u8]) -> Result<(u8, f32), LibraryError> {
         let word = get_hamming_u16(buf)?;
         let resolution = (word & 0x0600) >> 9;
         let tgc_bytes = (word & 0x01FF).to_be_bytes();
@@ -214,8 +212,8 @@ impl Mlx90641Calibration {
     }
 
     /// Extract the corner temperatures and $K\_{s\_{T\_o}}$ values
-    fn get_temperature_range_data<B: Buf>(
-        buf: &mut B,
+    fn get_temperature_range_data(
+        buf: &mut &[u8],
     ) -> Result<
         (
             [i16; NUM_CORNER_TEMPERATURES],
@@ -247,8 +245,8 @@ impl Mlx90641Calibration {
         Ok((corner_temperatures, k_s_to))
     }
 
-    fn get_pixel_offsets<B: Buf>(
-        buf: &mut B,
+    fn get_pixel_offsets(
+        buf: &mut &[u8],
         offset_scale: u8,
         offset_average: i16,
     ) -> Result<[i16; NUM_PIXELS], LibraryError> {
@@ -263,8 +261,8 @@ impl Mlx90641Calibration {
         Ok(pixel_offsets)
     }
 
-    fn get_pixel_sensitivities<B: Buf>(
-        buf: &mut B,
+    fn get_pixel_sensitivities(
+        buf: &mut &[u8],
         alpha_reference: [f32; 6],
     ) -> Result<[f32; NUM_PIXELS], LibraryError> {
         let mut pixel_sensitivites = [0f32; NUM_PIXELS];
@@ -284,8 +282,8 @@ impl Mlx90641Calibration {
         Ok(pixel_sensitivites)
     }
 
-    fn get_pixel_temperature_constants<B: Buf>(
-        buf: &mut B,
+    fn get_pixel_temperature_constants(
+        buf: &mut &[u8],
         k_ta_average: i16,
         k_ta_scales: (u8, u8),
         k_v_average: i16,
@@ -399,13 +397,13 @@ impl<'a> CalibrationData<'a> for Mlx90641Calibration {
 }
 
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
-fn get_hamming_u16<B: Buf>(buf: &mut B) -> Result<u16, LibraryError> {
+fn get_hamming_u16(buf: &mut &[u8]) -> Result<u16, LibraryError> {
     let codeword = buf.get_u16();
     validate_checksum(codeword)
 }
 
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
-fn get_hamming_i16<B: Buf>(buf: &mut B) -> Result<i16, LibraryError> {
+fn get_hamming_i16(buf: &mut &[u8]) -> Result<i16, LibraryError> {
     let bytes = get_hamming_u16(buf)?.to_be_bytes();
     Ok(i16_from_bits(&bytes[..], 11))
 }
@@ -415,7 +413,7 @@ fn get_hamming_i16<B: Buf>(buf: &mut B) -> Result<i16, LibraryError> {
 /// Since the MLX90641 EEPROM has a Hamming code in the upper five bits, it can only fit eleven
 /// bits of data in each word. Some values need 16-bits though, so they're split across two words.
 /// This function combines the bits and returns two bytes.
-fn get_combined_word<B: Buf>(buf: &mut B) -> Result<[u8; 2], LibraryError> {
+fn get_combined_word(buf: &mut &[u8]) -> Result<[u8; 2], LibraryError> {
     let upper = get_hamming_u16(buf)?;
     let lower = get_hamming_u16(buf)?;
     // TODO: Follow up with Melexis to see if the high word could have more than 5 bits set
@@ -424,7 +422,7 @@ fn get_combined_word<B: Buf>(buf: &mut B) -> Result<[u8; 2], LibraryError> {
 }
 
 /// Split a word into two values: the upper six bits and the lower five bits
-fn get_6_5_split<B: Buf>(buf: &mut B) -> Result<(u8, u8), LibraryError> {
+fn get_6_5_split(buf: &mut &[u8]) -> Result<(u8, u8), LibraryError> {
     let word = get_hamming_u16(buf)?;
     let upper = (word & 0x07E0) >> 5;
     let lower = word & 0x001F;
@@ -434,7 +432,6 @@ fn get_6_5_split<B: Buf>(buf: &mut B) -> Result<(u8, u8), LibraryError> {
 #[cfg(test)]
 pub(crate) mod test {
     use arrayvec::ArrayVec;
-    use bytes::Buf;
 
     use crate::common::CalibrationData;
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
@@ -461,7 +458,7 @@ pub(crate) mod test {
         assert_eq!(super::get_hamming_u16(&mut buf), Ok(0x0658));
         assert_eq!(super::get_hamming_u16(&mut buf), Ok(0x07FF));
         assert_eq!(super::get_hamming_u16(&mut buf), Ok(0x01e6));
-        assert_eq!(buf.remaining(), 0);
+        assert_eq!(buf.len(), 0);
     }
 
     #[test]
@@ -472,7 +469,7 @@ pub(crate) mod test {
         let mut buf = &data[..];
         assert_eq!(super::get_hamming_i16(&mut buf), Ok(-424));
         assert_eq!(super::get_hamming_i16(&mut buf), Ok(486));
-        assert_eq!(buf.remaining(), 0);
+        assert_eq!(buf.len(), 0);
     }
 
     #[test]
@@ -498,7 +495,7 @@ pub(crate) mod test {
             super::get_combined_word(&mut buf),
             Ok(65417u16.to_be_bytes())
         );
-        assert_eq!(buf.remaining(), 0);
+        assert_eq!(buf.len(), 0);
     }
 
     /// Check that it can even create itself from a buffer.
