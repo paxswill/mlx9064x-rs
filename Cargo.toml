@@ -18,7 +18,7 @@ arrayvec = { version = "0.7", default-features = false }
 embedded-hal = "0.2.5"
 # linux-embedded-hal is only required for examples
 linux-embedded-hal = { version = "0.3", optional = true }
-num_enum = "0.5"
+num_enum = { version = "0.5", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 paste = "1"
 
