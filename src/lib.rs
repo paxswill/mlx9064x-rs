@@ -110,6 +110,9 @@
 
 #![no_std]
 
+#[cfg(not(any(feature = "std", feature = "libm")))]
+compile_error!("Either the 'std' or 'libm' feature must be enabled.");
+
 pub mod calculations;
 pub mod common;
 pub mod driver;

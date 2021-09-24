@@ -3,12 +3,16 @@
 mod address;
 mod eeprom;
 
-pub use eeprom::Mlx90640Calibration;
+// Various floating point operations are not implemented in core, so we use libm to provide them as
+// needed.
+#[cfg_attr(feature = "std", allow(unused_imports))]
+use num_traits::Float;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
 
 pub use address::RamAddress;
+pub use eeprom::Mlx90640Calibration;
 
 /// The height of the image captured by sensor in pixels.
 pub const HEIGHT: usize = 24;

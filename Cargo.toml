@@ -28,8 +28,9 @@ linux-embedded-hal = "0.3"
 
 [features]
 default = ["std"]
-std = ["arrayvec/std"]
 examples = ["anyhow", "linux-embedded-hal", "std"]
+libm = ["num-traits/libm"]
+std = ["arrayvec/std", "num-traits/std"]
 
 [[example]]
 name = "true-frame-rate"

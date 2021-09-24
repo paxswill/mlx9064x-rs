@@ -8,6 +8,11 @@ use core::slice;
 use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
 
+// Various floating point operations are not implemented in core, so we use libm to provide them as
+// needed.
+#[cfg_attr(feature = "std", allow(unused_imports))]
+use num_traits::Float;
+
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;

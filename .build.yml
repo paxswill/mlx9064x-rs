@@ -24,7 +24,7 @@ tasks:
       source $HOME/.cargo/env
       # Test with and without std
       cargo test
-      cargo test --no-default-features
+      cargo test --no-default-features --features libm
   # TODO: Add clippy and rustfmt lints. When doing that, make sure to add those
   # components to the rustup task above.
   - test-docs: |

@@ -4,6 +4,11 @@ mod address;
 mod eeprom;
 pub mod hamming;
 
+// Various floating point operations are not implemented in core, so we use libm to provide them as
+// needed.
+#[cfg_attr(feature = "std", allow(unused_imports))]
+use num_traits::Float;
+
 use core::cmp::Ordering;
 use core::iter;
 
