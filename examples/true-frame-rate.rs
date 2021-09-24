@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 use std::env;
-use std::fmt;
 use std::error::Error as StdError;
+use std::fmt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -62,7 +62,10 @@ fn main() -> Result<(), AnyError> {
         .collect();
     let mut sorted_durations = durations.clone();
     sorted_durations.sort();
-    println!("For {}Hz, actual timings (min, max, mean, median, mode):", frame_rate_num);
+    println!(
+        "For {}Hz, actual timings (min, max, mean, median, mode):",
+        frame_rate_num
+    );
     let min = sorted_durations.first().unwrap();
     println!("{}", as_frequency(min));
     let max = sorted_durations.last().unwrap();
@@ -71,7 +74,10 @@ fn main() -> Result<(), AnyError> {
     println!("{}", as_frequency(&mean_duration));
     let middle = sorted_durations.len() / 2;
     let median = if sorted_durations.len() % 2 == 0 {
-        sorted_durations[middle..middle + 1].iter().sum::<Duration>() / 2
+        sorted_durations[middle..middle + 1]
+            .iter()
+            .sum::<Duration>()
+            / 2
     } else {
         sorted_durations[middle]
     };
@@ -85,18 +91,22 @@ fn main() -> Result<(), AnyError> {
                 unreachable!();
             }
         })
-        .fold((sorted_durations[0], 1, 1), |(mode, mode_count, current_count), [prev, current]| {
-            if current != prev {
-                (mode, mode_count, 1)
-            } else {
-                let current_count = current_count + 1;
-                if current_count > mode_count {
-                    (current, current_count, current_count)
+        .fold(
+            (sorted_durations[0], 1, 1),
+            |(mode, mode_count, current_count), [prev, current]| {
+                if current != prev {
+                    (mode, mode_count, 1)
                 } else {
-                    (mode, mode_count, current_count)
+                    let current_count = current_count + 1;
+                    if current_count > mode_count {
+                        (current, current_count, current_count)
+                    } else {
+                        (mode, mode_count, current_count)
+                    }
                 }
-            }
-        }).0;
+            },
+        )
+        .0;
     println!("{}", as_frequency(&mode));
     Ok(())
 }
