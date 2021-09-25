@@ -46,13 +46,9 @@ impl MelexisCamera for Mlx90641 {
         AllPixels::default()
     }
 
-    fn t_a_v_be() -> Address {
-        RamAddress::AmbientTemperatureVoltageBe.into()
-    }
+    const T_A_V_BE: Address = Address::new(RamAddress::AmbientTemperatureVoltageBe as u16);
 
-    fn t_a_ptat() -> Address {
-        RamAddress::AmbientTemperatureVoltage.into()
-    }
+    const T_A_PTAT: Address = Address::new(RamAddress::AmbientTemperatureVoltage as u16);
 
     fn compensation_pixel(subpage: Subpage) -> Address {
         match subpage {
@@ -62,13 +58,9 @@ impl MelexisCamera for Mlx90641 {
         .into()
     }
 
-    fn gain() -> Address {
-        RamAddress::Gain.into()
-    }
+    const GAIN: Address = Address::new(RamAddress::Gain as u16);
 
-    fn v_dd_pixel() -> Address {
-        RamAddress::PixelSupplyVoltage.into()
-    }
+    const V_DD_PIXEL: Address = Address::new(RamAddress::PixelSupplyVoltage as u16);
 
     fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32 {
         // These values are safe to convert to i8, as they were originally 4-bit unsigned ints.

@@ -215,10 +215,10 @@ impl RamData {
         I2C: i2c::WriteRead,
         Cam: MelexisCamera,
     {
-        let t_a_v_be = Self::read_ram_value(bus, i2c_address, Cam::t_a_v_be())?;
-        let t_a_ptat = Self::read_ram_value(bus, i2c_address, Cam::t_a_ptat())?;
-        let v_dd_pixel = Self::read_ram_value(bus, i2c_address, Cam::v_dd_pixel())?;
-        let gain = Self::read_ram_value(bus, i2c_address, Cam::gain())?;
+        let t_a_v_be = Self::read_ram_value(bus, i2c_address, Cam::T_A_V_BE)?;
+        let t_a_ptat = Self::read_ram_value(bus, i2c_address, Cam::T_A_PTAT)?;
+        let v_dd_pixel = Self::read_ram_value(bus, i2c_address, Cam::V_DD_PIXEL)?;
+        let gain = Self::read_ram_value(bus, i2c_address, Cam::GAIN)?;
         let compensation_pixel =
             Self::read_ram_value(bus, i2c_address, Cam::compensation_pixel(subpage))?;
         Ok(Self {

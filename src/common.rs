@@ -312,19 +312,19 @@ pub trait MelexisCamera {
     ) -> Self::PixelsInSubpageIterator;
 
     /// The address for T<sub>a<sub>V<sub>BE</sub></sub></sub>.
-    fn t_a_v_be() -> Address;
+    const T_A_V_BE: Address;
 
     /// The address for T<sub>a<sub>PTAT</sub></sub>
-    fn t_a_ptat() -> Address;
+    const T_A_PTAT: Address;
 
     /// The address of the compensation pixel for the given subpage.
     fn compensation_pixel(subpage: Subpage) -> Address;
 
     /// The address of the current gain.
-    fn gain() -> Address;
+    const GAIN: Address;
 
     /// The address for V<sub>DD<sub>pixel</sub></sub>.
-    fn v_dd_pixel() -> Address;
+    const V_DD_PIXEL: Address;
 
     /// Calculate the ADC resolution correction factor
     fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32;
