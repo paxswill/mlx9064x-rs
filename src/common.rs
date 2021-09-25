@@ -99,6 +99,9 @@ pub trait FromI2C<I2C> {
 /// provided implementations, but if you're trying to minimize memory usage or tweak performance
 /// for a specific use case, this might be a way to do it.
 pub trait CalibrationData<'a> {
+    /// The camera model this caliberation data is for.
+    type Camera: MelexisCamera;
+
     /// Pixel supply voltage constant (K<sub>V<sub>DD</sub></sub>).
     fn k_v_dd(&self) -> i16;
 
@@ -164,15 +167,6 @@ pub trait CalibrationData<'a> {
     ///
     /// [`k_s_to`]: CalibrationData::k_s_to
     fn alpha_correction(&self) -> &[f32];
-
-    /// The index of the basic temperature range.
-    ///
-    /// Temperature ranges (delimited by the control temperatures) outside of the basic range
-    /// are "extended temperature ranges" and require extra processing for accuracy. The datasheets
-    /// don't give a generic definition of the basic range, but for this library it is defined as
-    /// the temperature range with α<sub>correction</sub>(r) = 1. Also note that this library uses
-    /// 0-indexing as opposed to the datasheets that use 1-indexing.
-    fn basic_range(&self) -> usize;
 
     /// The emissivity stored on the device.
     ///
@@ -283,7 +277,10 @@ impl From<Address> for usize {
     }
 }
 
-/// Define common addresses accessible within the camera's RAM.
+/// Define common constants specific to a camera model.
+///
+/// The values from this trait are common between all cameras of a single model, and do not depend
+/// on the calibration values from a specific camera.
 pub trait MelexisCamera {
     type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
 
@@ -328,6 +325,15 @@ pub trait MelexisCamera {
 
     /// Calculate the ADC resolution correction factor
     fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32;
+
+    /// The index of the basic temperature range.
+    ///
+    /// Temperature ranges (delimited by the control temperatures) outside of the basic range
+    /// are "extended temperature ranges" and require extra processing for accuracy. The datasheets
+    /// don't give a generic definition of the basic range, but for this library it is defined as
+    /// the temperature range with α<sub>correction</sub>(r) = 1. Also note that this library uses
+    /// 0-indexing as opposed to the datasheets that use 1-indexing.
+    const BASIC_TEMPERATURE_RANGE: usize;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -124,7 +124,7 @@ pub mod register;
 mod test;
 mod util;
 
-pub use common::{Address, CalibrationData};
+pub use common::{Address, CalibrationData, MelexisCamera};
 pub use driver::CameraDriver;
 pub use error::Error;
 pub use register::*;

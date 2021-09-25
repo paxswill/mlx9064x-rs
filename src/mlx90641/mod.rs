@@ -68,6 +68,9 @@ impl MelexisCamera for Mlx90641 {
         // Have to use an f32 here as resolution_exp may be negative.
         f32::from(resolution_exp).exp2()
     }
+
+    // It's defined as 2 in the datasheet(well, 3, but 1-indexed, so 2 when 0-indexed).
+    const BASIC_TEMPERATURE_RANGE: usize = 2;
 }
 
 #[derive(Clone, Copy, Debug)]

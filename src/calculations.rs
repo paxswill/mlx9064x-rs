@@ -477,7 +477,7 @@ where
 /// section 11.2.2.9 in both datasheets.
 ///
 /// [sensitivity slope]: CalibrationData::k_s_to
-/// [basic-range]: CalibrationData::basic_range
+/// [basic-range]: MelexisCamera::BASIC_TEMPERATURE_RANGE
 ///
 /// $\alpha\_{(i, j)}$ is the [calibrated sensitivity][alpha-pixel] for the pixel. If the camera
 /// supports a [temperature gradient coefficient][tgc] (TGC), it is multiplied by the [compensation
@@ -525,8 +525,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
     let alpha_compensation_pixel = calibration
         .temperature_gradient_coefficient()
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
-    let basic_index = calibration.basic_range();
-    let k_s_to_basic = calibration.k_s_to()[basic_index];
+    let k_s_to_basic = calibration.k_s_to()[Clb::Camera::BASIC_TEMPERATURE_RANGE];
     let alpha_coefficient = sensitivity_correction_coefficient(calibration, t_a);
     // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
     // of the surrounding environment (but not T_a, which is basically the temperature of the
@@ -589,8 +588,7 @@ where
     let alpha_compensation_pixel = calibration
         .temperature_gradient_coefficient()
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
-    let basic_index = calibration.basic_range();
-    let k_s_to_basic = calibration.k_s_to()[basic_index];
+    let k_s_to_basic = calibration.k_s_to()[Clb::Camera::BASIC_TEMPERATURE_RANGE];
     let alpha_coefficient = sensitivity_correction_coefficient(calibration, common.t_a);
     // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
     // of the surrounding environment (but not T_a, which is basically the temperature of the
@@ -638,7 +636,7 @@ mod test {
     use float_cmp::approx_eq;
 
     use crate::test::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom};
-    use crate::{mlx90640, mlx90641, CalibrationData, Subpage};
+    use crate::{mlx90640, mlx90641, CalibrationData, MelexisCamera, Subpage};
 
     fn mlx90640_calibration() -> mlx90640::Mlx90640Calibration {
         let eeprom_data = mlx90640_datasheet_eeprom();
@@ -776,8 +774,9 @@ mod test {
     #[test]
     fn pixel_temperature_640() {
         let clb = mlx90640_calibration();
-        let basic_index = clb.basic_range();
-        let k_s_to = clb.k_s_to()[basic_index];
+        let basic_range =
+            <mlx90640::Mlx90640Calibration as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
+        let k_s_to = clb.k_s_to()[basic_range];
         // The worked example is using TGC, which is done before per_pixel_temperature() is called,
         // so these values are hard-coded from the datasheet.
         let alpha = 1.1876487360496E-7;
@@ -791,8 +790,9 @@ mod test {
     #[test]
     fn pixel_temperature_641() {
         let clb = mlx90641_calibration();
-        let basic_index = clb.basic_range();
-        let k_s_to = clb.k_s_to()[basic_index];
+        let basic_range =
+            <mlx90641::Mlx90641Calibration as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
+        let k_s_to = clb.k_s_to()[basic_range];
         let alpha = 3.32641806639731E-7;
         // Pile of values from previous steps.
         let v_ir = 1785f32;

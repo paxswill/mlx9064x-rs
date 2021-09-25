@@ -21,16 +21,10 @@ use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
 use super::hamming::validate_checksum;
-use super::NUM_PIXELS;
+use super::{Mlx90641, NUM_PIXELS};
 
 /// The number of corner temperatures an MLX90641 has.
 const NUM_CORNER_TEMPERATURES: usize = 8;
-
-/// The basic temperature range.
-///
-/// See discussion on [CalibrationData::basic_range] for more details.
-// It's defined as 2 in the datasheet(well, 3, but 1-indexed, so 2 when 0-indexed).
-const BASIC_TEMPERATURE_RANGE: usize = 2;
 
 /// The word size of the MLX90641 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
@@ -120,8 +114,9 @@ impl Mlx90641Calibration {
         let k_v_cp = Self::get_scaled_cp_constant(&mut buf)?;
         let (resolution, tgc) = Self::get_resolution_with_tgc(&mut buf)?;
         let (corner_temperatures, k_s_to) = Self::get_temperature_range_data(&mut buf)?;
+        let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
-            alpha_correction_coefficients(BASIC_TEMPERATURE_RANGE, &corner_temperatures, &k_s_to);
+            alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // TODO: false pixel detection
         let pixel_offsets_0 = Self::get_pixel_offsets(&mut buf, offset_scale, offset_average)?;
         let alpha_pixels = Self::get_pixel_sensitivities(&mut buf, alpha_reference)?;
@@ -335,6 +330,8 @@ where
 }
 
 impl<'a> CalibrationData<'a> for Mlx90641Calibration {
+    type Camera = Mlx90641;
+
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
@@ -348,10 +345,6 @@ impl<'a> CalibrationData<'a> for Mlx90641Calibration {
     expose_member!(&corner_temperatures, [i16]);
     expose_member!(&k_s_to, [f32]);
     expose_member!(&alpha_correction, [f32]);
-
-    fn basic_range(&self) -> usize {
-        BASIC_TEMPERATURE_RANGE
-    }
 
     expose_member!(emissivity, Option<f32>);
 

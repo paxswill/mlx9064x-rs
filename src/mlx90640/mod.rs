@@ -70,6 +70,9 @@ impl MelexisCamera for Mlx90640 {
         // Have to use an f32 here as resolution_exp may be negative.
         f32::from(resolution_exp).exp2()
     }
+
+    // It's defined as 1 in the datasheet(well, 2, but 1-indexed, so 1 when 0-indexed).
+    const BASIC_TEMPERATURE_RANGE: usize = 1;
 }
 
 /// An iterator for determining which pixels are part of the current subpage.
