@@ -245,6 +245,15 @@ pub trait CalibrationData<'a> {
 pub struct Address(u16);
 
 impl Address {
+    /// Wrap the given address in an `Address`.
+    ///
+    /// This function is intended to be used in const contexts, in other cases the
+    /// [`From`][core::convert::From]/[`TryFrom`][core::convert::TryFrom] implementations are
+    /// probably easier to use.
+    pub const fn new(address: u16) -> Self {
+        Self(address)
+    }
+
     pub(crate) fn as_bytes(&self) -> [u8; 2] {
         self.0.to_be_bytes()
     }
@@ -258,7 +267,7 @@ impl fmt::Debug for Address {
 
 impl From<u16> for Address {
     fn from(raw_address: u16) -> Self {
-        Self(raw_address)
+        Self::new(raw_address)
     }
 }
 
