@@ -437,8 +437,15 @@ where
 pub fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
     // Again, start with the steps common to all pixels
     let t_a_k4 = (t_a + KELVINS_TO_CELSIUS).powi(4);
-    let t_r_k4 = (t_r + KELVINS_TO_CELSIUS).powi(4);
-    t_r_k4 - ((t_r_k4 - t_a_k4) / emissivity)
+    // If the emissivity of an object is 1, it also absorbs all infrared radiation (see Kirchoff's
+    // law of thermal radiation). In that case, there is no reflected radiation, so we can ignore
+    // t_r.
+    if emissivity == 1.0 {
+        t_a_k4
+    } else {
+        let t_r_k4 = (t_r + KELVINS_TO_CELSIUS).powi(4);
+        t_r_k4 - ((t_r_k4 - t_a_k4) / emissivity)
+    }
 }
 
 /// Calculate the sensitivity correction coefficient
