@@ -148,8 +148,11 @@ pub trait FromI2C<I2C> {
 /// variables used in the formulas in the datasheet. Most users of this library can make use fo the
 /// provided implementations, but if you're trying to minimize memory usage or tweak performance
 /// for a specific use case, this might be a way to do it.
-pub trait CalibrationData<'a> {
-    /// The camera model this caliberation data is for.
+pub trait CalibrationData<'a, F = f32>
+where
+    F: 'a + FloatConstants,
+{
+    /// The camera model this calibration data is for.
     type Camera: MelexisCamera;
 
     /// Pixel supply voltage constant (K<sub>V<sub>DD</sub></sub>).
@@ -165,29 +168,29 @@ pub trait CalibrationData<'a> {
     /// Pixel supply voltage (V<sub>DD<sub>0</sub></sub>).
     ///
     /// This is the voltage supplied to the device, and should be 3.3V for the MLX90640 and
-    /// MLX90641. The default implementation is hardcoded to return `3.3f32`, but if there's a
+    /// MLX90641. The default implementation is hardcoded to return 3.3, but if there's a
     /// reason it needs to be overridden, it's possible.
-    fn v_dd_0(&self) -> f32 {
-        3.3f32
+    fn v_dd_0(&self) -> F {
+        F::THREE_POINT_THREE
     }
 
     /// Voltage proportional to ambient temperature constant (K<sub>V<sub>PTAT</sub></sub>).
-    fn k_v_ptat(&self) -> f32;
+    fn k_v_ptat(&self) -> F;
 
     /// Temperature proportional to ambient temperature constant (K<sub>T<sub>PTAT</sub></sub>).
-    fn k_t_ptat(&self) -> f32;
+    fn k_t_ptat(&self) -> F;
 
     /// Voltage proportional to ambient temperature at 25℃ (V<sub>PTAT<sub>25</sub></sub>).
-    fn v_ptat_25(&self) -> f32;
+    fn v_ptat_25(&self) -> F;
 
     /// Sensitivity proportional to ambient temperature (α<sub>PTAT</sub>).
-    fn alpha_ptat(&self) -> f32;
+    fn alpha_ptat(&self) -> F;
 
     /// The gain constant. Usually written as <var>GAIN</var> in the datasheets.
-    fn gain(&self) -> f32;
+    fn gain(&self) -> F;
 
     /// Sensitivity constant for ambient temperature (K<sub>S<sub>T<sub>a</sub></sub></sub>).
-    fn k_s_ta(&self) -> f32;
+    fn k_s_ta(&self) -> F;
 
     /// A slice of the "corner temperatures".
     ///
@@ -206,7 +209,7 @@ pub trait CalibrationData<'a> {
     ///
     /// This method returns a slice of values equal in length to
     /// [`corner_temperatures`](CalibrationData::corner_temperatures).
-    fn k_s_to(&self) -> &[f32];
+    fn k_s_to(&self) -> &[F];
 
     /// Temperature range sensitivity correction (α<sub>correction</sub>(n))
     ///
@@ -216,13 +219,13 @@ pub trait CalibrationData<'a> {
     /// [`corner_temperatures`](CalibrationData::corner_temperatures),
     ///
     /// [`k_s_to`]: CalibrationData::k_s_to
-    fn alpha_correction(&self) -> &[f32];
+    fn alpha_correction(&self) -> &[F];
 
     /// The emissivity stored on the device.
     ///
     /// Not all devices support storing the emissivity, in which case they should return [None]
     /// (which is what the provided implementation does).
-    fn emissivity(&self) -> Option<f32> {
+    fn emissivity(&self) -> Option<F> {
         None
     }
 
@@ -240,7 +243,7 @@ pub trait CalibrationData<'a> {
     /// (Offset<sub>reference<sub>CP</sub></sub>).
     fn offset_reference_cp(&self, subpage: Subpage) -> i16;
 
-    type AlphaIterator: Iterator<Item = &'a f32>;
+    type AlphaIterator: Iterator<Item = &'a F>;
 
     /// An iterator over the per-pixel sensitivity calibration values (α<sub>pixel</sub>(i, j)).
     ///
@@ -251,9 +254,9 @@ pub trait CalibrationData<'a> {
 
     /// The sensitivity calibration value for the compensation pixel for the given subpage
     /// (α<sub>CP</sub>).
-    fn alpha_cp(&self, subpage: Subpage) -> f32;
+    fn alpha_cp(&self, subpage: Subpage) -> F;
 
-    type KvIterator: Iterator<Item = &'a f32>;
+    type KvIterator: Iterator<Item = &'a F>;
 
     /// An iterator over the per-pixel voltage calibration constants (K<sub>V<sub>pixel</sub></sub>).
     ///
@@ -264,9 +267,9 @@ pub trait CalibrationData<'a> {
 
     /// The voltage calibration constant for the compensation pixel for the given subpage
     /// (K<sub>V<sub>CP</sub></sub>).
-    fn k_v_cp(&self, subpage: Subpage) -> f32;
+    fn k_v_cp(&self, subpage: Subpage) -> F;
 
-    type KtaIterator: Iterator<Item = &'a f32>;
+    type KtaIterator: Iterator<Item = &'a F>;
 
     /// The per pixel ambient temperature calibration constants (K<sub>T<sub>a</sub>pixel</sub>).
     ///
@@ -277,12 +280,12 @@ pub trait CalibrationData<'a> {
 
     /// The ambient temperature calibration constant for the compensation pixel for the given
     /// subpage (K<sub>T<sub>a</sub>CP</sub>).
-    fn k_ta_cp(&self, subpage: Subpage) -> f32;
+    fn k_ta_cp(&self, subpage: Subpage) -> F;
 
     /// Temperature gradient coefficient (TGC).
     ///
     /// Some devices do not support a TGC (it can also be disabled manually on other devices).
-    fn temperature_gradient_coefficient(&self) -> Option<f32>;
+    fn temperature_gradient_coefficient(&self) -> Option<F>;
 }
 /// Marker newtype for addresses accessible over I<sup>2</sup>C.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -397,16 +400,19 @@ pub struct PixelAddressRange {
 /// (Alpha<sub>corr<sub>range<sub>n</sub></sub></sub>) for the different temperature ranges.
 ///
 /// This function will `panic` if the passed in slices both do not have exactly `N` elements.
-pub(crate) fn alpha_correction_coefficients<const NUM_RANGES: usize>(
+pub(crate) fn alpha_correction_coefficients<F, const NUM_RANGES: usize>(
     basic_range: usize,
     corner_temperatures: &[i16],
-    k_s_to: &[f32],
-) -> [f32; NUM_RANGES] {
+    k_s_to: &[F],
+) -> [F; NUM_RANGES]
+where
+    F: fmt::Debug + FloatConstants + From<i16>,
+{
     // This is the actual calculation. The values are built up recursively from the base case of
     // the basic range (which doesn't need correcting, so it's 1).
     // Memoizing would be nice here, but these calculations are done only once, at start up, so the
     // impact isn't that big.
-    let results: ArrayVec<f32, NUM_RANGES> = (0..NUM_RANGES)
+    let results: ArrayVec<F, NUM_RANGES> = (0..NUM_RANGES)
         .map(|n| alpha_corr_n(n, basic_range, corner_temperatures, k_s_to))
         .collect();
     results
@@ -416,15 +422,18 @@ pub(crate) fn alpha_correction_coefficients<const NUM_RANGES: usize>(
 
 /// The actual calculations for [alpha_correction_coefficients] as a recursive function. Memoizing
 /// would be nice, but these calculations are only performed once, at start up.
-fn alpha_corr_n(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32 {
+fn alpha_corr_n<F>(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[F]) -> F
+where
+    F: FloatConstants + From<i16>,
+{
     match n.cmp(&basic_range) {
-        core::cmp::Ordering::Equal => 1f32,
+        core::cmp::Ordering::Equal => F::one(),
         core::cmp::Ordering::Less => {
-            (1f32 + k_s_to[n] * f32::from(ct[n + 1] - ct[n])).recip()
+            (F::ONE + k_s_to[n] * (ct[n + 1] - ct[n]).into()).recip()
                 * alpha_corr_n(n + 1, basic_range, ct, k_s_to)
         }
         core::cmp::Ordering::Greater => {
-            (1f32 + k_s_to[n - 1] * f32::from(ct[n] - ct[n - 1]))
+            (F::ONE + k_s_to[n - 1] * (ct[n] - ct[n - 1]).into())
                 * alpha_corr_n(n - 1, basic_range, ct, k_s_to)
         }
     }

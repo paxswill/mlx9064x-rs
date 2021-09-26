@@ -131,7 +131,7 @@ pub use register::*;
 
 pub type Mlx90640Driver<I2C> = CameraDriver<
     mlx90640::Mlx90640,
-    mlx90640::Mlx90640Calibration,
+    mlx90640::Mlx90640Calibration<f32>,
     I2C,
     { mlx90640::HEIGHT },
     { mlx90640::WIDTH },
@@ -140,7 +140,7 @@ pub type Mlx90640Driver<I2C> = CameraDriver<
 
 pub type Mlx90641Driver<I2C> = CameraDriver<
     mlx90641::Mlx90641,
-    mlx90641::Mlx90641Calibration,
+    mlx90641::Mlx90641Calibration<f32>,
     I2C,
     { mlx90641::HEIGHT },
     { mlx90641::WIDTH },

@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
+use core::fmt::Debug;
+use core::ops;
 use core::slice;
 
 use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
-
-// Various floating point operations are not implemented in core, so we use libm to provide them as
-// needed.
-#[cfg_attr(feature = "std", allow(unused_imports))]
-use num_traits::Float;
 
 use crate::common::*;
 use crate::error::{Error, LibraryError};
@@ -27,51 +24,51 @@ const WORD_SIZE: usize = 16 / 8;
 
 /// MLX990640-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Mlx90640Calibration {
+pub struct Mlx90640Calibration<F> {
     k_v_dd: i16,
 
     v_dd_25: i16,
 
     resolution: u8,
 
-    k_v_ptat: f32,
+    k_v_ptat: F,
 
-    k_t_ptat: f32,
+    k_t_ptat: F,
 
-    v_ptat_25: f32,
+    v_ptat_25: F,
 
-    alpha_ptat: f32,
+    alpha_ptat: F,
 
-    gain: f32,
+    gain: F,
 
-    k_s_ta: f32,
+    k_s_ta: F,
 
     corner_temperatures: [i16; NUM_CORNER_TEMPERATURES],
 
-    k_s_to: [f32; NUM_CORNER_TEMPERATURES],
+    k_s_to: [F; NUM_CORNER_TEMPERATURES],
 
-    alpha_correction: [f32; NUM_CORNER_TEMPERATURES],
+    alpha_correction: [F; NUM_CORNER_TEMPERATURES],
 
-    alpha_pixels: [f32; NUM_PIXELS],
+    alpha_pixels: [F; NUM_PIXELS],
 
-    alpha_cp: [f32; 2],
+    alpha_cp: [F; 2],
 
     offset_reference_pixels: [i16; NUM_PIXELS],
 
     offset_reference_cp: [i16; 2],
 
-    k_v_pattern: [f32; 4],
+    k_v_pattern: [F; 4],
 
-    k_v_cp: f32,
+    k_v_cp: F,
 
-    k_ta_pixels: [f32; NUM_PIXELS],
+    k_ta_pixels: [F; NUM_PIXELS],
 
-    k_ta_cp: f32,
+    k_ta_cp: F,
 
-    temperature_gradient_coefficient: Option<f32>,
+    temperature_gradient_coefficient: Option<F>,
 }
 
-impl Mlx90640Calibration {
+impl<F> Mlx90640Calibration<F> {
     /// Calculate pixel calibration values based off of the row and column data.
     ///
     /// Remainder data will be added in afterwards. This function is used for both offset and
@@ -169,7 +166,13 @@ impl Mlx90640Calibration {
         let source_data = source_data.into_inner().unwrap();
         Self::repeat_chessboard(source_data)
     }
+}
 
+impl<F> Mlx90640Calibration<F>
+where
+    F: Debug + FloatConstants + From<i16> + From<u16> + From<i8> + From<u8>,
+    F: ops::DivAssign<F> + ops::AddAssign<F>,
+{
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
     /// EEPROM.
     ///
@@ -190,21 +193,22 @@ impl Mlx90640Calibration {
         let alpha_ptat = alpha_ptat / 4 + 8;
         let (alpha_pixels, alpha_correction_remainder_scale, alpha_scale_exp) =
             Self::calculate_bulk_pixel_calibration(&mut buf);
-        let alpha_pixels: ArrayVec<f32, NUM_PIXELS> = core::array::IntoIter::new(alpha_pixels)
-            .map(f32::from)
+        let alpha_pixels: ArrayVec<F, NUM_PIXELS> = core::array::IntoIter::new(alpha_pixels)
+            .map(<F as From<i16>>::from)
             .collect();
         // Safe to unwrap as the length of pixel arrays are *all* NUM_PIXELS long.
         let mut alpha_pixels = alpha_pixels.into_inner().unwrap();
         // Calculate the actual alpha scaling value from the exponent value. The alpha scaling
         // exponenet also has 30 added to it (not 27 like alpha_scale_cp).
-        let alpha_scale = f32::from(alpha_scale_exp + 30).exp2();
+        let alpha_scale = <F as From<u8>>::from(alpha_scale_exp + 30).exp2();
         let gain = buf.get_i16();
         let v_ptat_25 = buf.get_i16();
         let (k_v_ptat, kt_ptat_bytes) = word_6_10_split(&mut buf);
         // k_v_ptat is scaled by 2^12
-        let k_v_ptat = f32::from(k_v_ptat) / 4096f32;
+        let k_v_ptat = <F as From<i8>>::from(k_v_ptat) / <F as From<u16>>::from(4096);
         // k_t_ptat is scaled by 2^3
-        let k_t_ptat = f32::from(i16_from_bits(&kt_ptat_bytes, 10)) / 8f32;
+        let k_t_ptat =
+            <F as From<i16>>::from(i16_from_bits(&kt_ptat_bytes, 10)) / <F as From<u8>>::from(8);
         let k_v_dd = (buf.get_i8() as i16) << 5;
         // The data in EEPROM is unsigned, so we upgrade to a signed type as it's immediately sent
         // negative (by subtracting 256), then multipled by 2^5, and finally has 2^13 subtracted
@@ -220,42 +224,46 @@ impl Mlx90640Calibration {
         // The two other two bits are reserved, so we just drop them.
         let resolution = unpacked_scales[0] & 0x3;
         // various scaling constants
-        let k_v_scale = f32::from(unpacked_scales[1]).exp2();
+        let k_v_scale = <F as From<u8>>::from(unpacked_scales[1]).exp2();
         // k_ta_scale1 has 8 added to it.
-        let k_ta_scale1 = f32::from(unpacked_scales[2] + 8).exp2();
+        let k_ta_scale1 = <F as From<u8>>::from(unpacked_scales[2] + 8).exp2();
         // Leaving k_ta_scale2 as just the exponenet, as it's small enough to be used to shift it's
         // operand directly.
         let k_ta_scale2_exp = unpacked_scales[3];
         // We have k_v_scale now, calculate k_v_pattern
-        let k_v_pattern: ArrayVec<f32, 4> = core::array::IntoIter::new(k_v_avg)
-            .map(|v| f32::from(v) / k_v_scale)
+        let k_v_pattern: ArrayVec<F, 4> = core::array::IntoIter::new(k_v_avg)
+            .map(|v| <F as From<i8>>::from(v) / k_v_scale)
             .collect();
         // Safe to unwrap as the input was only four elements, and the array is only 4 elements.
         let k_v_pattern = k_v_pattern.into_inner().unwrap();
         // Compensation pixel parameters
         let alpha_cp = {
             let (alpha_cp_ratio, alpha_cp_bytes) = word_6_10_split(&mut buf);
-            let alpha_cp_ratio = f32::from(alpha_cp_ratio) / 7f32.exp2();
+            let alpha_cp_ratio =
+                <F as From<i8>>::from(alpha_cp_ratio) / <F as From<u8>>::from(7).exp2();
             // NOTE: the alpha scale value read from EEPROM has 27 added to get alpha_scale_cp, but
             // 30 added for alpha_scale_pixel
-            let alpha_scale_cp = f32::from(alpha_scale_exp + 27).exp2();
-            let alpha_cp0: f32 = f32::from(u16::from_be_bytes(alpha_cp_bytes)) / alpha_scale_cp;
-            [alpha_cp0, alpha_cp0 * (1f32 + alpha_cp_ratio)]
+            let alpha_scale_cp = <F as From<u8>>::from(alpha_scale_exp + 27).exp2();
+            let alpha_cp0 =
+                <F as From<u16>>::from(u16::from_be_bytes(alpha_cp_bytes)) / alpha_scale_cp;
+            [alpha_cp0, alpha_cp0 * (F::ONE + alpha_cp_ratio)]
         };
         let offset_reference_cp = {
             let (offset_cp_delta, offset_cp_bytes) = word_6_10_split(&mut buf);
             let offset_cp0 = i16_from_bits(&offset_cp_bytes, 10);
             [offset_cp0, offset_cp0 + i16::from(offset_cp_delta)]
         };
-        let k_v_cp = f32::from(buf.get_i8()) / k_v_scale;
-        let k_ta_cp = f32::from(buf.get_i8()) / k_ta_scale1;
-        let k_s_ta = f32::from(buf.get_i8()) / 13f32.exp2();
+        let k_v_cp = <F as From<i8>>::from(buf.get_i8()) / k_v_scale;
+        let k_ta_cp = <F as From<i8>>::from(buf.get_i8()) / k_ta_scale1;
+        let k_s_ta = <F as From<i8>>::from(buf.get_i8()) / <F as From<u8>>::from(13).exp2();
         let temperature_gradient_coefficient = match buf.get_i8() {
             0 => None,
-            n => Some(f32::from(n) / 5f32.exp2()),
+            n => Some(<F as From<i8>>::from(n) / <F as From<u8>>::from(5).exp2()),
         };
         // k_s_to is unscaled until k_s_to_scale is unpacked.
-        let mut k_s_to_ranges: ArrayVec<f32, 4> = (0..4).map(|_| f32::from(buf.get_i8())).collect();
+        let mut k_s_to_ranges: ArrayVec<F, 4> = (0..4)
+            .map(|_| <F as From<i8>>::from(buf.get_i8()))
+            .collect();
         // Fix the ordering of the elements from the EEPROM
         k_s_to_ranges.swap(0, 1);
         k_s_to_ranges.swap(2, 3);
@@ -270,16 +278,16 @@ impl Mlx90640Calibration {
         let ct2 = i16::from(unpacked_corner_temps[2]) * corner_temperature_step;
         let ct3 = i16::from(unpacked_corner_temps[1]) * corner_temperature_step + ct2;
         // k_s_to_scale needs 8 added to it, then take 2 raised to this value.
-        let k_s_to_scale = f32::from(unpacked_corner_temps[3] + 8).exp2();
+        let k_s_to_scale = <F as From<u8>>::from(unpacked_corner_temps[3] + 8).exp2();
         // -40 and 0 are hard-coded values for CT0 and CT1 (labelled CT1 and CT2 in the datasheet)
         let corner_temperatures = [-40i16, 0, ct2, ct3];
         // Now that we have k_s_to_scale, we can scale k_s_to properly:
         k_s_to.iter_mut().for_each(|k_s_to| *k_s_to /= k_s_to_scale);
-        let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
+        let basic_range = <Self as CalibrationData<_>>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // Calculate the rest of the per-pixel data using the remainder/k_ta data
-        let mut k_ta_pixels = [0f32; NUM_PIXELS];
+        let mut k_ta_pixels = [F::ZERO; NUM_PIXELS];
         offset_reference_pixels
             .iter_mut()
             .zip(alpha_pixels.iter_mut())
@@ -296,12 +304,14 @@ impl Mlx90640Calibration {
                 // alpha is going to be a little weird: not only is there the i6-shift-dance, but
                 // there's an extra shift right by 4 to drop the k_ta and outlier bits.
                 let alpha_remainder = (i16::from_be_bytes([high & 0x03, low]) << 6) >> 10;
-                *alpha += f32::from(alpha_remainder << alpha_correction_remainder_scale);
+                *alpha +=
+                    <F as From<i16>>::from(alpha_remainder << alpha_correction_remainder_scale);
                 *alpha /= alpha_scale;
                 // To try to keep floating point errors down as long as possible, do all the
                 // operations for the numerator as ints, then convert to floats for the final division.
                 let k_ta_remainder = i16::from(i8::from_ne_bytes([low & 0x0E]) << 4 >> 5);
-                let k_ta_numerator = f32::from(k_ta_rc + (k_ta_remainder << k_ta_scale2_exp));
+                let k_ta_numerator =
+                    <F as From<i16>>::from(k_ta_rc + (k_ta_remainder << k_ta_scale2_exp));
                 *k_ta = k_ta_numerator / k_ta_scale1;
             });
         Ok(Self {
@@ -330,9 +340,11 @@ impl Mlx90640Calibration {
     }
 }
 
-impl<I2C> FromI2C<I2C> for Mlx90640Calibration
+impl<I2C, F> FromI2C<I2C> for Mlx90640Calibration<F>
 where
     I2C: i2c::WriteRead + i2c::Write,
+    F: Debug + FloatConstants + From<i16> + From<u16> + From<i8> + From<u8>,
+    F: ops::DivAssign<F> + ops::AddAssign<F>,
 {
     type Error = Error<I2C>;
     type Ok = Self;
@@ -349,22 +361,25 @@ where
     }
 }
 
-impl<'a> CalibrationData<'a> for Mlx90640Calibration {
+impl<'a, F> CalibrationData<'a, F> for Mlx90640Calibration<F>
+where
+    F: 'a + FloatConstants,
+{
     type Camera = Mlx90640;
 
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
-    expose_member!(k_v_ptat, f32);
-    expose_member!(k_t_ptat, f32);
-    expose_member!(v_ptat_25, f32);
-    expose_member!(alpha_ptat, f32);
-    expose_member!(gain, f32);
-    expose_member!(k_s_ta, f32);
+    expose_member!(k_v_ptat, F);
+    expose_member!(k_t_ptat, F);
+    expose_member!(v_ptat_25, F);
+    expose_member!(alpha_ptat, F);
+    expose_member!(gain, F);
+    expose_member!(k_s_ta, F);
 
     expose_member!(&corner_temperatures, [i16]);
-    expose_member!(&k_s_to, [f32]);
-    expose_member!(&alpha_correction, [f32]);
+    expose_member!(&k_s_to, [F]);
+    expose_member!(&alpha_correction, [F]);
 
     type OffsetReferenceIterator = slice::Iter<'a, i16>;
 
@@ -376,37 +391,37 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
         self.offset_reference_cp[subpage as usize]
     }
 
-    type AlphaIterator = slice::Iter<'a, f32>;
+    type AlphaIterator = slice::Iter<'a, F>;
 
     fn alpha_pixels(&'a self, _subpage: Subpage) -> Self::AlphaIterator {
         self.alpha_pixels.iter()
     }
 
-    fn alpha_cp(&self, subpage: Subpage) -> f32 {
+    fn alpha_cp(&self, subpage: Subpage) -> F {
         self.alpha_cp[subpage as usize]
     }
 
-    type KvIterator = ChessboardIter<'a, f32>;
+    type KvIterator = ChessboardIter<'a, F>;
 
     fn k_v_pixels(&'a self, _subpage: Subpage) -> Self::KvIterator {
         ChessboardIter::new(&self.k_v_pattern)
     }
 
-    fn k_v_cp(&self, _subpage: Subpage) -> f32 {
+    fn k_v_cp(&self, _subpage: Subpage) -> F {
         self.k_v_cp
     }
 
-    type KtaIterator = slice::Iter<'a, f32>;
+    type KtaIterator = slice::Iter<'a, F>;
 
     fn k_ta_pixels(&'a self, _subpage: Subpage) -> Self::KtaIterator {
         self.k_ta_pixels.iter()
     }
 
-    fn k_ta_cp(&self, _subpage: Subpage) -> f32 {
+    fn k_ta_cp(&self, _subpage: Subpage) -> F {
         self.k_ta_cp
     }
 
-    expose_member!(temperature_gradient_coefficient, Option<f32>);
+    expose_member!(temperature_gradient_coefficient, Option<F>);
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -509,12 +524,12 @@ pub(crate) mod test {
 
     use super::Mlx90640Calibration;
 
-    fn datasheet_eeprom() -> Mlx90640Calibration {
+    fn datasheet_eeprom() -> Mlx90640Calibration<f32> {
         let mut eeprom_bytes = mlx90640_datasheet_eeprom();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
-    fn example_eeprom() -> Mlx90640Calibration {
+    fn example_eeprom() -> Mlx90640Calibration<f32> {
         let mut example_bytes = &mlx90640_example_data::EEPROM_DATA[..];
         Mlx90640Calibration::from_data(&mut example_bytes)
             .expect("The example data should be parseable")
@@ -564,7 +579,7 @@ pub(crate) mod test {
         // The pattern order is (for row, column): EE, OE, EO, OO
         let pattern = [1, 2, 3, 4];
         let test_pattern: ArrayVec<i8, NUM_PIXELS> =
-            Mlx90640Calibration::repeat_chessboard(pattern).collect();
+            Mlx90640Calibration::<()>::repeat_chessboard(pattern).collect();
         // Print the test pattern (when std is available), as that makes it much easier to see
         // what's going on.
         #[cfg(feature = "std")]
@@ -631,11 +646,7 @@ pub(crate) mod test {
 
     #[test]
     fn k_v_ptat() {
-        assert_approx_eq!(
-            f32,
-            datasheet_eeprom().k_v_ptat(),
-            0.0053710938
-        );
+        assert_approx_eq!(f32, datasheet_eeprom().k_v_ptat(), 0.0053710938);
         assert_approx_eq!(
             f32,
             example_eeprom().k_v_ptat(),

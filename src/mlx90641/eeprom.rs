@@ -3,15 +3,11 @@
 
 //! MLX90641-specific EEPROM handling
 
+use core::fmt::Debug;
 use core::slice;
 
 use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
-
-// Various floating point operations are not implemented in core, so we use libm to provide them as
-// needed.
-#[cfg_attr(feature = "std", allow(unused_imports))]
-use num_traits::Float;
 
 use crate::common::*;
 use crate::error::{Error, LibraryError};
@@ -30,53 +26,56 @@ const NUM_CORNER_TEMPERATURES: usize = 8;
 const WORD_SIZE: usize = 16 / 8;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Mlx90641Calibration {
+pub struct Mlx90641Calibration<F> {
     k_v_dd: i16,
 
     v_dd_25: i16,
 
     resolution: u8,
 
-    k_v_ptat: f32,
+    k_v_ptat: F,
 
-    k_t_ptat: f32,
+    k_t_ptat: F,
 
-    v_ptat_25: f32,
+    v_ptat_25: F,
 
-    alpha_ptat: f32,
+    alpha_ptat: F,
 
-    gain: f32,
+    gain: F,
 
-    k_s_ta: f32,
+    k_s_ta: F,
 
     corner_temperatures: [i16; NUM_CORNER_TEMPERATURES],
 
-    k_s_to: [f32; NUM_CORNER_TEMPERATURES],
+    k_s_to: [F; NUM_CORNER_TEMPERATURES],
 
-    alpha_correction: [f32; NUM_CORNER_TEMPERATURES],
+    alpha_correction: [F; NUM_CORNER_TEMPERATURES],
 
-    emissivity: Option<f32>,
+    emissivity: Option<F>,
 
-    alpha_pixels: [f32; NUM_PIXELS],
+    alpha_pixels: [F; NUM_PIXELS],
 
-    alpha_cp: f32,
+    alpha_cp: F,
 
     offset_reference_pixels: [[i16; NUM_PIXELS]; 2],
 
     offset_reference_cp: i16,
 
-    k_v_pixels: [f32; NUM_PIXELS],
+    k_v_pixels: [F; NUM_PIXELS],
 
-    k_v_cp: f32,
+    k_v_cp: F,
 
-    k_ta_pixels: [f32; NUM_PIXELS],
+    k_ta_pixels: [F; NUM_PIXELS],
 
-    k_ta_cp: f32,
+    k_ta_cp: F,
 
-    temperature_gradient_coefficient: Option<f32>,
+    temperature_gradient_coefficient: Option<F>,
 }
 
-impl Mlx90641Calibration {
+impl<F> Mlx90641Calibration<F>
+where
+    F: Debug + FloatConstants + From<i16> + From<u16> + From<i8> + From<u8>,
+{
     pub fn from_data(mut buf: &[u8]) -> Result<Self, LibraryError> {
         // Much like the MLX90640 implementation, this is a mess of a function as the data is
         // scattered across the EEPROM.
@@ -93,28 +92,33 @@ impl Mlx90641Calibration {
         let k_v_average = get_hamming_i16(&mut buf)?;
         let k_v_scales = get_6_5_split(&mut buf)?;
         let alpha_reference = Self::get_sensitivity_reference(&mut buf)?;
-        let k_s_ta = f32::from(get_hamming_i16(&mut buf)?) / 15f32.exp2();
-        let emissivity = f32::from(get_hamming_i16(&mut buf)?) / 9f32.exp2();
+        let k_s_ta_scaling = <F as From<u16>>::from(15).exp2();
+        let k_s_ta = <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / k_s_ta_scaling;
+        let emissivity_scaling = <F as From<u16>>::from(9).exp2();
+        let emissivity = <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / emissivity_scaling;
         let gain = u16::from_be_bytes(get_combined_word(&mut buf)?);
         // TODO: These two parameters might need to be upsized to 32-bit ints
         let v_dd_25 = get_hamming_i16(&mut buf)? << 5;
         let k_v_dd = get_hamming_i16(&mut buf)? << 5;
         let v_ptat_25 = u16::from_be_bytes(get_combined_word(&mut buf)?);
         // Scaled by 2^3
-        let k_t_ptat = f32::from(get_hamming_i16(&mut buf)?) / 8f32;
+        let k_t_ptat =
+            <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / <F as From<u16>>::from(8);
         // Scaled by 2^12
-        let k_v_ptat = f32::from(get_hamming_i16(&mut buf)?) / 4096f32;
+        let k_v_ptat =
+            <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / <F as From<u16>>::from(4096);
         // Scaled by 2^7 (not 11, as the address map says)
-        let alpha_ptat = f32::from(get_hamming_u16(&mut buf)?) / 128f32;
-        let alpha_cp = f32::from(get_hamming_u16(&mut buf)?);
-        let alpha_cp_scale = f32::from(get_hamming_u16(&mut buf)?);
+        let alpha_ptat =
+            <F as From<u16>>::from(get_hamming_u16(&mut buf)?) / <F as From<u16>>::from(128);
+        let alpha_cp: F = get_hamming_u16(&mut buf)?.into();
+        let alpha_cp_scale: F = get_hamming_u16(&mut buf)?.into();
         let alpha_cp = alpha_cp / alpha_cp_scale.exp2();
         let offset_reference_cp = i16::from_be_bytes(get_combined_word(&mut buf)?);
         let k_ta_cp = Self::get_scaled_cp_constant(&mut buf)?;
         let k_v_cp = Self::get_scaled_cp_constant(&mut buf)?;
         let (resolution, tgc) = Self::get_resolution_with_tgc(&mut buf)?;
         let (corner_temperatures, k_s_to) = Self::get_temperature_range_data(&mut buf)?;
-        let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
+        let basic_range = <Self as CalibrationData<_>>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // TODO: false pixel detection
@@ -167,17 +171,18 @@ impl Mlx90641Calibration {
     /// on for three words, starting at 0x2419. Each scale value also need to be added to 20.
     /// $\textit{Row}\_{\textit{max}}$ is stored as an unsigned 11-bit integer, with one value per
     /// word, starting at 0x241C.
-    fn get_sensitivity_reference(buf: &mut &[u8]) -> Result<[f32; 6], LibraryError> {
+    fn get_sensitivity_reference(buf: &mut &[u8]) -> Result<[F; 6], LibraryError> {
         let mut scales: ArrayVec<u8, 6> = ArrayVec::new();
         for _ in 0..3 {
             let (first_scale, second_scale) = get_6_5_split(buf)?;
             scales.push(first_scale + 20);
             scales.push(second_scale + 20);
         }
-        let mut a_reference = [0f32; 6];
+        let mut a_reference = [F::ZERO; 6];
         for (dest, scale) in a_reference.iter_mut().zip(scales) {
-            let row_max = get_hamming_u16(buf)?;
-            *dest = f32::from(row_max) / f32::from(scale).exp2();
+            let row_max: F = get_hamming_u16(buf)?.into();
+            let scale: F = scale.into();
+            *dest = row_max / scale.exp2();
         }
         Ok(a_reference)
     }
@@ -186,14 +191,14 @@ impl Mlx90641Calibration {
     ///
     /// These two values are stored in one word in the EEPROM, with the upper five bits being the
     /// scale, and the lower six bits the unscaled value.
-    fn get_scaled_cp_constant(buf: &mut &[u8]) -> Result<f32, LibraryError> {
+    fn get_scaled_cp_constant(buf: &mut &[u8]) -> Result<F, LibraryError> {
         let word = get_hamming_u16(buf)?;
-        let raw_scale = (word & 0x07C0) >> 6;
+        let raw_scale: F = ((word & 0x07C0) >> 6).into();
+        let scale = raw_scale.exp2();
         let value_bytes = (word & 0x003F).to_be_bytes();
         // the values are signed
-        let value_unscaled = i16_from_bits(&value_bytes[..], 6);
-        let scale = f32::from(raw_scale).exp2();
-        Ok(f32::from(value_unscaled) / scale)
+        let value_unscaled: F = i16_from_bits(&value_bytes[..], 6).into();
+        Ok(value_unscaled / scale)
     }
 
     /// Read the calibrated ADC resolution and thermal gradient compensation value from the EEPROM
@@ -201,37 +206,32 @@ impl Mlx90641Calibration {
     /// The values are returned as a tuple, with the resolution first, followed by the thermal
     /// gradient compensation (TGC) value. The TGC is pre-scaled, and needs no further calculations
     /// applied.
-    fn get_resolution_with_tgc(buf: &mut &[u8]) -> Result<(u8, f32), LibraryError> {
+    fn get_resolution_with_tgc(buf: &mut &[u8]) -> Result<(u8, F), LibraryError> {
         let word = get_hamming_u16(buf)?;
         let resolution = (word & 0x0600) >> 9;
         let tgc_bytes = (word & 0x01FF).to_be_bytes();
-        let tgc_unscaled = i16_from_bits(&tgc_bytes[..], 9);
+        let tgc_unscaled: F = i16_from_bits(&tgc_bytes[..], 9).into();
         // Scaled by 2^6
-        let tgc = f32::from(tgc_unscaled) / 64f32;
+        let tgc = tgc_unscaled / <F as From<u16>>::from(64);
         Ok((resolution as u8, tgc))
     }
 
     /// Extract the corner temperatures and $K\_{s\_{T\_o}}$ values
     fn get_temperature_range_data(
         buf: &mut &[u8],
-    ) -> Result<
-        (
-            [i16; NUM_CORNER_TEMPERATURES],
-            [f32; NUM_CORNER_TEMPERATURES],
-        ),
-        LibraryError,
-    > {
-        let scale = f32::from(get_hamming_u16(buf)?).exp2();
+    ) -> Result<([i16; NUM_CORNER_TEMPERATURES], [F; NUM_CORNER_TEMPERATURES]), LibraryError> {
+        let scale_magnitude: F = get_hamming_u16(buf)?.into();
+        let scale = scale_magnitude.exp2();
         // The first five corner temperatures are hard-coded to these values, while the last three
         // are read from the EEPROM.
         let mut corner_temperatures: [i16; NUM_CORNER_TEMPERATURES] =
             [-40, -20, 0, 80, 120, 0, 0, 0];
-        let mut k_s_to = [0f32; NUM_CORNER_TEMPERATURES];
+        let mut k_s_to = [F::ZERO; NUM_CORNER_TEMPERATURES];
         // The first five k_s_to values come first in the EEPROM, then come pairs of corner
         // temperature, k_s_to for the remiaining values.
         for dest in k_s_to[..5].iter_mut() {
-            let unscaled = get_hamming_i16(buf)?;
-            *dest = f32::from(unscaled) / scale;
+            let unscaled: F = get_hamming_i16(buf)?.into();
+            *dest = unscaled / scale;
         }
         let paired_iter = corner_temperatures[5..]
             .iter_mut()
@@ -239,8 +239,8 @@ impl Mlx90641Calibration {
         for (ct, k_s_to) in paired_iter {
             // These are actually 11-bit integers, so they won't be truncated converting them to i16.
             *ct = get_hamming_u16(buf)? as i16;
-            let unscaled = get_hamming_i16(buf)?;
-            *k_s_to = f32::from(unscaled) / scale;
+            let unscaled: F = get_hamming_i16(buf)?.into();
+            *k_s_to = unscaled / scale;
         }
         Ok((corner_temperatures, k_s_to))
     }
@@ -263,9 +263,9 @@ impl Mlx90641Calibration {
 
     fn get_pixel_sensitivities(
         buf: &mut &[u8],
-        alpha_reference: [f32; 6],
-    ) -> Result<[f32; NUM_PIXELS], LibraryError> {
-        let mut pixel_sensitivites = [0f32; NUM_PIXELS];
+        alpha_reference: [F; 6],
+    ) -> Result<[F; NUM_PIXELS], LibraryError> {
+        let mut pixel_sensitivites = [F::ZERO; NUM_PIXELS];
         // The sensitivity reference value is shared across a band of 32 pixels, so chunk the
         // pixels by that, and xip the reference value in
         let referenced_rows = alpha_reference
@@ -273,10 +273,11 @@ impl Mlx90641Calibration {
             .zip(pixel_sensitivites.chunks_exact_mut(32));
         for (reference, row) in referenced_rows {
             for pixel_sensitivity in row {
-                let raw_alpha = f32::from(get_hamming_u16(buf)?);
+                let raw_alpha: F = get_hamming_u16(buf)?.into();
                 // The datasheet is a little hard to read for this, but alpha_EE is divided by
                 // (2^{11} - 1) = 2047
-                *pixel_sensitivity = (raw_alpha / 2047f32) * reference;
+                let scaled_alpha = raw_alpha / <F as From<u16>>::from(2047);
+                *pixel_sensitivity = scaled_alpha * (*reference);
             }
         }
         Ok(pixel_sensitivites)
@@ -288,15 +289,15 @@ impl Mlx90641Calibration {
         k_ta_scales: (u8, u8),
         k_v_average: i16,
         k_v_scales: (u8, u8),
-    ) -> Result<([f32; NUM_PIXELS], [f32; NUM_PIXELS]), LibraryError> {
-        let mut k_ta_pixels = [0f32; NUM_PIXELS];
-        let mut k_v_pixels = [0f32; NUM_PIXELS];
-        let k_ta_scale1 = f32::from(k_ta_scales.0).exp2();
-        let k_ta_scale2 = f32::from(k_ta_scales.1).exp2();
-        let k_v_scale1 = f32::from(k_v_scales.0).exp2();
-        let k_v_scale2 = f32::from(k_v_scales.1).exp2();
-        let scale_fn = |raw_value: i8, avg: i16, scale1: f32, scale2: f32| {
-            let numerator = f32::from(raw_value) * scale2 + f32::from(avg);
+    ) -> Result<([F; NUM_PIXELS], [F; NUM_PIXELS]), LibraryError> {
+        let mut k_ta_pixels = [F::ZERO; NUM_PIXELS];
+        let mut k_v_pixels = [F::ZERO; NUM_PIXELS];
+        let k_ta_scale1 = <F as From<u8>>::from(k_ta_scales.0).exp2();
+        let k_ta_scale2 = <F as From<u8>>::from(k_ta_scales.1).exp2();
+        let k_v_scale1 = <F as From<u8>>::from(k_v_scales.0).exp2();
+        let k_v_scale2 = <F as From<u8>>::from(k_v_scales.1).exp2();
+        let scale_fn = |raw_value: i8, avg: i16, scale1: F, scale2: F| {
+            let numerator = <F as From<i8>>::from(raw_value) * scale2 + <F as From<i16>>::from(avg);
             numerator / scale1
         };
         for (k_ta, k_v) in k_ta_pixels.iter_mut().zip(k_v_pixels.iter_mut()) {
@@ -310,9 +311,10 @@ impl Mlx90641Calibration {
     }
 }
 
-impl<I2C> FromI2C<I2C> for Mlx90641Calibration
+impl<I2C, F> FromI2C<I2C> for Mlx90641Calibration<F>
 where
     I2C: i2c::WriteRead + i2c::Write,
+    F: Debug + FloatConstants + From<i16> + From<u16> + From<i8> + From<u8>,
 {
     type Error = Error<I2C>;
     type Ok = Self;
@@ -329,24 +331,27 @@ where
     }
 }
 
-impl<'a> CalibrationData<'a> for Mlx90641Calibration {
+impl<'a, F> CalibrationData<'a, F> for Mlx90641Calibration<F>
+where
+    F: 'a + FloatConstants,
+{
     type Camera = Mlx90641;
 
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
-    expose_member!(k_v_ptat, f32);
-    expose_member!(k_t_ptat, f32);
-    expose_member!(v_ptat_25, f32);
-    expose_member!(alpha_ptat, f32);
-    expose_member!(gain, f32);
-    expose_member!(k_s_ta, f32);
+    expose_member!(k_v_ptat, F);
+    expose_member!(k_t_ptat, F);
+    expose_member!(v_ptat_25, F);
+    expose_member!(alpha_ptat, F);
+    expose_member!(gain, F);
+    expose_member!(k_s_ta, F);
 
     expose_member!(&corner_temperatures, [i16]);
-    expose_member!(&k_s_to, [f32]);
-    expose_member!(&alpha_correction, [f32]);
+    expose_member!(&k_s_to, [F]);
+    expose_member!(&alpha_correction, [F]);
 
-    expose_member!(emissivity, Option<f32>);
+    expose_member!(emissivity, Option<F>);
 
     type OffsetReferenceIterator = slice::Iter<'a, i16>;
 
@@ -361,37 +366,37 @@ impl<'a> CalibrationData<'a> for Mlx90641Calibration {
         self.offset_reference_cp
     }
 
-    type AlphaIterator = slice::Iter<'a, f32>;
+    type AlphaIterator = slice::Iter<'a, F>;
 
     fn alpha_pixels(&'a self, _subpage: Subpage) -> Self::AlphaIterator {
         self.alpha_pixels.iter()
     }
 
-    fn alpha_cp(&self, _subpage: Subpage) -> f32 {
+    fn alpha_cp(&self, _subpage: Subpage) -> F {
         self.alpha_cp
     }
 
-    type KvIterator = slice::Iter<'a, f32>;
+    type KvIterator = slice::Iter<'a, F>;
 
     fn k_v_pixels(&'a self, _subpage: Subpage) -> Self::KvIterator {
         self.k_v_pixels.iter()
     }
 
-    fn k_v_cp(&self, _subpage: Subpage) -> f32 {
+    fn k_v_cp(&self, _subpage: Subpage) -> F {
         self.k_v_cp
     }
 
-    type KtaIterator = slice::Iter<'a, f32>;
+    type KtaIterator = slice::Iter<'a, F>;
 
     fn k_ta_pixels(&'a self, _subpage: Subpage) -> Self::KtaIterator {
         self.k_ta_pixels.iter()
     }
 
-    fn k_ta_cp(&self, _subpage: Subpage) -> f32 {
+    fn k_ta_cp(&self, _subpage: Subpage) -> F {
         self.k_ta_cp
     }
 
-    expose_member!(temperature_gradient_coefficient, Option<f32>);
+    expose_member!(temperature_gradient_coefficient, Option<F>);
 }
 
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
@@ -442,7 +447,7 @@ pub(crate) mod test {
     // The example is testing pixel (6, 9), so (5, 8) zero-indexed
     const TEST_PIXEL_INDEX: usize = 5 * WIDTH + 8;
 
-    pub(crate) fn datasheet_eeprom() -> Mlx90641Calibration {
+    pub(crate) fn datasheet_eeprom() -> Mlx90641Calibration<f32> {
         let mut eeprom_bytes = mlx90641_datasheet_eeprom();
         Mlx90641Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
