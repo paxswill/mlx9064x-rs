@@ -500,7 +500,7 @@ pub(crate) mod test {
     use std::{print, println};
 
     use arrayvec::ArrayVec;
-    use float_cmp::{approx_eq, ApproxEq};
+    use float_cmp::{assert_approx_eq, ApproxEq};
 
     use crate::common::CalibrationData;
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
@@ -631,17 +631,15 @@ pub(crate) mod test {
 
     #[test]
     fn k_v_ptat() {
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             datasheet_eeprom().k_v_ptat(),
-            0.0053710938,
-            epsilon = 0.000001
+            0.0053710938
         );
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             example_eeprom().k_v_ptat(),
-            mlx90640_example_data::K_V_PTAT,
-            epsilon = 0.000001
+            mlx90640_example_data::K_V_PTAT
         );
     }
 
@@ -715,9 +713,8 @@ pub(crate) mod test {
         subpage: Option<Subpage>,
     ) where
         T: ApproxEq + PartialEq + core::fmt::Debug + core::fmt::Display + Copy,
-        <T as ApproxEq>::Margin: From<(f32, i32)>,
     {
-        let check = |actual: T, expected: T| actual.approx_eq(expected, (0.0000001f32, 0));
+        let check = |actual: T, expected: T| actual.approx_eq(expected, T::Margin::default());
         test_pixels_common(
             datasheet_data,
             example_data,
@@ -857,17 +854,15 @@ pub(crate) mod test {
         assert_eq!(datasheet.k_ta_cp(Subpage::One), expected);
         // example
         let example = example_eeprom();
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             example.k_ta_cp(Subpage::Zero),
-            mlx90640_example_data::K_TA_CP,
-            epsilon = 0.000001
+            mlx90640_example_data::K_TA_CP
         );
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             example.k_ta_cp(Subpage::One),
-            mlx90640_example_data::K_TA_CP,
-            epsilon = 0.000001
+            mlx90640_example_data::K_TA_CP
         );
     }
 
@@ -918,11 +913,10 @@ pub(crate) mod test {
     #[test]
     fn k_s_ta() {
         assert_eq!(datasheet_eeprom().k_s_ta(), -0.001953125);
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             example_eeprom().k_s_ta(),
-            mlx90640_example_data::K_S_TA,
-            epsilon = 0.00000001
+            mlx90640_example_data::K_S_TA
         );
     }
 
@@ -957,7 +951,7 @@ pub(crate) mod test {
             .iter()
             .zip(mlx90640_example_data::K_S_TO.iter());
         for (actual, expected) in example_pairs {
-            approx_eq!(f32, *actual, *expected, epsilon = 0.0001);
+            assert_approx_eq!(f32, *actual, *expected);
         }
     }
 

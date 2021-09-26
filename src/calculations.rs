@@ -633,7 +633,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use float_cmp::approx_eq;
+    use float_cmp::assert_approx_eq;
 
     use crate::test::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom};
     use crate::{mlx90640, mlx90641, CalibrationData, MelexisCamera, Subpage};
@@ -669,18 +669,16 @@ mod test {
         let clb_641 = mlx90641_calibration();
         let resolution_correction = 0.5;
         // MLX90640 datasheet has ≈3.319
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             super::v_dd(&clb_640, resolution_correction, 0.018623737),
-            3.3186,
-            epsilon = 0.0001
+            3.3186
         );
         // MLX90641 datasheet has ≈ 3.25599
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             super::v_dd(&clb_641, resolution_correction, -0.0440051),
-            3.25599,
-            epsilon = 0.0001
+            3.25599
         );
     }
 
@@ -703,17 +701,15 @@ mod test {
         let v_ptat_art_640 = super::v_ptat_art(&clb_640, 1711, 19442);
         let v_ptat_art_641 = super::v_ptat_art(&clb_641, 1752, 19540);
         // The datasheet is a bit more precise than I can get with f32, so approx_eq here
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             super::ambient_temperature(&clb_640, v_ptat_art_640, delta_v_640),
-            39.18440152,
-            epsilon = 0.000002
+            39.18440152
         );
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             super::ambient_temperature(&clb_641, v_ptat_art_641, delta_v_641),
-            42.022,
-            epsilon = 0.000002
+            42.022
         );
     }
 
@@ -741,7 +737,7 @@ mod test {
         let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
         // I'm getting 700.89, which is close enough considering how many places to lose precision
         // there are in this step.
-        approx_eq!(f32, v_ir, 700.882495690866, epsilon = 0.01);
+        assert_approx_eq!(f32, v_ir, 700.882495690866, epsilon = 0.01);
     }
 
     #[test]
@@ -768,7 +764,7 @@ mod test {
         let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
         // I'm getting 700.89, which is close enough considering how many places to lose precision
         // there are in this step.
-        approx_eq!(f32, v_ir, 1785f32, epsilon = 0.01);
+        assert_approx_eq!(f32, v_ir, 1785f32, epsilon = 0.01);
     }
 
     #[test]
@@ -799,6 +795,6 @@ mod test {
         let t_ar = 9899175739.92;
         let t_o = super::per_pixel_temperature(v_ir, alpha, t_ar, k_s_to);
         // Extended precision from earlier in the datasheet calculations
-        approx_eq!(f32, t_o, 80.129812, epsilon = 0.0001);
+        assert_approx_eq!(f32, t_o, 80.129812);
     }
 }

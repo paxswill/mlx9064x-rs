@@ -575,7 +575,7 @@ fn write_raw_register<I2C: i2c::Write>(
 mod test {
     extern crate std;
 
-    use float_cmp::approx_eq;
+    use float_cmp::{approx_eq, assert_approx_eq};
 
     use crate::test::*;
     use crate::{mlx90640, mlx90641};
@@ -658,7 +658,7 @@ mod test {
         assert!(res.unwrap());
         // Test pixel is (12, 16)
         const PIXEL_INDEX: usize = 11 * mlx90640::WIDTH + 15;
-        approx_eq!(f32, temperatures[PIXEL_INDEX], 80.36331, epsilon = 0.0001);
+        assert_approx_eq!(f32, temperatures[PIXEL_INDEX], 80.36331, epsilon = 0.0001);
     }
 
     #[test]
@@ -670,7 +670,7 @@ mod test {
         assert!(res.unwrap());
         // Test pixel is (6, 9)
         const PIXEL_INDEX: usize = 5 * mlx90641::WIDTH + 8;
-        approx_eq!(f32, temperatures[PIXEL_INDEX], 80.129812, epsilon = 0.0001);
+        assert_approx_eq!(f32, temperatures[PIXEL_INDEX], 80.129812, epsilon = 0.0001);
     }
 
     #[test]
