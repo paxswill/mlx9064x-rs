@@ -78,8 +78,58 @@
 use core::fmt;
 
 use arrayvec::ArrayVec;
+use num_traits::Float;
 
 use crate::register::{AccessPattern, Subpage};
+
+/// A trait providing constants needed for data processing.
+pub trait FloatConstants: Float {
+    /// Positive zero.
+    const ZERO: Self;
+
+    /// The number 1.
+    const ONE: Self;
+
+    /// The freezing point of water in kelvins (273.15).
+    const KELVINS_TO_CELSIUS: Self;
+
+    /// The number 1/4.
+    const ONE_QUARTER: Self;
+
+    /// The number 3.3.
+    const THREE_POINT_THREE: Self;
+
+    /// The number 25.0.
+    const TWENTY_FIVE: Self;
+
+    /// The number 2^18.
+    ///
+    /// This is a scaling factor used when calculating [v_ptat_art].
+    const TWO_RAISED_EIGHTEEN: Self;
+}
+
+/// Implements [`FloatConstants`] for the given builtin type.
+macro_rules! impl_float_constants {
+    ($typ:ty) => {
+        impl FloatConstants for $typ {
+            const ZERO: Self = 0.0;
+
+            const ONE: Self = 1.0;
+
+            const KELVINS_TO_CELSIUS: Self = 273.15;
+
+            const ONE_QUARTER: Self = 0.25;
+
+            const THREE_POINT_THREE: Self = 3.3;
+
+            const TWENTY_FIVE: Self = 25.0;
+
+            const TWO_RAISED_EIGHTEEN: Self = 2u32.pow(18) as Self;
+        }
+    };
+}
+impl_float_constants!(f32);
+impl_float_constants!(f64);
 
 pub trait FromI2C<I2C> {
     type Error;
