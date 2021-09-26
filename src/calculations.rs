@@ -437,8 +437,19 @@ where
 pub fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
     // Again, start with the steps common to all pixels
     let t_a_k4 = (t_a + KELVINS_TO_CELSIUS).powi(4);
-    let t_r_k4 = (t_r + KELVINS_TO_CELSIUS).powi(4);
-    t_r_k4 - ((t_r_k4 - t_a_k4) / emissivity)
+    // If the emissivity of an object is 1, it also absorbs all infrared radiation (see Kirchoff's
+    // law of thermal radiation). In that case, there is no reflected radiation, so we can ignore
+    // t_r.
+    // Disabling the clippy list here as the emissivity value usually uses is going to be very
+    // close to 1 anyways, so that comparing with a margin of error would be inaccurate. The exact
+    // value "1.0" is also used as a default value.
+    #[allow(clippy::float_cmp)]
+    if emissivity == 1.0 {
+        t_a_k4
+    } else {
+        let t_r_k4 = (t_r + KELVINS_TO_CELSIUS).powi(4);
+        t_r_k4 - ((t_r_k4 - t_a_k4) / emissivity)
+    }
 }
 
 /// Calculate the sensitivity correction coefficient
