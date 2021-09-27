@@ -118,7 +118,8 @@ where
         let k_v_cp = Self::get_scaled_cp_constant(&mut buf)?;
         let (resolution, tgc) = Self::get_resolution_with_tgc(&mut buf)?;
         let (corner_temperatures, k_s_to) = Self::get_temperature_range_data(&mut buf)?;
-        let basic_range = <Self as CalibrationData<_>>::Camera::BASIC_TEMPERATURE_RANGE;
+        let basic_range =
+            <<Self as CalibrationData<F>>::Camera as MelexisCamera<F>>::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // TODO: false pixel detection
@@ -333,7 +334,7 @@ where
 
 impl<'a, F> CalibrationData<'a, F> for Mlx90641Calibration<F>
 where
-    F: 'a + FloatConstants,
+    F: 'a + FloatConstants + From<i8>,
 {
     type Camera = Mlx90641;
 

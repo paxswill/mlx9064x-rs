@@ -209,14 +209,14 @@ impl RamData {
     /// The non-pixel values are $T_{a_{V_{BE}}}$,
     /// $T_{a_{PTAT}}$, $V_{DD_{pix}}$, gain and the corresponding compensation pixel for the given
     /// subpage.
-    pub fn from_i2c<I2C, Cam>(
+    pub fn from_i2c<I2C, Cam, F>(
         bus: &mut I2C,
         i2c_address: u8,
         subpage: Subpage,
     ) -> Result<Self, I2C::Error>
     where
         I2C: i2c::WriteRead,
-        Cam: MelexisCamera,
+        Cam: MelexisCamera<F>,
     {
         let t_a_v_be = Self::read_ram_value(bus, i2c_address, Cam::T_A_V_BE)?;
         let t_a_ptat = Self::read_ram_value(bus, i2c_address, Cam::T_A_PTAT)?;
@@ -806,8 +806,7 @@ mod test {
     #[test]
     fn pixel_temperature_640() {
         let clb = mlx90640_calibration();
-        let basic_range =
-            <mlx90640::Mlx90640Calibration<_> as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
+        let basic_range = <<mlx90640::Mlx90640Calibration<f32> as CalibrationData<f32>>::Camera as MelexisCamera<f32>>::BASIC_TEMPERATURE_RANGE;
         let k_s_to = clb.k_s_to()[basic_range];
         // The worked example is using TGC, which is done before per_pixel_temperature() is called,
         // so these values are hard-coded from the datasheet.
@@ -822,8 +821,7 @@ mod test {
     #[test]
     fn pixel_temperature_641() {
         let clb = mlx90641_calibration();
-        let basic_range =
-            <mlx90641::Mlx90641Calibration<_> as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
+        let basic_range = <<mlx90641::Mlx90641Calibration<f32> as CalibrationData<f32>>::Camera as MelexisCamera<f32>>::BASIC_TEMPERATURE_RANGE;
         let k_s_to = clb.k_s_to()[basic_range];
         let alpha = 3.32641806639731E-7;
         // Pile of values from previous steps.

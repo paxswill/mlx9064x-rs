@@ -129,19 +129,21 @@ pub use driver::CameraDriver;
 pub use error::Error;
 pub use register::*;
 
-pub type Mlx90640Driver<I2C> = CameraDriver<
+pub type Mlx90640Driver<I2C, F> = CameraDriver<
     mlx90640::Mlx90640,
-    mlx90640::Mlx90640Calibration<f32>,
+    mlx90640::Mlx90640Calibration<F>,
     I2C,
+    F,
     { mlx90640::HEIGHT },
     { mlx90640::WIDTH },
     { mlx90640::NUM_PIXELS * 2 },
 >;
 
-pub type Mlx90641Driver<I2C> = CameraDriver<
+pub type Mlx90641Driver<I2C, F> = CameraDriver<
     mlx90641::Mlx90641,
-    mlx90641::Mlx90641Calibration<f32>,
+    mlx90641::Mlx90641Calibration<F>,
     I2C,
+    F,
     { mlx90641::HEIGHT },
     { mlx90641::WIDTH },
     { mlx90641::NUM_PIXELS * 2 },

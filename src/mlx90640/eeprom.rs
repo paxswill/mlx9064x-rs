@@ -283,7 +283,8 @@ where
         let corner_temperatures = [-40i16, 0, ct2, ct3];
         // Now that we have k_s_to_scale, we can scale k_s_to properly:
         k_s_to.iter_mut().for_each(|k_s_to| *k_s_to /= k_s_to_scale);
-        let basic_range = <Self as CalibrationData<_>>::Camera::BASIC_TEMPERATURE_RANGE;
+        let basic_range =
+            <<Self as CalibrationData<F>>::Camera as MelexisCamera<F>>::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // Calculate the rest of the per-pixel data using the remainder/k_ta data
@@ -363,7 +364,7 @@ where
 
 impl<'a, F> CalibrationData<'a, F> for Mlx90640Calibration<F>
 where
-    F: 'a + FloatConstants,
+    F: 'a + FloatConstants + From<i8>,
 {
     type Camera = Mlx90640;
 

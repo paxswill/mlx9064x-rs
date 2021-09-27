@@ -153,7 +153,7 @@ where
     F: 'a + FloatConstants,
 {
     /// The camera model this calibration data is for.
-    type Camera: MelexisCamera;
+    type Camera: MelexisCamera<F>;
 
     /// Pixel supply voltage constant (K<sub>V<sub>DD</sub></sub>).
     fn k_v_dd(&self) -> i16;
@@ -334,7 +334,7 @@ impl From<Address> for usize {
 ///
 /// The values from this trait are common between all cameras of a single model, and do not depend
 /// on the calibration values from a specific camera.
-pub trait MelexisCamera {
+pub trait MelexisCamera<F> {
     type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
 
     type PixelsInSubpageIterator: IntoIterator<Item = bool>;
@@ -377,7 +377,7 @@ pub trait MelexisCamera {
     const V_DD_PIXEL: Address;
 
     /// Calculate the ADC resolution correction factor
-    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32;
+    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> F;
 
     /// The index of the basic temperature range.
     ///

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
 
+use core::fmt::Debug;
 use core::marker::PhantomData;
 
 use arrayvec::ArrayVec;
@@ -53,6 +54,7 @@ pub struct CameraDriver<
     Cam,
     Clb,
     I2C,
+    F,
     const HEIGHT: usize,
     const WIDTH: usize,
     const NUM_BYTES: usize,
@@ -71,16 +73,16 @@ pub struct CameraDriver<
     pixel_buffer: [u8; NUM_BYTES],
 
     /// ADC resolution correction factor.
-    resolution_correction: f32,
+    resolution_correction: F,
 
     /// The most recent observed ambient temperature.
     ///
     /// The ambient temperature is calculated during image processing step. Save it for those
     /// applications that want the ambient temperature so a full recalculation isn't necessary.
-    ambient_temperature: Option<f32>,
+    ambient_temperature: Option<F>,
 
     /// The emissivity value to use when calculating pixel temperature.
-    emissivity: f32,
+    emissivity: F,
 
     /// The current access pattern the camera is using.
     access_pattern: AccessPattern,
@@ -88,11 +90,12 @@ pub struct CameraDriver<
     _camera: PhantomData<Cam>,
 }
 
-impl<'a, Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const BUFFER_SIZE: usize>
-    CameraDriver<Cam, Clb, I2C, HEIGHT, WIDTH, BUFFER_SIZE>
+impl<'a, Cam, Clb, I2C, F, const HEIGHT: usize, const WIDTH: usize, const BUFFER_SIZE: usize>
+    CameraDriver<Cam, Clb, I2C, F, HEIGHT, WIDTH, BUFFER_SIZE>
 where
-    Cam: MelexisCamera,
-    Clb: CalibrationData<'a>,
+    Cam: MelexisCamera<F>,
+    Clb: CalibrationData<'a, F>,
+    F: 'a + Debug + FloatConstants + From<f32> + From<i16> + From<u16> + From<i8> + From<u8>,
     I2C: i2c::WriteRead + i2c::Write,
 {
     /// Create a new `CameraDriver`, obtaining the calibration data from the camera over I²C.
@@ -127,7 +130,7 @@ where
         );
         let access_pattern = control.access_pattern();
         // Choose an emissivity value to start with.
-        let emissivity = calibration.emissivity().unwrap_or(1f32);
+        let emissivity = calibration.emissivity().unwrap_or(F::ONE);
         Ok(Self {
             bus,
             address,
@@ -318,7 +321,7 @@ where
     /// The default emissivity is 1, unless a camera has a different value stored in EEPROM, in
     /// which case that value is used. The default can also be
     /// [overridden][CameraDriver::override_emissivity], but this change is not stored on the camera.
-    pub fn effective_emissivity(&self) -> f32 {
+    pub fn effective_emissivity(&self) -> F {
         self.emissivity
     }
 
@@ -327,7 +330,7 @@ where
     /// The default emissivity is 1, unless a camera has a different value stored in EEPROM, in
     /// which case that value is used. This method allows a new value to be used to compensate for
     /// emissivity.
-    pub fn override_emissivity(&mut self, new_value: f32) {
+    pub fn override_emissivity(&mut self, new_value: F) {
         self.emissivity = new_value;
     }
 
@@ -337,7 +340,7 @@ where
     /// either the camera (if the camera has a value set) or 1.
     pub fn use_default_emissivity(&mut self) {
         let default_emissivity = self.calibration.emissivity();
-        self.emissivity = default_emissivity.unwrap_or(1f32);
+        self.emissivity = default_emissivity.unwrap_or(F::ONE);
     }
 
     /// Get the most recent ambient temperature calculation.
@@ -345,7 +348,7 @@ where
     /// The ambient temperature is calculated as part of the overall image calculations. If that
     /// process hasn't been performed yet (by calling `generate_image_if_ready` or similar), this
     /// method will return `None`.
-    pub fn ambient_temperature(&self) -> Option<f32> {
+    pub fn ambient_temperature(&self) -> Option<F> {
         self.ambient_temperature
     }
 
@@ -361,7 +364,7 @@ where
     }
 
     fn read_ram(&mut self, subpage: Subpage) -> Result<RamData, Error<I2C>> {
-        read_ram::<Cam, I2C, HEIGHT>(
+        read_ram::<Cam, I2C, F, HEIGHT>(
             &mut self.bus,
             self.address,
             self.access_pattern,
@@ -373,7 +376,7 @@ where
     pub fn generate_raw_image_subpage_to(
         &'a mut self,
         subpage: Subpage,
-        destination: &mut [f32],
+        destination: &mut [F],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
         let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
@@ -394,7 +397,7 @@ where
     pub fn generate_image_subpage_to(
         &'a mut self,
         subpage: Subpage,
-        destination: &mut [f32],
+        destination: &mut [F],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
         let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
@@ -417,7 +420,7 @@ where
     /// This function does *not* check if there is new data, it just copies the
     pub fn generate_image_to<'b: 'a>(
         &'b mut self,
-        destination: &mut [f32],
+        destination: &mut [F],
     ) -> Result<(), Error<I2C>> {
         let subpage = self.last_measured_subpage()?;
         self.generate_image_subpage_to(subpage, destination)
@@ -431,7 +434,7 @@ where
     /// whether or not data was ready and copied.
     pub fn generate_image_if_ready(
         &'a mut self,
-        destination: &mut [f32],
+        destination: &mut [F],
     ) -> Result<bool, Error<I2C>> {
         // Not going through the helper methods on self to avoid infecting them with 'a
         let address = self.address;
@@ -441,7 +444,7 @@ where
         if status_register.new_data() {
             let subpage = status_register.last_updated_subpage();
             let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
-            let ram = read_ram::<Cam, I2C, HEIGHT>(
+            let ram = read_ram::<Cam, I2C, F, HEIGHT>(
                 bus,
                 address,
                 self.access_pattern,
@@ -487,7 +490,7 @@ where
     }
 }
 
-fn read_ram<Cam, I2C, const HEIGHT: usize>(
+fn read_ram<Cam, I2C, F, const HEIGHT: usize>(
     bus: &mut I2C,
     i2c_address: u8,
     access_pattern: AccessPattern,
@@ -495,7 +498,7 @@ fn read_ram<Cam, I2C, const HEIGHT: usize>(
     pixel_data_buffer: &mut [u8],
 ) -> Result<RamData, Error<I2C>>
 where
-    Cam: MelexisCamera,
+    Cam: MelexisCamera<F>,
     I2C: i2c::WriteRead + i2c::Write,
 {
     // Pick a maximum size of HEIGHT, as the worst access pattern is still by rows
@@ -514,7 +517,7 @@ where
         .map_err(Error::I2cWriteReadError)?;
     }
     // And now to read the non-pixel information out
-    RamData::from_i2c::<I2C, Cam>(bus, i2c_address, subpage).map_err(Error::I2cWriteReadError)
+    RamData::from_i2c::<I2C, Cam, F>(bus, i2c_address, subpage).map_err(Error::I2cWriteReadError)
 }
 
 fn read_register<R, I2C>(bus: &mut I2C, address: u8) -> Result<R, Error<I2C>>
@@ -575,13 +578,20 @@ fn write_raw_register<I2C: i2c::Write>(
 mod test {
     extern crate std;
 
-    use float_cmp::{approx_eq, assert_approx_eq};
+    use core::fmt::Debug;
 
+    use float_cmp::{approx_eq, assert_approx_eq};
+    use num_traits::NumCast;
+
+    use crate::common::FloatConstants;
     use crate::test::*;
     use crate::{mlx90640, mlx90641};
     use crate::{I2cRegister, Mlx90640Driver, Mlx90641Driver, StatusRegister};
 
-    fn create_mlx90640() -> Mlx90640Driver<MockCameraBus<MLX90640_RAM_LENGTH>> {
+    fn create_mlx90640<F>() -> Mlx90640Driver<MockCameraBus<MLX90640_RAM_LENGTH>, F>
+    where
+        F: Debug + FloatConstants + From<f32> + From<i16> + From<u16> + From<i8> + From<u8>,
+    {
         // Specifically using a non-default address to make sure assumptions aren't being made
         // about the address.
         let address: u8 = 0x30;
@@ -590,7 +600,10 @@ mod test {
             .expect("A MLX90640 camera should be created after loading its data")
     }
 
-    fn create_mlx90641() -> Mlx90641Driver<MockCameraBus<MLX90641_RAM_LENGTH>> {
+    fn create_mlx90641<F>() -> Mlx90641Driver<MockCameraBus<MLX90641_RAM_LENGTH>, F>
+    where
+        F: Debug + FloatConstants + From<f32> + From<i16> + From<u16> + From<i8> + From<u8>,
+    {
         // Again, non default address, but different from the '640 mock as well
         let address: u8 = 0x28;
         let mock_bus = mock_mlx90641_at_address(address);
@@ -600,8 +613,10 @@ mod test {
 
     #[test]
     fn smoke_test() {
-        create_mlx90640();
-        create_mlx90641();
+        create_mlx90640::<f32>();
+        create_mlx90640::<f64>();
+        create_mlx90641::<f32>();
+        create_mlx90641::<f64>();
         // Test passes if we get this far.
     }
 
@@ -640,19 +655,19 @@ mod test {
     fn default_emissivity() {
         // The MLX90640 doesn't store emissivity in EEPROM, so it should *always* default to 1
         let mut cam = create_mlx90640();
-        assert_eq!(cam.effective_emissivity(), 1f32);
+        assert_eq!(cam.effective_emissivity(), 1.0);
         // When we override it, it should change. Let's use the value for limestone from Wikipedia.
         cam.override_emissivity(0.92);
         assert_eq!(cam.effective_emissivity(), 0.92);
         // And we can reset it back to 0
         cam.use_default_emissivity();
-        assert_eq!(cam.effective_emissivity(), 1f32);
+        assert_eq!(cam.effective_emissivity(), 1.0);
     }
 
     #[test]
     fn mlx90640_datasheet_integration() {
         let mut cam = create_mlx90640();
-        let mut temperatures = [0f32; mlx90640::NUM_PIXELS];
+        let mut temperatures = [0.0; mlx90640::NUM_PIXELS];
         let res = cam.generate_image_if_ready(&mut temperatures);
         assert!(res.is_ok());
         assert!(res.unwrap());
@@ -664,7 +679,7 @@ mod test {
     #[test]
     fn mlx90641_datasheet_integration() {
         let mut cam = create_mlx90641();
-        let mut temperatures = [0f32; mlx90641::NUM_PIXELS];
+        let mut temperatures = [0.0; mlx90641::NUM_PIXELS];
         let res = cam.generate_image_if_ready(&mut temperatures);
         assert!(res.is_ok());
         assert!(res.unwrap());
@@ -747,7 +762,7 @@ mod test {
         let mut buf = create_sentinel_buffer();
         let i2c_address = 0x47;
         let mut mock_bus = mock_mlx90641_at_address(i2c_address);
-        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::HEIGHT }>(
+        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, f32, { mlx90641::HEIGHT }>(
             &mut mock_bus,
             i2c_address,
             crate::AccessPattern::Interleave,
@@ -763,7 +778,7 @@ mod test {
         let mut buf = create_sentinel_buffer();
         let i2c_address = 0x49;
         let mut mock_bus = mock_mlx90641_at_address(i2c_address);
-        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::HEIGHT }>(
+        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, f32, { mlx90641::HEIGHT }>(
             &mut mock_bus,
             i2c_address,
             crate::AccessPattern::Interleave,
@@ -779,7 +794,7 @@ mod test {
         let i2c_address = 0x49;
         let mut mocked = example_mlx90640_at_address(i2c_address);
         mocked.set_data_available(false);
-        let mut cam = Mlx90640Driver::new(mocked.clone(), i2c_address).unwrap();
+        let mut cam = Mlx90640Driver::<_, f32>::new(mocked.clone(), i2c_address).unwrap();
         mocked.clear_recent_operations();
         cam.frame_rate().unwrap();
         let ops = mocked.recent_operations();
@@ -795,7 +810,7 @@ mod test {
         let i2c_address = 0x49;
         let mut mocked = example_mlx90640_at_address(i2c_address);
         mocked.set_data_available(false);
-        let mut cam = Mlx90640Driver::new(mocked.clone(), i2c_address).unwrap();
+        let mut cam = Mlx90640Driver::<_, f32>::new(mocked.clone(), i2c_address).unwrap();
         mocked.clear_recent_operations();
         cam.set_frame_rate(crate::FrameRate::SixtyFour).unwrap();
         let ops = mocked.recent_operations();

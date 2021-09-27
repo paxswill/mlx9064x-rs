@@ -4,9 +4,6 @@ mod address;
 mod eeprom;
 pub mod hamming;
 
-// Various floating point operations are not implemented in core, so we use libm to provide them as
-// needed.
-#[cfg_attr(feature = "std", allow(unused_imports))]
 use num_traits::Float;
 
 use core::cmp::Ordering;
@@ -30,7 +27,10 @@ pub const NUM_PIXELS: usize = HEIGHT * WIDTH;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90641();
 
-impl MelexisCamera for Mlx90641 {
+impl<F> MelexisCamera<F> for Mlx90641
+where
+    F: Float + From<i8>,
+{
     type PixelRangeIterator = SubpageInterleave;
     type PixelsInSubpageIterator = AllPixels<NUM_PIXELS>;
 
@@ -62,11 +62,11 @@ impl MelexisCamera for Mlx90641 {
 
     const V_DD_PIXEL: Address = Address::new(RamAddress::PixelSupplyVoltage as u16);
 
-    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32 {
+    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> F {
         // These values are safe to convert to i8, as they were originally 4-bit unsigned ints.
         let resolution_exp: i8 = calibrated_resolution as i8 - current_resolution as i8;
         // Have to use an f32 here as resolution_exp may be negative.
-        f32::from(resolution_exp).exp2()
+        <F as From<i8>>::from(resolution_exp).exp2()
     }
 
     // It's defined as 2 in the datasheet(well, 3, but 1-indexed, so 2 when 0-indexed).
