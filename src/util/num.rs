@@ -109,6 +109,15 @@ pub trait Num:
     fn fourth_root(self) -> Self;
 }
 
+#[cfg(test)]
+pub trait TestNum: Num + float_cmp::ApproxEq {
+    /// This method is only used for automated testing, and creates a
+    /// [`Margin`][float_cmp::ApproxEq::Margin] from the given values.
+    fn margin<T>(epsilon: T, ulps: i32) -> <Self as float_cmp::ApproxEq>::Margin
+    where
+        Self: Coerce<T>;
+}
+
 /// Implements [`Num`] for the given builtin float type.
 #[macro_export]
 macro_rules! impl_num {
@@ -142,6 +151,17 @@ macro_rules! impl_num {
 
             fn fourth_root(self) -> Self {
                 <Self as num_traits::Float>::powf(self, 0.25)
+            }
+        }
+        #[cfg(test)]
+        impl TestNum for $typ {
+            fn margin<T>(epsilon: T, ulps: i32) -> <Self as float_cmp::ApproxEq>::Margin
+            where
+                Self: Coerce<T>,
+            {
+                // F32Margin implements From<f32, i32), with 64 bit types being used for F64Margin.
+                // By using i32, we can rely on i64 being created from i32.
+                <Self as float_cmp::ApproxEq>::Margin::from((Self::coerce(epsilon), ulps.into()))
             }
         }
     };
