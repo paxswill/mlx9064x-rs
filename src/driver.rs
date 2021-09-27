@@ -12,6 +12,7 @@ use crate::calculations::*;
 use crate::common::*;
 use crate::error::Error;
 use crate::register::*;
+use crate::util::Num;
 
 /// DRY macro for the set_* methods in `CameraDriver` that modify a register field.
 ///
@@ -95,7 +96,7 @@ impl<'a, Cam, Clb, I2C, F, const HEIGHT: usize, const WIDTH: usize, const BUFFER
 where
     Cam: MelexisCamera<F>,
     Clb: CalibrationData<'a, F>,
-    F: 'a + Debug + FloatConstants + From<f32> + From<i16> + From<u16> + From<i8> + From<u8>,
+    F: 'a + Debug + Num,
     I2C: i2c::WriteRead + i2c::Write,
 {
     /// Create a new `CameraDriver`, obtaining the calibration data from the camera over I²C.
@@ -583,14 +584,14 @@ mod test {
     use float_cmp::{approx_eq, assert_approx_eq};
     use num_traits::NumCast;
 
-    use crate::common::FloatConstants;
     use crate::test::*;
+    use crate::util::Num;
     use crate::{mlx90640, mlx90641};
     use crate::{I2cRegister, Mlx90640Driver, Mlx90641Driver, StatusRegister};
 
     fn create_mlx90640<F>() -> Mlx90640Driver<MockCameraBus<MLX90640_RAM_LENGTH>, F>
     where
-        F: Debug + FloatConstants + From<f32> + From<i16> + From<u16> + From<i8> + From<u8>,
+        F: Debug + Num,
     {
         // Specifically using a non-default address to make sure assumptions aren't being made
         // about the address.
@@ -602,7 +603,7 @@ mod test {
 
     fn create_mlx90641<F>() -> Mlx90641Driver<MockCameraBus<MLX90641_RAM_LENGTH>, F>
     where
-        F: Debug + FloatConstants + From<f32> + From<i16> + From<u16> + From<i8> + From<u8>,
+        F: Debug + Num,
     {
         // Again, non default address, but different from the '640 mock as well
         let address: u8 = 0x28;

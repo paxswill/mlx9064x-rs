@@ -54,8 +54,9 @@ use core::convert::TryInto;
 
 use embedded_hal::blocking::i2c;
 
-use crate::common::{Address, CalibrationData, FloatConstants, MelexisCamera};
+use crate::common::{Address, CalibrationData, MelexisCamera};
 use crate::register::Subpage;
+use crate::util::Num;
 
 /// Calculate $\Delta V$
 ///
@@ -72,10 +73,10 @@ use crate::register::Subpage;
 pub fn delta_v<'a, Clb, F>(calibration: &'a Clb, v_dd_pixel: i16) -> F
 where
     Clb: CalibrationData<'a, F>,
-    F: 'a + FloatConstants + From<i16> + From<f32>,
+    F: 'a + Num,
 {
-    let numer: F = (v_dd_pixel - calibration.v_dd_25()).into();
-    let denom: F = (calibration.k_v_dd()).into();
+    let numer = F::coerce(v_dd_pixel - calibration.v_dd_25());
+    let denom = F::coerce(calibration.k_v_dd());
     numer / denom
 }
 
@@ -101,12 +102,12 @@ where
 pub fn v_dd<'a, Clb, F>(calibration: &'a Clb, resolution_correction: F, delta_v: F) -> F
 where
     Clb: CalibrationData<'a, F>,
-    F: 'a + FloatConstants + From<f32>,
+    F: 'a + Num,
 {
     // According to the documentation for num_traits::NumCast, loss of precision (like from an f64
     // to f32) is allowable. In this case, we're usually going to be going from f32 -> f32 or
     // f32 -> f64 anyways, so it's safe to unwrap.
-    let v_dd_0: F = calibration.v_dd_0();
+    let v_dd_0 = calibration.v_dd_0();
     delta_v * resolution_correction + v_dd_0
 }
 
@@ -125,7 +126,7 @@ where
 pub fn v_ptat_art<'a, Clb, F>(calibration: &'a Clb, t_a_ptat: F, t_a_v_be: F) -> F
 where
     Clb: CalibrationData<'a, F>,
-    F: 'a + FloatConstants + From<f32>,
+    F: 'a + Num,
 {
     let denom = t_a_ptat * calibration.alpha_ptat() + t_a_v_be;
     t_a_ptat / denom * F::TWO_RAISED_EIGHTEEN
@@ -148,10 +149,10 @@ where
 pub fn ambient_temperature<'a, Clb, F>(calibration: &'a Clb, v_ptat_art: F, delta_v: F) -> F
 where
     Clb: CalibrationData<'a, F>,
-    F: 'a + FloatConstants + From<f32>,
+    F: 'a + Num,
 {
     let v_ptat_25 = calibration.v_ptat_25();
-    let k_v_ptat: F = calibration.k_v_ptat();
+    let k_v_ptat = calibration.k_v_ptat();
     let numerator = (v_ptat_art / (F::ONE + k_v_ptat * delta_v)) - v_ptat_25;
     let k_t_ptat = calibration.k_t_ptat();
     numerator / k_t_ptat + F::TWENTY_FIVE
@@ -274,7 +275,7 @@ pub struct CommonIrData<F = f32> {
 
 impl<F> CommonIrData<F>
 where
-    F: FloatConstants + From<i16> + From<f32>,
+    F: Num,
 {
     /// Create a new `CommonIrData`.
     ///
@@ -295,9 +296,13 @@ where
         let delta_v = delta_v(calibration, ram.v_dd_pixel);
         let v_dd = v_dd(calibration, resolution_correction, delta_v);
         // Labelled V_PTAT in the formulas, but T_a_PTAT in the memory map.
-        let v_ptat_art = v_ptat_art(calibration, ram.t_a_ptat.into(), ram.t_a_v_be.into());
+        let v_ptat_art = v_ptat_art(
+            calibration,
+            F::coerce(ram.t_a_ptat),
+            F::coerce(ram.t_a_v_be),
+        );
         let t_a = ambient_temperature(calibration, v_ptat_art, delta_v);
-        let current_gain: F = ram.gain.into();
+        let current_gain = F::coerce(ram.gain);
         let gain = calibration.gain() / current_gain;
         Self {
             gain,
@@ -343,9 +348,9 @@ pub fn per_pixel_v_ir<F>(
     k_ta: F,
 ) -> F
 where
-    F: FloatConstants,
+    F: Num,
 {
-    let pixel_gain: F = pixel_data * common.gain;
+    let pixel_gain = pixel_data * common.gain;
     let pixel_offset = pixel_gain
         - reference_offset
             * (F::ONE + k_ta * (common.t_a - F::TWENTY_FIVE))
@@ -382,7 +387,7 @@ pub fn raw_pixels_to_ir_data<'a, Clb, Px, F>(
 where
     Clb: CalibrationData<'a, F>,
     Px: Iterator<Item = bool>,
-    F: 'a + FloatConstants + From<i16> + From<f32> + core::ops::SubAssign<F>,
+    F: 'a + Num,
 {
     // Knock out the values common to all pixels first.
     let common = CommonIrData::new(resolution_correction, emissivity, calibration, &ram);
@@ -390,11 +395,11 @@ where
     let compensation_pixel_offset = calibration.temperature_gradient_coefficient().map(|tgc| {
         // TODO: There's a note in the datasheet advising a moving average filter (length >=
         // 16) on the compensation pixel gain.
-        let compensation_pixel: F = ram.compensation_pixel.into();
+        let compensation_pixel = F::coerce(ram.compensation_pixel);
         let compensation_pixel_offset = per_pixel_v_ir(
             compensation_pixel,
             &common,
-            calibration.offset_reference_cp(subpage).into(),
+            F::coerce(calibration.offset_reference_cp(subpage)),
             calibration.k_v_cp(subpage),
             calibration.k_ta_cp(subpage),
         );
@@ -406,7 +411,7 @@ where
     let offset_reference_pixels = calibration
         .offset_reference_pixels(subpage)
         .copied()
-        .map(<F as From<i16>>::from);
+        .map(F::coerce);
     destination
         .iter_mut()
         // Chunk into two byte segments, for each 16-bit value
@@ -422,7 +427,7 @@ where
         .for_each(|((((output, pixel_slice), reference_offset), k_v), k_ta)| {
             // Safe to unwrap as this is from chunks_exact(2)
             let pixel_bytes: [u8; 2] = pixel_slice.try_into().unwrap();
-            let pixel_data: F = i16::from_be_bytes(pixel_bytes).into();
+            let pixel_data = F::coerce(i16::from_be_bytes(pixel_bytes));
             let mut pixel_offset =
                 per_pixel_v_ir(pixel_data, &common, reference_offset, *k_v, *k_ta);
             // I hope the branch predictor/compiler is smart enough to realize there's
@@ -452,7 +457,7 @@ where
 #[inline]
 pub fn t_ar<F>(t_a: F, t_r: F, emissivity: F) -> F
 where
-    F: FloatConstants,
+    F: Num,
 {
     // Again, start with the steps common to all pixels
     let t_a_k4 = (t_a + F::KELVINS_TO_CELSIUS).powi(4);
@@ -476,7 +481,7 @@ where
 pub fn sensitivity_correction_coefficient<'a, Clb, F>(calibration: &'a Clb, t_a: F) -> F
 where
     Clb: CalibrationData<'a, F>,
-    F: 'a + FloatConstants + From<f32>,
+    F: 'a + Num,
 {
     let k_s_ta = calibration.k_s_ta();
     let t_a0 = F::TWENTY_FIVE;
@@ -524,13 +529,13 @@ where
 #[inline]
 pub fn per_pixel_temperature<F>(v_ir: F, alpha: F, t_ar: F, k_s_to: F) -> F
 where
-    F: FloatConstants,
+    F: Num,
 {
     // This function is a mess of raising floats to the third and fourth powers, doing some
     // operations, then taking the fourth root of everything.
-    let s_x = k_s_to * (alpha.powi(3) * v_ir + alpha.powi(4) * t_ar).powf(F::ONE_QUARTER);
-    let t_o_root = (v_ir / (alpha * (F::ONE - k_s_to * F::KELVINS_TO_CELSIUS) + s_x) + t_ar)
-        .powf(F::ONE_QUARTER);
+    let s_x = k_s_to * (alpha.powi(3) * v_ir + alpha.powi(4) * t_ar).fourth_root();
+    let t_o_root =
+        (v_ir / (alpha * (F::ONE - k_s_to * F::KELVINS_TO_CELSIUS) + s_x) + t_ar).fourth_root();
     t_o_root - F::KELVINS_TO_CELSIUS
 }
 
@@ -550,7 +555,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px, F>(
 ) where
     Clb: CalibrationData<'a, F>,
     Px: Iterator<Item = bool>,
-    F: 'a + FloatConstants + From<i16> + From<f32>,
+    F: 'a + Num,
 {
     // TODO: this step could probably be optimized a little bit (if needed) by pushing this
     // calculation to the calibration loading step.
@@ -562,7 +567,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px, F>(
     // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
     // of the surrounding environment (but not T_a, which is basically the temperature of the
     // sensor itself). For now hard-coding this to 8 degrees lower than T_a.
-    let t_r = t_a - <F as From<f32>>::from(8f32);
+    let t_r = t_a - F::coerce(8u8);
     let t_ar = t_ar(t_a, t_r, emissivity);
 
     destination
@@ -598,7 +603,7 @@ pub fn raw_pixels_to_temperatures<'a, Clb, Px, F>(
 where
     Clb: CalibrationData<'a, F>,
     Px: Iterator<Item = bool>,
-    F: 'a + FloatConstants + From<i16> + From<f32> + core::ops::SubAssign<F>,
+    F: 'a + Num,
 {
     // Knock out the values common to all pixels first.
     let common = CommonIrData::new(resolution_correction, emissivity, calibration, &ram);
@@ -606,11 +611,11 @@ where
     let compensation_pixel_offset = calibration.temperature_gradient_coefficient().map(|tgc| {
         // TODO: There's a note in the datasheet advising a moving average filter (length >=
         // 16) on the compensation pixel gain.
-        let compensation_pixel: F = ram.compensation_pixel.into();
+        let compensation_pixel = F::coerce(ram.compensation_pixel);
         let compensation_pixel_offset = per_pixel_v_ir(
             compensation_pixel,
             &common,
-            calibration.offset_reference_cp(subpage).into(),
+            F::coerce(calibration.offset_reference_cp(subpage)),
             calibration.k_v_cp(subpage),
             calibration.k_ta_cp(subpage),
         );
@@ -627,14 +632,14 @@ where
     // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
     // of the surrounding environment (but not T_a, which is basically the temperature of the
     // sensor itself). For now hard-coding this to 8 degrees lower than T_a.
-    let t_r = common.t_a - <F as From<f32>>::from(8f32);
+    let t_r = common.t_a - F::coerce(8u8);
     let t_ar = t_ar(common.t_a, t_r, emissivity);
     // At this point, we're now going to start calculating and copying over the pixel data. It
     // will *not* be actual temperatures, but it can be used for some imaging purposes.
     let offset_reference_pixels = calibration
         .offset_reference_pixels(subpage)
         .copied()
-        .map(<F as From<i16>>::from);
+        .map(F::coerce);
     destination
         .iter_mut()
         // Chunk into two byte segments, for each 16-bit value
@@ -650,7 +655,7 @@ where
             |(((((output, pixel_slice), reference_offset), k_v), k_ta), alpha)| {
                 // Safe to unwrap as this is from chunks_exact(2)
                 let pixel_bytes: [u8; 2] = pixel_slice.try_into().unwrap();
-                let pixel_data: F = i16::from_be_bytes(pixel_bytes).into();
+                let pixel_data = F::coerce(i16::from_be_bytes(pixel_bytes));
                 let mut v_ir = per_pixel_v_ir(pixel_data, &common, reference_offset, *k_v, *k_ta);
                 // I hope the branch predictor/compiler is smart enough to realize there's
                 // almost always going to be only one hot branch here
@@ -800,7 +805,7 @@ mod test {
         let v_ir = super::per_pixel_v_ir(raw_pixel, &common, (*offset).into(), *k_v, *k_ta);
         // I'm getting 700.89, which is close enough considering how many places to lose precision
         // there are in this step.
-        assert_approx_eq!(f32, v_ir, 1785f32, epsilon = 0.01);
+        assert_approx_eq!(f32, v_ir, 1785.0, epsilon = 0.01);
     }
 
     #[test]
@@ -825,7 +830,7 @@ mod test {
         let k_s_to = clb.k_s_to()[basic_range];
         let alpha = 3.32641806639731E-7;
         // Pile of values from previous steps.
-        let v_ir = 1785f32;
+        let v_ir = 1785.0;
         let t_ar = 9899175739.92;
         let t_o = super::per_pixel_temperature(v_ir, alpha, t_ar, k_s_to);
         // Extended precision from earlier in the datasheet calculations

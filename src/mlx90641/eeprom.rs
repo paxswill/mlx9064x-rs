@@ -13,7 +13,7 @@ use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::Subpage;
-use crate::util::{i16_from_bits, Buffer};
+use crate::util::{i16_from_bits, Buffer, Num};
 
 use super::address::EepromAddress;
 use super::hamming::validate_checksum;
@@ -74,7 +74,7 @@ pub struct Mlx90641Calibration<F> {
 
 impl<F> Mlx90641Calibration<F>
 where
-    F: Debug + FloatConstants + From<i16> + From<u16> + From<i8> + From<u8>,
+    F: Debug + Num,
 {
     pub fn from_data(mut buf: &[u8]) -> Result<Self, LibraryError> {
         // Much like the MLX90640 implementation, this is a mess of a function as the data is
@@ -92,26 +92,23 @@ where
         let k_v_average = get_hamming_i16(&mut buf)?;
         let k_v_scales = get_6_5_split(&mut buf)?;
         let alpha_reference = Self::get_sensitivity_reference(&mut buf)?;
-        let k_s_ta_scaling = <F as From<u16>>::from(15).exp2();
-        let k_s_ta = <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / k_s_ta_scaling;
-        let emissivity_scaling = <F as From<u16>>::from(9).exp2();
-        let emissivity = <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / emissivity_scaling;
+        let k_s_ta_scaling = F::coerce(15u8).exp2();
+        let k_s_ta = F::coerce(get_hamming_i16(&mut buf)?) / k_s_ta_scaling;
+        let emissivity_scaling = F::coerce(9u8).exp2();
+        let emissivity = F::coerce(get_hamming_i16(&mut buf)?) / emissivity_scaling;
         let gain = u16::from_be_bytes(get_combined_word(&mut buf)?);
         // TODO: These two parameters might need to be upsized to 32-bit ints
         let v_dd_25 = get_hamming_i16(&mut buf)? << 5;
         let k_v_dd = get_hamming_i16(&mut buf)? << 5;
         let v_ptat_25 = u16::from_be_bytes(get_combined_word(&mut buf)?);
         // Scaled by 2^3
-        let k_t_ptat =
-            <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / <F as From<u16>>::from(8);
+        let k_t_ptat = F::coerce(get_hamming_i16(&mut buf)?) / F::coerce(8u8);
         // Scaled by 2^12
-        let k_v_ptat =
-            <F as From<i16>>::from(get_hamming_i16(&mut buf)?) / <F as From<u16>>::from(4096);
+        let k_v_ptat = F::coerce(get_hamming_i16(&mut buf)?) / F::coerce(4096u16);
         // Scaled by 2^7 (not 11, as the address map says)
-        let alpha_ptat =
-            <F as From<u16>>::from(get_hamming_u16(&mut buf)?) / <F as From<u16>>::from(128);
-        let alpha_cp: F = get_hamming_u16(&mut buf)?.into();
-        let alpha_cp_scale: F = get_hamming_u16(&mut buf)?.into();
+        let alpha_ptat = F::coerce(get_hamming_u16(&mut buf)?) / F::coerce(128u8);
+        let alpha_cp = F::coerce(get_hamming_u16(&mut buf)?);
+        let alpha_cp_scale = F::coerce(get_hamming_u16(&mut buf)?);
         let alpha_cp = alpha_cp / alpha_cp_scale.exp2();
         let offset_reference_cp = i16::from_be_bytes(get_combined_word(&mut buf)?);
         let k_ta_cp = Self::get_scaled_cp_constant(&mut buf)?;
@@ -139,9 +136,9 @@ where
             resolution,
             k_v_ptat,
             k_t_ptat,
-            v_ptat_25: v_ptat_25.into(),
+            v_ptat_25: F::coerce(v_ptat_25),
             alpha_ptat,
-            gain: gain.into(),
+            gain: F::coerce(gain),
             k_s_ta,
             corner_temperatures,
             k_s_to,
@@ -181,8 +178,8 @@ where
         }
         let mut a_reference = [F::ZERO; 6];
         for (dest, scale) in a_reference.iter_mut().zip(scales) {
-            let row_max: F = get_hamming_u16(buf)?.into();
-            let scale: F = scale.into();
+            let row_max = F::coerce(get_hamming_u16(buf)?);
+            let scale = F::coerce(scale);
             *dest = row_max / scale.exp2();
         }
         Ok(a_reference)
@@ -194,11 +191,11 @@ where
     /// scale, and the lower six bits the unscaled value.
     fn get_scaled_cp_constant(buf: &mut &[u8]) -> Result<F, LibraryError> {
         let word = get_hamming_u16(buf)?;
-        let raw_scale: F = ((word & 0x07C0) >> 6).into();
+        let raw_scale = F::coerce((word & 0x07C0) >> 6);
         let scale = raw_scale.exp2();
         let value_bytes = (word & 0x003F).to_be_bytes();
         // the values are signed
-        let value_unscaled: F = i16_from_bits(&value_bytes[..], 6).into();
+        let value_unscaled = F::coerce(i16_from_bits(&value_bytes[..], 6));
         Ok(value_unscaled / scale)
     }
 
@@ -211,9 +208,9 @@ where
         let word = get_hamming_u16(buf)?;
         let resolution = (word & 0x0600) >> 9;
         let tgc_bytes = (word & 0x01FF).to_be_bytes();
-        let tgc_unscaled: F = i16_from_bits(&tgc_bytes[..], 9).into();
+        let tgc_unscaled = F::coerce(i16_from_bits(&tgc_bytes[..], 9));
         // Scaled by 2^6
-        let tgc = tgc_unscaled / <F as From<u16>>::from(64);
+        let tgc = tgc_unscaled / F::coerce(64u8);
         Ok((resolution as u8, tgc))
     }
 
@@ -221,7 +218,7 @@ where
     fn get_temperature_range_data(
         buf: &mut &[u8],
     ) -> Result<([i16; NUM_CORNER_TEMPERATURES], [F; NUM_CORNER_TEMPERATURES]), LibraryError> {
-        let scale_magnitude: F = get_hamming_u16(buf)?.into();
+        let scale_magnitude = F::coerce(get_hamming_u16(buf)?);
         let scale = scale_magnitude.exp2();
         // The first five corner temperatures are hard-coded to these values, while the last three
         // are read from the EEPROM.
@@ -231,7 +228,7 @@ where
         // The first five k_s_to values come first in the EEPROM, then come pairs of corner
         // temperature, k_s_to for the remiaining values.
         for dest in k_s_to[..5].iter_mut() {
-            let unscaled: F = get_hamming_i16(buf)?.into();
+            let unscaled = F::coerce(get_hamming_i16(buf)?);
             *dest = unscaled / scale;
         }
         let paired_iter = corner_temperatures[5..]
@@ -240,7 +237,7 @@ where
         for (ct, k_s_to) in paired_iter {
             // These are actually 11-bit integers, so they won't be truncated converting them to i16.
             *ct = get_hamming_u16(buf)? as i16;
-            let unscaled: F = get_hamming_i16(buf)?.into();
+            let unscaled = F::coerce(get_hamming_i16(buf)?);
             *k_s_to = unscaled / scale;
         }
         Ok((corner_temperatures, k_s_to))
@@ -274,10 +271,10 @@ where
             .zip(pixel_sensitivites.chunks_exact_mut(32));
         for (reference, row) in referenced_rows {
             for pixel_sensitivity in row {
-                let raw_alpha: F = get_hamming_u16(buf)?.into();
+                let raw_alpha = F::coerce(get_hamming_u16(buf)?);
                 // The datasheet is a little hard to read for this, but alpha_EE is divided by
                 // (2^{11} - 1) = 2047
-                let scaled_alpha = raw_alpha / <F as From<u16>>::from(2047);
+                let scaled_alpha = raw_alpha / F::coerce(2047u16);
                 *pixel_sensitivity = scaled_alpha * (*reference);
             }
         }
@@ -293,12 +290,12 @@ where
     ) -> Result<([F; NUM_PIXELS], [F; NUM_PIXELS]), LibraryError> {
         let mut k_ta_pixels = [F::ZERO; NUM_PIXELS];
         let mut k_v_pixels = [F::ZERO; NUM_PIXELS];
-        let k_ta_scale1 = <F as From<u8>>::from(k_ta_scales.0).exp2();
-        let k_ta_scale2 = <F as From<u8>>::from(k_ta_scales.1).exp2();
-        let k_v_scale1 = <F as From<u8>>::from(k_v_scales.0).exp2();
-        let k_v_scale2 = <F as From<u8>>::from(k_v_scales.1).exp2();
+        let k_ta_scale1 = F::coerce(k_ta_scales.0).exp2();
+        let k_ta_scale2 = F::coerce(k_ta_scales.1).exp2();
+        let k_v_scale1 = F::coerce(k_v_scales.0).exp2();
+        let k_v_scale2 = F::coerce(k_v_scales.1).exp2();
         let scale_fn = |raw_value: i8, avg: i16, scale1: F, scale2: F| {
-            let numerator = <F as From<i8>>::from(raw_value) * scale2 + <F as From<i16>>::from(avg);
+            let numerator = F::coerce(raw_value) * scale2 + F::coerce(avg);
             numerator / scale1
         };
         for (k_ta, k_v) in k_ta_pixels.iter_mut().zip(k_v_pixels.iter_mut()) {
@@ -315,7 +312,7 @@ where
 impl<I2C, F> FromI2C<I2C> for Mlx90641Calibration<F>
 where
     I2C: i2c::WriteRead + i2c::Write,
-    F: Debug + FloatConstants + From<i16> + From<u16> + From<i8> + From<u8>,
+    F: Debug + Num,
 {
     type Error = Error<I2C>;
     type Ok = Self;
@@ -334,7 +331,7 @@ where
 
 impl<'a, F> CalibrationData<'a, F> for Mlx90641Calibration<F>
 where
-    F: 'a + FloatConstants + From<i8>,
+    F: 'a + Num,
 {
     type Camera = Mlx90641;
 

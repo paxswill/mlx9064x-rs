@@ -4,13 +4,12 @@ mod address;
 mod eeprom;
 pub mod hamming;
 
-use num_traits::Float;
-
 use core::cmp::Ordering;
 use core::iter;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
+use crate::util::Num;
 
 pub use address::RamAddress;
 pub use eeprom::Mlx90641Calibration;
@@ -29,7 +28,7 @@ pub struct Mlx90641();
 
 impl<F> MelexisCamera<F> for Mlx90641
 where
-    F: Float + From<i8>,
+    F: Num,
 {
     type PixelRangeIterator = SubpageInterleave;
     type PixelsInSubpageIterator = AllPixels<NUM_PIXELS>;
@@ -65,8 +64,7 @@ where
     fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> F {
         // These values are safe to convert to i8, as they were originally 4-bit unsigned ints.
         let resolution_exp: i8 = calibrated_resolution as i8 - current_resolution as i8;
-        // Have to use an f32 here as resolution_exp may be negative.
-        <F as From<i8>>::from(resolution_exp).exp2()
+        F::coerce(resolution_exp).exp2()
     }
 
     // It's defined as 2 in the datasheet(well, 3, but 1-indexed, so 2 when 0-indexed).

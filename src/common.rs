@@ -78,58 +78,9 @@
 use core::fmt;
 
 use arrayvec::ArrayVec;
-use num_traits::Float;
 
 use crate::register::{AccessPattern, Subpage};
-
-/// A trait providing constants needed for data processing.
-pub trait FloatConstants: Float {
-    /// Positive zero.
-    const ZERO: Self;
-
-    /// The number 1.
-    const ONE: Self;
-
-    /// The freezing point of water in kelvins (273.15).
-    const KELVINS_TO_CELSIUS: Self;
-
-    /// The number 1/4.
-    const ONE_QUARTER: Self;
-
-    /// The number 3.3.
-    const THREE_POINT_THREE: Self;
-
-    /// The number 25.0.
-    const TWENTY_FIVE: Self;
-
-    /// The number 2^18.
-    ///
-    /// This is a scaling factor used when calculating [v_ptat_art].
-    const TWO_RAISED_EIGHTEEN: Self;
-}
-
-/// Implements [`FloatConstants`] for the given builtin type.
-macro_rules! impl_float_constants {
-    ($typ:ty) => {
-        impl FloatConstants for $typ {
-            const ZERO: Self = 0.0;
-
-            const ONE: Self = 1.0;
-
-            const KELVINS_TO_CELSIUS: Self = 273.15;
-
-            const ONE_QUARTER: Self = 0.25;
-
-            const THREE_POINT_THREE: Self = 3.3;
-
-            const TWENTY_FIVE: Self = 25.0;
-
-            const TWO_RAISED_EIGHTEEN: Self = 2u32.pow(18) as Self;
-        }
-    };
-}
-impl_float_constants!(f32);
-impl_float_constants!(f64);
+use crate::util::Num;
 
 pub trait FromI2C<I2C> {
     type Error;
@@ -148,9 +99,9 @@ pub trait FromI2C<I2C> {
 /// variables used in the formulas in the datasheet. Most users of this library can make use fo the
 /// provided implementations, but if you're trying to minimize memory usage or tweak performance
 /// for a specific use case, this might be a way to do it.
-pub trait CalibrationData<'a, F = f32>
+pub trait CalibrationData<'a, F>
 where
-    F: 'a + FloatConstants,
+    F: 'a + Num,
 {
     /// The camera model this calibration data is for.
     type Camera: MelexisCamera<F>;
@@ -406,7 +357,7 @@ pub(crate) fn alpha_correction_coefficients<F, const NUM_RANGES: usize>(
     k_s_to: &[F],
 ) -> [F; NUM_RANGES]
 where
-    F: fmt::Debug + FloatConstants + From<i16>,
+    F: fmt::Debug + Num,
 {
     // This is the actual calculation. The values are built up recursively from the base case of
     // the basic range (which doesn't need correcting, so it's 1).
@@ -424,16 +375,16 @@ where
 /// would be nice, but these calculations are only performed once, at start up.
 fn alpha_corr_n<F>(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[F]) -> F
 where
-    F: FloatConstants + From<i16>,
+    F: Num,
 {
     match n.cmp(&basic_range) {
-        core::cmp::Ordering::Equal => F::one(),
+        core::cmp::Ordering::Equal => F::ONE,
         core::cmp::Ordering::Less => {
-            (F::ONE + k_s_to[n] * (ct[n + 1] - ct[n]).into()).recip()
+            (F::ONE + k_s_to[n] * F::coerce(ct[n + 1] - ct[n])).recip()
                 * alpha_corr_n(n + 1, basic_range, ct, k_s_to)
         }
         core::cmp::Ordering::Greater => {
-            (F::ONE + k_s_to[n - 1] * (ct[n] - ct[n - 1]).into())
+            (F::ONE + k_s_to[n - 1] * F::coerce(ct[n] - ct[n - 1]))
                 * alpha_corr_n(n - 1, basic_range, ct, k_s_to)
         }
     }
