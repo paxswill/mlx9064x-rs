@@ -15,6 +15,12 @@ pub trait Coerce<T> {
     fn coerce(value: T) -> Self;
 }
 
+impl<T> Coerce<T> for T {
+    fn coerce(value: T) -> Self {
+        value
+    }
+}
+
 /// Implement [`Coerce`] for the given type.
 ///
 /// There are two variants available, one that uses [`From`], the other using `as` to cast
@@ -42,8 +48,8 @@ macro_rules! impl_coerce {
         $(impl_coerce!(as $dest, $source);)+
     };
 }
-impl_coerce!(as f32, u8, i8, u16, i16, f32, f64);
-impl_coerce!(as f64, u8, i8, u16, i16, f32, f64);
+impl_coerce!(as f32, u8, i8, u16, i16, f64);
+impl_coerce!(as f64, u8, i8, u16, i16, f32);
 
 pub trait Num:
     Copy
