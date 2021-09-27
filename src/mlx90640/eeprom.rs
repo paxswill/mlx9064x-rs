@@ -700,8 +700,9 @@ pub(crate) mod test {
     where
         F: Debug + Num + ApproxEq,
     {
-        assert_eq!(datasheet_eeprom::<F>().k_t_ptat(), F::coerce(42.25f64));
-        assert_eq!(
+        assert_approx_eq!(F, datasheet_eeprom::<F>().k_t_ptat(), F::coerce(42.25f64));
+        assert_approx_eq!(
+            F,
             example_eeprom::<F>().k_t_ptat(),
             F::coerce(mlx90640_example_data::K_T_PTAT)
         );
@@ -959,8 +960,8 @@ pub(crate) mod test {
         // datasheet
         let datasheet = datasheet_eeprom::<F>();
         let expected = F::coerce(0.00457763671875f64);
-        assert_eq!(datasheet.k_ta_cp(Subpage::Zero), expected);
-        assert_eq!(datasheet.k_ta_cp(Subpage::One), expected);
+        assert_approx_eq!(F, datasheet.k_ta_cp(Subpage::Zero), expected);
+        assert_approx_eq!(F, datasheet.k_ta_cp(Subpage::One), expected);
         // example
         let example = example_eeprom::<F>();
         assert_approx_eq!(
@@ -1020,21 +1021,25 @@ pub(crate) mod test {
     {
         // datasheet
         let datasheet = datasheet_eeprom::<F>();
-        assert_eq!(
+        assert_approx_eq!(
+            F,
             datasheet.alpha_cp(Subpage::Zero),
             F::coerce(4.07453626394272E-9f64)
         );
-        assert_eq!(
+        assert_approx_eq!(
+            F,
             datasheet.alpha_cp(Subpage::One),
             F::coerce(3.851710062200835E-9f64)
         );
         // example
         let example = example_eeprom::<F>();
-        assert_eq!(
+        assert_approx_eq!(
+            F,
             example.alpha_cp(Subpage::Zero),
             F::coerce(mlx90640_example_data::ALPHA_CP[0])
         );
-        assert_eq!(
+        assert_approx_eq!(
+            F,
             example.alpha_cp(Subpage::One),
             F::coerce(mlx90640_example_data::ALPHA_CP[1])
         );
@@ -1045,7 +1050,7 @@ pub(crate) mod test {
     where
         F: Debug + Num + ApproxEq,
     {
-        assert_eq!(datasheet_eeprom::<F>().k_s_ta(), F::coerce(-0.001953125f64));
+        assert_approx_eq!(F, datasheet_eeprom::<F>().k_s_ta(), F::coerce(-0.001953125f64));
         assert_approx_eq!(
             F,
             example_eeprom::<F>().k_s_ta(),
@@ -1089,7 +1094,8 @@ pub(crate) mod test {
     where
         F: Debug + Num + ApproxEq,
     {
-        assert_eq!(
+        assert_approx_eq!(
+            F,
             datasheet_eeprom::<F>().k_s_to()[1],
             F::coerce(-0.00080108642578125)
         );
