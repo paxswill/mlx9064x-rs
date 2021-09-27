@@ -509,35 +509,69 @@ fn word_to_i4s(data: &mut &[u8]) -> [i8; 4] {
 }
 
 #[cfg(test)]
+#[generic_tests::define]
 pub(crate) mod test {
     #[cfg(feature = "std")]
     extern crate std;
     #[cfg(feature = "std")]
     use std::{print, println};
 
+    use core::fmt::Debug;
+
     use arrayvec::ArrayVec;
     use float_cmp::{assert_approx_eq, ApproxEq};
+    use num_traits::NumCast;
 
-    use crate::common::CalibrationData;
+    use crate::common::{CalibrationData, FloatConstants};
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
     use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
     use super::Mlx90640Calibration;
 
-    fn datasheet_eeprom() -> Mlx90640Calibration<f32> {
+    fn datasheet_eeprom<F>() -> Mlx90640Calibration<F>
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         let mut eeprom_bytes = mlx90640_datasheet_eeprom();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
-    fn example_eeprom() -> Mlx90640Calibration<f32> {
+    fn example_eeprom<F>() -> Mlx90640Calibration<F>
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         let mut example_bytes = &mlx90640_example_data::EEPROM_DATA[..];
         Mlx90640Calibration::from_data(&mut example_bytes)
             .expect("The example data should be parseable")
     }
 
     #[test]
-    fn word_6_10_split() {
+    fn word_6_10_split<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         fn check(mut data: &[u8], little: i8, remainder: [u8; 2]) {
             let split = super::word_6_10_split(&mut data);
             assert_eq!(
@@ -558,7 +592,17 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn word_to_u4s() {
+    fn word_to_u4s<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         let mut sequence: &[u8] = b"\x12\x34";
         assert_eq!(super::word_to_u4s(&mut sequence), [1, 2, 3, 4]);
         let mut max_min: &[u8] = b"\xf0\xf0";
@@ -568,7 +612,17 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn u8_to_i4s() {
+    fn u8_to_i4s<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         assert_eq!(super::u8_to_i4s(0x44), [4, 4]);
         assert_eq!(super::u8_to_i4s(0x88), [-8, -8]);
         assert_eq!(super::u8_to_i4s(0x48), [4, -8]);
@@ -576,7 +630,17 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn repeat_chessboard() {
+    fn repeat_chessboard<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         // The pattern order is (for row, column): EE, OE, EO, OO
         let pattern = [1, 2, 3, 4];
         let test_pattern: ArrayVec<i8, NUM_PIXELS> =
@@ -612,80 +676,208 @@ pub(crate) mod test {
 
     /// Check that it can even create itself from a buffer.
     #[test]
-    fn smoke() {
-        datasheet_eeprom();
-        example_eeprom();
+    fn smoke<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        datasheet_eeprom::<F>();
+        example_eeprom::<F>();
     }
 
     // Ordering these tests in the same order as the data sheet's worked example.
     #[test]
-    fn resolution() {
-        assert_eq!(datasheet_eeprom().resolution(), 2);
+    fn resolution<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(datasheet_eeprom::<F>().resolution(), 2);
         assert_eq!(
-            example_eeprom().resolution(),
+            example_eeprom::<F>().resolution(),
             mlx90640_example_data::RESOLUTION_EE
         );
     }
 
     #[test]
-    fn k_v_dd() {
-        assert_eq!(datasheet_eeprom().k_v_dd(), -3168);
-        assert_eq!(example_eeprom().k_v_dd(), mlx90640_example_data::K_V_DD);
+    fn k_v_dd<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(datasheet_eeprom::<F>().k_v_dd(), -3168);
+        assert_eq!(
+            example_eeprom::<F>().k_v_dd(),
+            mlx90640_example_data::K_V_DD
+        );
     }
 
     #[test]
-    fn v_dd_25() {
-        assert_eq!(datasheet_eeprom().v_dd_25(), -13056);
-        assert_eq!(example_eeprom().v_dd_25(), mlx90640_example_data::V_DD_25);
+    fn v_dd_25<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(datasheet_eeprom::<F>().v_dd_25(), -13056);
+        assert_eq!(
+            example_eeprom::<F>().v_dd_25(),
+            mlx90640_example_data::V_DD_25
+        );
     }
 
     #[test]
-    fn v_dd_0() {
-        assert_eq!(datasheet_eeprom().v_dd_0(), 3.3);
-        assert_eq!(example_eeprom().v_dd_0(), 3.3);
+    fn v_dd_0<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(datasheet_eeprom::<F>().v_dd_0(), F::THREE_POINT_THREE);
+        assert_eq!(example_eeprom::<F>().v_dd_0(), F::THREE_POINT_THREE);
     }
 
     #[test]
-    fn k_v_ptat() {
-        assert_approx_eq!(f32, datasheet_eeprom().k_v_ptat(), 0.0053710938);
+    fn k_v_ptat<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         assert_approx_eq!(
-            f32,
-            example_eeprom().k_v_ptat(),
-            mlx90640_example_data::K_V_PTAT
+            F,
+            datasheet_eeprom::<F>().k_v_ptat(),
+            <F as NumCast>::from(0.0053710938f64).unwrap()
+        );
+        assert_approx_eq!(
+            F,
+            example_eeprom::<F>().k_v_ptat(),
+            <F as NumCast>::from(mlx90640_example_data::K_V_PTAT).unwrap()
         );
     }
 
     #[test]
-    fn k_t_ptat() {
-        assert_eq!(datasheet_eeprom().k_t_ptat(), 42.25);
-        assert_eq!(example_eeprom().k_t_ptat(), mlx90640_example_data::K_T_PTAT);
-    }
-
-    #[test]
-    fn v_ptat_25() {
-        assert_eq!(datasheet_eeprom().v_ptat_25(), 12273f32);
+    fn k_t_ptat<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         assert_eq!(
-            example_eeprom().v_ptat_25(),
-            mlx90640_example_data::V_PTAT_25
+            datasheet_eeprom::<F>().k_t_ptat(),
+            <F as NumCast>::from(42.25f64).unwrap()
         );
-    }
-
-    #[test]
-    fn alpha_ptat() {
-        assert_eq!(datasheet_eeprom().alpha_ptat(), 9f32);
         assert_eq!(
-            example_eeprom().alpha_ptat(),
-            mlx90640_example_data::ALPHA_PTAT
+            example_eeprom::<F>().k_t_ptat(),
+            <F as NumCast>::from(mlx90640_example_data::K_T_PTAT).unwrap()
         );
     }
-    #[test]
 
-    fn gain() {
-        assert_eq!(datasheet_eeprom().gain(), 6383f32);
-        assert_eq!(example_eeprom().gain(), mlx90640_example_data::GAIN_EE);
+    #[test]
+    fn v_ptat_25<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(
+            datasheet_eeprom::<F>().v_ptat_25(),
+            <F as NumCast>::from(12273f64).unwrap()
+        );
+        assert_eq!(
+            example_eeprom::<F>().v_ptat_25(),
+            <F as NumCast>::from(mlx90640_example_data::V_PTAT_25).unwrap()
+        );
     }
 
-    fn test_pixels_common<T: PartialEq + core::fmt::Debug + core::fmt::Display + Copy>(
+    #[test]
+    fn alpha_ptat<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(
+            datasheet_eeprom::<F>().alpha_ptat(),
+            <F as NumCast>::from(9f64).unwrap()
+        );
+        assert_eq!(
+            example_eeprom::<F>().alpha_ptat(),
+            <F as NumCast>::from(mlx90640_example_data::ALPHA_PTAT).unwrap()
+        );
+    }
+
+    #[test]
+    fn gain<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(
+            datasheet_eeprom::<F>().gain(),
+            <F as NumCast>::from(6383.0f64).unwrap()
+        );
+        assert_eq!(
+            example_eeprom::<F>().gain(),
+            <F as NumCast>::from(mlx90640_example_data::GAIN_EE).unwrap()
+        );
+    }
+
+    fn test_pixels_common<T: PartialEq + Debug + Copy>(
         datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
         example_data: [ArrayVec<T, NUM_PIXELS>; 2],
         datasheet_expected: T,
@@ -709,7 +901,7 @@ pub(crate) mod test {
         for (index, (actual, expected)) in offset_pairs.enumerate() {
             assert!(
                 check(*actual, *expected),
-                "[pixel {}]: Expected {}, Actual: {}",
+                "[pixel {:?}]: Expected {:?}, Actual: {:?}",
                 index,
                 expected,
                 actual
@@ -724,7 +916,7 @@ pub(crate) mod test {
         example_expected: &[T; NUM_PIXELS],
         subpage: Option<Subpage>,
     ) where
-        T: ApproxEq + PartialEq + core::fmt::Debug + core::fmt::Display + Copy,
+        T: ApproxEq + PartialEq + Debug + Copy,
     {
         let check = |actual: T, expected: T| actual.approx_eq(expected, T::Margin::default());
         test_pixels_common(
@@ -756,8 +948,18 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn pixel_offset() {
-        let datasheet = datasheet_eeprom();
+    fn pixel_offset<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        let datasheet = datasheet_eeprom::<F>();
         let datasheet_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
             datasheet
                 .offset_reference_pixels(Subpage::Zero)
@@ -768,7 +970,7 @@ pub(crate) mod test {
                 .copied()
                 .collect(),
         ];
-        let example = example_eeprom();
+        let example = example_eeprom::<F>();
         let example_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
             example
                 .offset_reference_pixels(Subpage::Zero)
@@ -790,63 +992,115 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn pixel_k_ta() {
-        let datasheet = datasheet_eeprom();
-        let datasheet_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+    fn pixel_k_ta<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        let datasheet = datasheet_eeprom::<F>();
+        let datasheet_k_ta: [ArrayVec<F, NUM_PIXELS>; 2] = [
             datasheet.k_ta_pixels(Subpage::Zero).copied().collect(),
             datasheet.k_ta_pixels(Subpage::One).copied().collect(),
         ];
-        let example = example_eeprom();
-        let example_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example = example_eeprom::<F>();
+        let example_k_ta: [ArrayVec<F, NUM_PIXELS>; 2] = [
             example.k_ta_pixels(Subpage::Zero).copied().collect(),
             example.k_ta_pixels(Subpage::One).copied().collect(),
         ];
+        let expected_example_pixels: [F; NUM_PIXELS] = mlx90640_example_data::K_TA_PIXELS
+            .iter()
+            .map(|n| <F as NumCast>::from(*n).unwrap())
+            .collect::<ArrayVec<F, NUM_PIXELS>>()
+            .into_inner()
+            .unwrap();
         test_pixels_approx(
             datasheet_k_ta,
             example_k_ta,
-            0.005126953125,
-            &mlx90640_example_data::K_TA_PIXELS,
+            <F as NumCast>::from(0.005126953125f64).unwrap(),
+            &expected_example_pixels,
             // MLX90640 doesn't vary k_ta on subpage
             None,
         );
     }
 
     #[test]
-    fn k_v_pixels() {
-        let datasheet = datasheet_eeprom();
-        let datasheet_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+    fn k_v_pixels<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        let datasheet = datasheet_eeprom::<F>();
+        let datasheet_k_v: [ArrayVec<F, NUM_PIXELS>; 2] = [
             datasheet.k_v_pixels(Subpage::Zero).copied().collect(),
             datasheet.k_v_pixels(Subpage::One).copied().collect(),
         ];
-        let example = example_eeprom();
-        let example_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example = example_eeprom::<F>();
+        let example_k_v: [ArrayVec<F, NUM_PIXELS>; 2] = [
             example.k_v_pixels(Subpage::Zero).copied().collect(),
             example.k_v_pixels(Subpage::One).copied().collect(),
         ];
+        let expected_example_pixels: [F; NUM_PIXELS] = mlx90640_example_data::K_V_PIXELS
+            .iter()
+            .map(|n| <F as NumCast>::from(*n).unwrap())
+            .collect::<ArrayVec<F, NUM_PIXELS>>()
+            .into_inner()
+            .unwrap();
         test_pixels_approx(
             datasheet_k_v,
             example_k_v,
-            0.5f32,
-            &mlx90640_example_data::K_V_PIXELS,
+            <F as NumCast>::from(0.5f64).unwrap(),
+            &expected_example_pixels,
             // MLX90640 doesn't vary k_v on subpage
             None,
         );
     }
 
     #[test]
-    fn emissivity() {
-        assert_eq!(datasheet_eeprom().emissivity(), None);
-        assert_eq!(example_eeprom().emissivity(), None);
+    fn emissivity<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(datasheet_eeprom::<F>().emissivity(), None);
+        assert_eq!(example_eeprom::<F>().emissivity(), None);
     }
 
     #[test]
-    fn offset_reference_cp() {
+    fn offset_reference_cp<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         // datasheet
-        let datasheet = datasheet_eeprom();
+        let datasheet = datasheet_eeprom::<F>();
         assert_eq!(datasheet.offset_reference_cp(Subpage::Zero), -75);
         assert_eq!(datasheet.offset_reference_cp(Subpage::One), -77);
         // example
-        let example = example_eeprom();
+        let example = example_eeprom::<F>();
         assert_eq!(
             example.offset_reference_cp(Subpage::Zero),
             mlx90640_example_data::OFFSET_CP[0],
@@ -858,118 +1112,222 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn k_ta_cp() {
+    fn k_ta_cp<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         // datasheet
-        let datasheet = datasheet_eeprom();
-        let expected = 0.00457763671875;
+        let datasheet = datasheet_eeprom::<F>();
+        let expected: F = <F as NumCast>::from(0.00457763671875f64).unwrap();
         assert_eq!(datasheet.k_ta_cp(Subpage::Zero), expected);
         assert_eq!(datasheet.k_ta_cp(Subpage::One), expected);
         // example
-        let example = example_eeprom();
+        let example = example_eeprom::<F>();
         assert_approx_eq!(
-            f32,
+            F,
             example.k_ta_cp(Subpage::Zero),
-            mlx90640_example_data::K_TA_CP
+            <F as NumCast>::from(mlx90640_example_data::K_TA_CP).unwrap()
         );
         assert_approx_eq!(
-            f32,
+            F,
             example.k_ta_cp(Subpage::One),
-            mlx90640_example_data::K_TA_CP
+            <F as NumCast>::from(mlx90640_example_data::K_TA_CP).unwrap()
         );
     }
 
     #[test]
-    fn k_v_cp() {
+    fn k_v_cp<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         // datasheet
-        let datasheet = datasheet_eeprom();
-        let expected = 0.5;
+        let datasheet = datasheet_eeprom::<F>();
+        let expected = <F as NumCast>::from(0.5f64).unwrap();
         assert_eq!(datasheet.k_v_cp(Subpage::Zero), expected);
         assert_eq!(datasheet.k_v_cp(Subpage::One), expected);
         // example
-        let example = example_eeprom();
-        assert_eq!(example.k_v_cp(Subpage::Zero), mlx90640_example_data::K_V_CP);
-        assert_eq!(example.k_v_cp(Subpage::One), mlx90640_example_data::K_V_CP);
+        let example = example_eeprom::<F>();
+        assert_eq!(
+            example.k_v_cp(Subpage::Zero),
+            <F as NumCast>::from(mlx90640_example_data::K_V_CP).unwrap()
+        );
+        assert_eq!(
+            example.k_v_cp(Subpage::One),
+            <F as NumCast>::from(mlx90640_example_data::K_V_CP).unwrap()
+        );
     }
 
     #[test]
-    fn temperature_gradient_coefficient() {
+    fn temperature_gradient_coefficient<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         assert_eq!(
-            datasheet_eeprom().temperature_gradient_coefficient(),
-            Some(1f32)
+            datasheet_eeprom::<F>().temperature_gradient_coefficient(),
+            Some(F::ONE)
         );
         assert_eq!(
-            example_eeprom().temperature_gradient_coefficient(),
+            example_eeprom::<F>().temperature_gradient_coefficient(),
             // 0 TGC means None
             None,
         );
     }
 
     #[test]
-    fn alpha_cp() {
+    fn alpha_cp<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         // datasheet
-        let datasheet = datasheet_eeprom();
-        assert_eq!(datasheet.alpha_cp(Subpage::Zero), 4.07453626394272E-9);
-        assert_eq!(datasheet.alpha_cp(Subpage::One), 3.851710062200835E-9);
+        let datasheet = datasheet_eeprom::<F>();
+        assert_eq!(
+            datasheet.alpha_cp(Subpage::Zero),
+            <F as NumCast>::from(4.07453626394272E-9f64).unwrap()
+        );
+        assert_eq!(
+            datasheet.alpha_cp(Subpage::One),
+            <F as NumCast>::from(3.851710062200835E-9f64).unwrap()
+        );
         // example
-        let example = example_eeprom();
+        let example = example_eeprom::<F>();
         assert_eq!(
             example.alpha_cp(Subpage::Zero),
-            mlx90640_example_data::ALPHA_CP[0],
+            <F as NumCast>::from(mlx90640_example_data::ALPHA_CP[0]).unwrap()
         );
         assert_eq!(
             example.alpha_cp(Subpage::One),
-            mlx90640_example_data::ALPHA_CP[1],
+            <F as NumCast>::from(mlx90640_example_data::ALPHA_CP[1]).unwrap()
         );
     }
 
     #[test]
-    fn k_s_ta() {
-        assert_eq!(datasheet_eeprom().k_s_ta(), -0.001953125);
+    fn k_s_ta<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(
+            datasheet_eeprom::<F>().k_s_ta(),
+            <F as NumCast>::from(-0.001953125f64).unwrap()
+        );
         assert_approx_eq!(
-            f32,
-            example_eeprom().k_s_ta(),
-            mlx90640_example_data::K_S_TA
+            F,
+            example_eeprom::<F>().k_s_ta(),
+            <F as NumCast>::from(mlx90640_example_data::K_S_TA).unwrap()
         );
     }
 
     #[test]
-    fn pixel_alpha() {
+    fn pixel_alpha<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
         // MLX90640 doesn't vary alpha on subpage
-        let datasheet = datasheet_eeprom();
-        let datasheet_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let datasheet = datasheet_eeprom::<F>();
+        let datasheet_alpha: [ArrayVec<F, NUM_PIXELS>; 2] = [
             datasheet.alpha_pixels(Subpage::Zero).copied().collect(),
             datasheet.alpha_pixels(Subpage::One).copied().collect(),
         ];
-        let example = example_eeprom();
-        let example_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example = example_eeprom::<F>();
+        let example_alpha: [ArrayVec<F, NUM_PIXELS>; 2] = [
             example.alpha_pixels(Subpage::Zero).copied().collect(),
             example.alpha_pixels(Subpage::One).copied().collect(),
         ];
+        let expected_example_alpha_pixels: [F; NUM_PIXELS] = mlx90640_example_data::ALPHA_PIXELS
+            .iter()
+            .map(|n| <F as NumCast>::from(*n).unwrap())
+            .collect::<ArrayVec<F, NUM_PIXELS>>()
+            .into_inner()
+            .unwrap();
         test_pixels_approx(
             datasheet_alpha,
             example_alpha,
-            1.262233122690854E-7,
-            &mlx90640_example_data::ALPHA_PIXELS,
+            <F as NumCast>::from(1.262233122690854E-7f64).unwrap(),
+            &expected_example_alpha_pixels,
             None,
         );
     }
 
     #[test]
-    fn k_s_to() {
-        assert_eq!(datasheet_eeprom().k_s_to()[1], -0.00080108642578125);
-        let example = example_eeprom();
-        let example_pairs = example
-            .k_s_to()
+    fn k_s_to<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        assert_eq!(
+            datasheet_eeprom::<F>().k_s_to()[1],
+            <F as NumCast>::from(-0.00080108642578125).unwrap()
+        );
+        let example = example_eeprom::<F>();
+        let expected_example = mlx90640_example_data::K_S_TO
             .iter()
-            .zip(mlx90640_example_data::K_S_TO.iter());
+            .map(|n| <F as NumCast>::from(*n).unwrap());
+        let example_pairs = example.k_s_to().iter().zip(expected_example);
         for (actual, expected) in example_pairs {
-            assert_approx_eq!(f32, *actual, *expected);
+            assert_approx_eq!(F, *actual, expected);
         }
     }
 
     #[test]
-    fn corner_temperatures() {
-        let e = datasheet_eeprom();
+    fn corner_temperatures<F>()
+    where
+        F: Debug
+            + FloatConstants
+            + ApproxEq
+            + From<f32>
+            + From<i16>
+            + From<u16>
+            + From<i8>
+            + From<u8>,
+    {
+        let e = datasheet_eeprom::<F>();
         let ct = e.corner_temperatures();
         // The first two values are hard-coded, but testing for completeness.
         assert_eq!(ct[0], -40);
@@ -980,8 +1338,14 @@ pub(crate) mod test {
 
         // Full example test
         assert_eq!(
-            example_eeprom().corner_temperatures(),
+            example_eeprom::<F>().corner_temperatures(),
             mlx90640_example_data::CORNER_TEMPERATURES
         );
     }
+
+    #[instantiate_tests(<f32>)]
+    mod f32 {}
+
+    #[instantiate_tests(<f64>)]
+    mod f64 {}
 }

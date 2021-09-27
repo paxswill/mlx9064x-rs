@@ -712,15 +712,16 @@ mod test {
         mocked.set_data_available(true);
         assert!(cam.generate_image_if_ready(&mut temperatures).unwrap());
         // Check the results
-        let paired = temperatures
+        let expected_pixels = mlx90640_example_data::TEMPERATURES
             .iter()
-            .zip(mlx90640_example_data::TEMPERATURES.iter());
+            .map(|n| <f32 as NumCast>::from(*n).unwrap());
+        let paired = temperatures.iter().zip(expected_pixels);
         for (index, (actual, expected)) in paired.enumerate() {
             assert!(
-                approx_eq!(f32, *actual, *expected, epsilon = 0.001),
+                approx_eq!(f32, *actual, expected, epsilon = 0.001),
                 "Pixel {}: Expected: {}, Actual: {}",
                 index,
-                *expected,
+                expected,
                 *actual
             );
         }
