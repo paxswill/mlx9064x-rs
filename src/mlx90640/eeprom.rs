@@ -689,7 +689,14 @@ pub(crate) mod test {
         let datasheet_index = 11 * WIDTH + 15;
         let subpage_index: usize = subpage.unwrap_or(Subpage::Zero).into();
         let pixel = datasheet_data[subpage_index][datasheet_index];
-        assert!(check(pixel, datasheet_expected));
+        assert!(
+            check(pixel, datasheet_expected),
+            "[datasheet pixel]:\n{:>10}: `{:?}`,\n{:>10}: `{:?}`,",
+            "expected",
+            datasheet_expected,
+            "actual",
+            pixel
+        );
         // Check all the pixels from the full example
         let offset_pairs = example_data[subpage_index]
             .iter()
@@ -697,9 +704,11 @@ pub(crate) mod test {
         for (index, (actual, expected)) in offset_pairs.enumerate() {
             assert!(
                 check(*actual, *expected),
-                "[pixel {}]: Expected {}, Actual: {}",
+                "[pixel {:?}]:\n{:>10}: `{:?}`,\n{:>10}: `{:?}`,",
                 index,
+                "expected",
                 expected,
+                "actual",
                 actual
             );
         }
