@@ -719,6 +719,7 @@ mod test {
         let paired = temperatures.iter().zip(expected_pixels);
         for (index, (actual, expected)) in paired.enumerate() {
             assert!(
+                // The datasheet only goes out to three decimal places for the pixel temperatures.
                 approx_eq!(f32, *actual, expected, epsilon = 0.001),
                 "Pixel {}: Expected: {}, Actual: {}",
                 index,

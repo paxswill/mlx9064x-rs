@@ -515,13 +515,13 @@ pub(crate) mod test {
     use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
     use crate::register::Subpage;
     use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
-    use crate::util::Num;
+    use crate::util::{Num, TestNum};
 
     use super::Mlx90640Calibration;
 
     fn datasheet_eeprom<F>() -> Mlx90640Calibration<F>
     where
-        F: Debug + ApproxEq + Num,
+        F: Debug + Num + TestNum,
     {
         let mut eeprom_bytes = mlx90640_datasheet_eeprom();
         Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
@@ -529,7 +529,7 @@ pub(crate) mod test {
 
     fn example_eeprom<F>() -> Mlx90640Calibration<F>
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         let mut example_bytes = &mlx90640_example_data::EEPROM_DATA[..];
         Mlx90640Calibration::from_data(&mut example_bytes)
@@ -539,7 +539,7 @@ pub(crate) mod test {
     #[test]
     fn word_6_10_split<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         fn check(mut data: &[u8], little: i8, remainder: [u8; 2]) {
             let split = super::word_6_10_split(&mut data);
@@ -563,7 +563,7 @@ pub(crate) mod test {
     #[test]
     fn word_to_u4s<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         let mut sequence: &[u8] = b"\x12\x34";
         assert_eq!(super::word_to_u4s(&mut sequence), [1, 2, 3, 4]);
@@ -576,7 +576,7 @@ pub(crate) mod test {
     #[test]
     fn u8_to_i4s<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_eq!(super::u8_to_i4s(0x44), [4, 4]);
         assert_eq!(super::u8_to_i4s(0x88), [-8, -8]);
@@ -587,7 +587,7 @@ pub(crate) mod test {
     #[test]
     fn repeat_chessboard<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         // The pattern order is (for row, column): EE, OE, EO, OO
         let pattern = [1, 2, 3, 4];
@@ -626,7 +626,7 @@ pub(crate) mod test {
     #[test]
     fn smoke<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         datasheet_eeprom::<F>();
         example_eeprom::<F>();
@@ -636,7 +636,7 @@ pub(crate) mod test {
     #[test]
     fn resolution<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_eq!(datasheet_eeprom::<F>().resolution(), 2);
         assert_eq!(
@@ -648,19 +648,19 @@ pub(crate) mod test {
     #[test]
     fn k_v_dd<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_eq!(datasheet_eeprom::<F>().k_v_dd(), -3168);
         assert_eq!(
             example_eeprom::<F>().k_v_dd(),
-            mlx90640_example_data::K_V_DD
+            mlx90640_example_data::K_V_DD,
         );
     }
 
     #[test]
     fn v_dd_25<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_eq!(datasheet_eeprom::<F>().v_dd_25(), -13056);
         assert_eq!(
@@ -672,7 +672,7 @@ pub(crate) mod test {
     #[test]
     fn v_dd_0<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_eq!(datasheet_eeprom::<F>().v_dd_0(), F::THREE_POINT_THREE);
         assert_eq!(example_eeprom::<F>().v_dd_0(), F::THREE_POINT_THREE);
@@ -681,39 +681,42 @@ pub(crate) mod test {
     #[test]
     fn k_v_ptat<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
-        assert_approx_eq!(
-            F,
-            datasheet_eeprom::<F>().k_v_ptat(),
-            F::coerce(0.0053710938f64)
-        );
+        // The worked example in the datasheet is rounded.
+        let datasheet_k_v_ptat = F::coerce(0.00537109375);
+        assert_approx_eq!(F, datasheet_eeprom::<F>().k_v_ptat(), datasheet_k_v_ptat);
         assert_approx_eq!(
             F,
             example_eeprom::<F>().k_v_ptat(),
-            F::coerce(mlx90640_example_data::K_V_PTAT)
+            F::coerce(mlx90640_example_data::K_V_PTAT),
+            // The example spreadsheet only goes out to 6 decimal places
+            F::margin(0.000001, 2)
         );
     }
 
     #[test]
     fn k_t_ptat<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
-        assert_approx_eq!(F, datasheet_eeprom::<F>().k_t_ptat(), F::coerce(42.25f64));
+        assert_approx_eq!(F, datasheet_eeprom::<F>().k_t_ptat(), F::coerce(42.25));
         assert_approx_eq!(
             F,
             example_eeprom::<F>().k_t_ptat(),
-            F::coerce(mlx90640_example_data::K_T_PTAT)
+            F::coerce(mlx90640_example_data::K_T_PTAT) // No need for specific margins here; the example value can be easily represented by a
+                                                       // fractional power of two.
         );
     }
 
     #[test]
     fn v_ptat_25<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
-        assert_eq!(datasheet_eeprom::<F>().v_ptat_25(), F::coerce(12273f64));
+        // While the data type is a Num, for the 640 v_ptat_25 is an integer, so we can use
+        // assert_eq.
+        assert_eq!(datasheet_eeprom::<F>().v_ptat_25(), F::coerce(12273u16));
         assert_eq!(
             example_eeprom::<F>().v_ptat_25(),
             F::coerce(mlx90640_example_data::V_PTAT_25)
@@ -723,9 +726,10 @@ pub(crate) mod test {
     #[test]
     fn alpha_ptat<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
-        assert_eq!(datasheet_eeprom::<F>().alpha_ptat(), F::coerce(9f64));
+        // Same situation with v_ptat_25, this is an int for 640.
+        assert_eq!(datasheet_eeprom::<F>().alpha_ptat(), F::coerce(9u16));
         assert_eq!(
             example_eeprom::<F>().alpha_ptat(),
             F::coerce(mlx90640_example_data::ALPHA_PTAT)
@@ -735,9 +739,10 @@ pub(crate) mod test {
     #[test]
     fn gain<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
-        assert_eq!(datasheet_eeprom::<F>().gain(), F::coerce(6383.0f64));
+        // And again, this is an int for the 640.
+        assert_eq!(datasheet_eeprom::<F>().gain(), F::coerce(6383u16));
         assert_eq!(
             example_eeprom::<F>().gain(),
             F::coerce(mlx90640_example_data::GAIN_EE)
@@ -791,10 +796,11 @@ pub(crate) mod test {
         datasheet_expected: T,
         example_expected: &[T; NUM_PIXELS],
         subpage: Option<Subpage>,
+        margin: Option<<T as ApproxEq>::Margin>,
     ) where
-        T: ApproxEq + PartialEq + Debug + Copy,
+        T: TestNum + PartialEq + Debug + Copy,
     {
-        let check = |actual: T, expected: T| actual.approx_eq(expected, T::Margin::default());
+        let check = |actual: T, expected: T| actual.approx_eq(expected, margin.unwrap_or_default());
         test_pixels_common(
             datasheet_data,
             example_data,
@@ -826,7 +832,7 @@ pub(crate) mod test {
     #[test]
     fn pixel_offset<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         let datasheet = datasheet_eeprom::<F>();
         let datasheet_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
@@ -863,7 +869,7 @@ pub(crate) mod test {
     #[test]
     fn pixel_k_ta<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         let datasheet = datasheet_eeprom::<F>();
         let datasheet_k_ta: [ArrayVec<F, NUM_PIXELS>; 2] = [
@@ -888,13 +894,15 @@ pub(crate) mod test {
             &expected_example_pixels,
             // MLX90640 doesn't vary k_ta on subpage
             None,
+            // The datasheet goes out to eight decimal places for these values
+            Some(F::margin(0.00000001, 2)),
         );
     }
 
     #[test]
     fn k_v_pixels<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         let datasheet = datasheet_eeprom::<F>();
         let datasheet_k_v: [ArrayVec<F, NUM_PIXELS>; 2] = [
@@ -919,13 +927,14 @@ pub(crate) mod test {
             &expected_example_pixels,
             // MLX90640 doesn't vary k_v on subpage
             None,
+            None,
         );
     }
 
     #[test]
     fn emissivity<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_eq!(datasheet_eeprom::<F>().emissivity(), None);
         assert_eq!(example_eeprom::<F>().emissivity(), None);
@@ -934,7 +943,7 @@ pub(crate) mod test {
     #[test]
     fn offset_reference_cp<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         // datasheet
         let datasheet = datasheet_eeprom::<F>();
@@ -955,7 +964,7 @@ pub(crate) mod test {
     #[test]
     fn k_ta_cp<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         // datasheet
         let datasheet = datasheet_eeprom::<F>();
@@ -964,23 +973,30 @@ pub(crate) mod test {
         assert_approx_eq!(F, datasheet.k_ta_cp(Subpage::One), expected);
         // example
         let example = example_eeprom::<F>();
+        let example_expected = F::coerce(mlx90640_example_data::K_TA_CP);
+        // The example only goes out to six decimal places
+        let example_margin = F::margin(0.000001, 2);
         assert_approx_eq!(
             F,
             example.k_ta_cp(Subpage::Zero),
-            F::coerce(mlx90640_example_data::K_TA_CP)
+            example_expected,
+            example_margin
         );
         assert_approx_eq!(
             F,
             example.k_ta_cp(Subpage::One),
-            F::coerce(mlx90640_example_data::K_TA_CP)
+            example_expected,
+            example_margin
         );
     }
 
     #[test]
     fn k_v_cp<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
+        // The values for k_v_cp can be represented by fractional powers of two, so using assert_eq
+        // is alright (for now, this might change with a fixed point data type later).
         // datasheet
         let datasheet = datasheet_eeprom::<F>();
         let expected = F::coerce(0.5f64);
@@ -1001,7 +1017,7 @@ pub(crate) mod test {
     #[test]
     fn temperature_gradient_coefficient<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_eq!(
             datasheet_eeprom::<F>().temperature_gradient_coefficient(),
@@ -1017,7 +1033,7 @@ pub(crate) mod test {
     #[test]
     fn alpha_cp<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         // datasheet
         let datasheet = datasheet_eeprom::<F>();
@@ -1048,20 +1064,26 @@ pub(crate) mod test {
     #[test]
     fn k_s_ta<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
-        assert_approx_eq!(F, datasheet_eeprom::<F>().k_s_ta(), F::coerce(-0.001953125f64));
+        assert_approx_eq!(
+            F,
+            datasheet_eeprom::<F>().k_s_ta(),
+            F::coerce(-0.001953125f64)
+        );
         assert_approx_eq!(
             F,
             example_eeprom::<F>().k_s_ta(),
-            F::coerce(mlx90640_example_data::K_S_TA)
+            F::coerce(mlx90640_example_data::K_S_TA),
+            // The example only goes out to six decimal places
+            F::margin(0.000001, 2)
         );
     }
 
     #[test]
     fn pixel_alpha<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         // MLX90640 doesn't vary alpha on subpage
         let datasheet = datasheet_eeprom::<F>();
@@ -1086,13 +1108,15 @@ pub(crate) mod test {
             F::coerce(1.262233122690854E-7f64),
             &expected_example_alpha_pixels,
             None,
+            // The example data goes out to 19 decimal places (but only 12 significant figures).
+            Some(F::margin(1.0E-19, 2)),
         );
     }
 
     #[test]
     fn k_s_to<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         assert_approx_eq!(
             F,
@@ -1103,14 +1127,15 @@ pub(crate) mod test {
         let expected_example = mlx90640_example_data::K_S_TO.iter().map(|n| F::coerce(*n));
         let example_pairs = example.k_s_to().iter().zip(expected_example);
         for (actual, expected) in example_pairs {
-            assert_approx_eq!(F, *actual, expected);
+            // The example spreadsheet only goes out to six decimal places
+            assert_approx_eq!(F, *actual, expected, F::margin(0.000001, 2));
         }
     }
 
     #[test]
     fn corner_temperatures<F>()
     where
-        F: Debug + Num + ApproxEq,
+        F: Debug + Num + TestNum,
     {
         let e = datasheet_eeprom::<F>();
         let ct = e.corner_temperatures();
