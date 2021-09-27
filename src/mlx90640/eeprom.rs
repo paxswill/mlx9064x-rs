@@ -1105,7 +1105,7 @@ pub(crate) mod test {
         test_pixels_approx(
             datasheet_alpha,
             example_alpha,
-            F::coerce(1.262233122690854E-7f64),
+            F::coerce(1.26223312690854E-7f64),
             &expected_example_alpha_pixels,
             None,
             // The example data goes out to 19 decimal places (but only 12 significant figures).
