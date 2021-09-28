@@ -13,7 +13,7 @@ use embedded_hal::blocking::i2c;
 
 use super::eeprom_data::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom, EEPROM_LENGTH};
 use super::mlx90640_example_data;
-use crate::{mlx90640, mlx90641, Address};
+use crate::{mlx90640, mlx90641, Address, MelexisCamera};
 
 /// The number of bytes the MLX90640 has of RAM.
 ///
@@ -411,7 +411,7 @@ pub(crate) fn datasheet_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<ML
     let eeprom_data = mlx90640_datasheet_eeprom();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90640_RAM_LENGTH];
-    ram_data[..(mlx90640::NUM_PIXELS * 2)]
+    ram_data[..(mlx90640::Mlx90640::NUM_PIXELS * 2)]
         .iter_mut()
         .zip(b"\x02\x61".iter().copied().cycle())
         .for_each(|(ram_byte, pixel_byte)| *ram_byte = pixel_byte);
@@ -449,7 +449,7 @@ pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
     let eeprom_data = mlx90641_datasheet_eeprom();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90641_RAM_LENGTH];
-    ram_data[..(mlx90641::NUM_PIXELS * 2)]
+    ram_data[..(mlx90641::Mlx90641::NUM_PIXELS * 2)]
         .iter_mut()
         .zip(b"\x03\xcc".iter().copied().cycle())
         .for_each(|(ram_byte, pixel_byte)| *ram_byte = pixel_byte);

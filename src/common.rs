@@ -340,6 +340,15 @@ pub trait MelexisCamera {
     /// In normal operation the camera generates some heat. If T<sub>r</sub> is not available, it
     /// can be calculated by subtracting this value from T<sub>a</sub>.
     const SELF_HEATING: f32;
+
+    /// The height of the thermal image in pixels.
+    const HEIGHT: usize;
+
+    /// The width of the thermal image in pixels.
+    const WIDTH: usize;
+
+    /// The total number of pixels in the thermal image.
+    const NUM_PIXELS: usize;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

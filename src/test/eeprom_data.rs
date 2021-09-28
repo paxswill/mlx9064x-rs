@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
-use crate::mlx90641;
+use crate::{mlx90641, MelexisCamera};
 
 /// The size of the EEPROM for the MLX990640 and MLX909641 in bytes.
 ///
@@ -64,7 +64,7 @@ pub(crate) fn mlx90641_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     eeprom_data[..header_slice.len()].copy_from_slice(header_slice);
     let mut offset = header_slice.len();
     // Multiply by two to get number of bytes
-    let pixel_data_length = mlx90641::NUM_PIXELS * 2;
+    let pixel_data_length = mlx90641::Mlx90641::NUM_PIXELS * 2;
     for single_pixel_data in [offset_0, sensitivity, k_ta_with_k_v, offset_1] {
         eeprom_data[offset..(offset + pixel_data_length)]
             .iter_mut()

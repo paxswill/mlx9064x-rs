@@ -748,7 +748,7 @@ mod test {
         let clb = mlx90640_calibration();
         // The worked example uses pixel(12, 16) (and we use 0-indexing, so subtract one) and
         // subpage 1
-        let pixel_index = 11 * mlx90640::WIDTH + 15;
+        let pixel_index = 11 * mlx90640::Mlx90640::WIDTH + 15;
         let offset = clb
             .offset_reference_pixels(Subpage::One)
             .nth(pixel_index)
@@ -776,7 +776,7 @@ mod test {
         let clb = mlx90641_calibration();
         // The worked example uses pixel(6, 9) (and we use 0-indexing, so subtract one) and
         // subpage 0
-        let pixel_index = 5 * mlx90641::WIDTH + 8;
+        let pixel_index = 5 * mlx90641::Mlx90641::WIDTH + 8;
         let offset = clb
             .offset_reference_pixels(Subpage::Zero)
             .nth(pixel_index)

@@ -18,21 +18,12 @@ use crate::register::{AccessPattern, Subpage};
 pub use address::RamAddress;
 pub use eeprom::Mlx90641Calibration;
 
-/// The height of the image captured by sensor in pixels.
-pub const HEIGHT: usize = 12;
-
-/// The width of the image captured by the sensor in pixels.
-pub const WIDTH: usize = 16;
-
-/// The total number of pixels an MLX90641 has.
-pub const NUM_PIXELS: usize = HEIGHT * WIDTH;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90641();
 
 impl MelexisCamera for Mlx90641 {
     type PixelRangeIterator = SubpageInterleave;
-    type PixelsInSubpageIterator = AllPixels<NUM_PIXELS>;
+    type PixelsInSubpageIterator = AllPixels<{ Self::NUM_PIXELS }>;
 
     fn pixel_ranges(subpage: Subpage, _access_pattern: AccessPattern) -> Self::PixelRangeIterator {
         // The 90641 updates an entire frame at a time and only vary the data location on subpage
@@ -74,6 +65,12 @@ impl MelexisCamera for Mlx90641 {
 
     // Implicitly documented in section 11.2.2.9 of the datasheet.
     const SELF_HEATING: f32 = 5.0;
+
+    const HEIGHT: usize = 12;
+
+    const WIDTH: usize = 16;
+
+    const NUM_PIXELS: usize = Self::HEIGHT * Self::WIDTH;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -99,7 +96,7 @@ impl SubpageInterleave {
     const PIXEL_START_ADDRESS: u16 = RamAddress::Base as u16;
 
     /// The number of strides in each frame.
-    const NUM_STRIDES: u16 = (HEIGHT / 2) as u16;
+    const NUM_STRIDES: u16 = (Mlx90641::HEIGHT / 2) as u16;
 
     fn new(subpage: Subpage) -> Self {
         let starting_address: u16 = match subpage {

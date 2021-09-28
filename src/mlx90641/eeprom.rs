@@ -21,7 +21,7 @@ use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
 use super::hamming::validate_checksum;
-use super::{Mlx90641, NUM_PIXELS};
+use super::Mlx90641;
 
 /// The number of corner temperatures an MLX90641 has.
 const NUM_CORNER_TEMPERATURES: usize = 8;
@@ -57,19 +57,19 @@ pub struct Mlx90641Calibration {
 
     emissivity: Option<f32>,
 
-    alpha_pixels: [f32; NUM_PIXELS],
+    alpha_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     alpha_cp: f32,
 
-    offset_reference_pixels: [[i16; NUM_PIXELS]; 2],
+    offset_reference_pixels: [[i16; <Self as CalibrationData>::Camera::NUM_PIXELS]; 2],
 
     offset_reference_cp: i16,
 
-    k_v_pixels: [f32; NUM_PIXELS],
+    k_v_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     k_v_cp: f32,
 
-    k_ta_pixels: [f32; NUM_PIXELS],
+    k_ta_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     k_ta_cp: f32,
 
@@ -249,8 +249,8 @@ impl Mlx90641Calibration {
         buf: &mut &[u8],
         offset_scale: u8,
         offset_average: i16,
-    ) -> Result<[i16; NUM_PIXELS], LibraryError> {
-        let mut pixel_offsets = [0i16; NUM_PIXELS];
+    ) -> Result<[i16; <Self as CalibrationData>::Camera::NUM_PIXELS], LibraryError> {
+        let mut pixel_offsets = [0i16; <Self as CalibrationData>::Camera::NUM_PIXELS];
         let scale = 2i16.pow(offset_scale as u32);
         for pixel_offset in pixel_offsets.iter_mut() {
             // NOTE: There's a chance this will overflow, if offset_scale is too large
@@ -264,8 +264,8 @@ impl Mlx90641Calibration {
     fn get_pixel_sensitivities(
         buf: &mut &[u8],
         alpha_reference: [f32; 6],
-    ) -> Result<[f32; NUM_PIXELS], LibraryError> {
-        let mut pixel_sensitivites = [0f32; NUM_PIXELS];
+    ) -> Result<[f32; <Self as CalibrationData>::Camera::NUM_PIXELS], LibraryError> {
+        let mut pixel_sensitivites = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
         // The sensitivity reference value is shared across a band of 32 pixels, so chunk the
         // pixels by that, and xip the reference value in
         let referenced_rows = alpha_reference
@@ -288,9 +288,15 @@ impl Mlx90641Calibration {
         k_ta_scales: (u8, u8),
         k_v_average: i16,
         k_v_scales: (u8, u8),
-    ) -> Result<([f32; NUM_PIXELS], [f32; NUM_PIXELS]), LibraryError> {
-        let mut k_ta_pixels = [0f32; NUM_PIXELS];
-        let mut k_v_pixels = [0f32; NUM_PIXELS];
+    ) -> Result<
+        (
+            [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
+            [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
+        ),
+        LibraryError,
+    > {
+        let mut k_ta_pixels = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
+        let mut k_v_pixels = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
         let k_ta_scale1 = f32::from(k_ta_scales.0).exp2();
         let k_ta_scale2 = f32::from(k_ta_scales.1).exp2();
         let k_v_scale1 = f32::from(k_v_scales.0).exp2();
@@ -431,16 +437,16 @@ fn get_6_5_split(buf: &mut &[u8]) -> Result<(u8, u8), LibraryError> {
 pub(crate) mod test {
     use arrayvec::ArrayVec;
 
-    use crate::common::CalibrationData;
+    use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
-    use crate::mlx90641::{NUM_PIXELS, WIDTH};
+    use crate::mlx90641::Mlx90641;
     use crate::register::Subpage;
     use crate::test::mlx90641_datasheet_eeprom;
 
     use super::Mlx90641Calibration;
 
     // The example is testing pixel (6, 9), so (5, 8) zero-indexed
-    const TEST_PIXEL_INDEX: usize = 5 * WIDTH + 8;
+    const TEST_PIXEL_INDEX: usize = 5 * Mlx90641::WIDTH + 8;
 
     pub(crate) fn datasheet_eeprom() -> Mlx90641Calibration {
         let mut eeprom_bytes = mlx90641_datasheet_eeprom();
@@ -552,9 +558,9 @@ pub(crate) mod test {
     #[test]
     fn pixel_offset() {
         let e = datasheet_eeprom();
-        let offsets0: ArrayVec<i16, NUM_PIXELS> =
+        let offsets0: ArrayVec<i16, { Mlx90641::NUM_PIXELS }> =
             e.offset_reference_pixels(Subpage::Zero).copied().collect();
-        let offsets1: ArrayVec<i16, NUM_PIXELS> =
+        let offsets1: ArrayVec<i16, { Mlx90641::NUM_PIXELS }> =
             e.offset_reference_pixels(Subpage::One).copied().collect();
         assert_eq!(offsets0[TEST_PIXEL_INDEX], -673);
         // NOTE: This is a larger departure from the datasheet's worked example. At least as of
@@ -567,9 +573,9 @@ pub(crate) mod test {
     #[test]
     fn k_ta_pixels() {
         let e = datasheet_eeprom();
-        let k_ta_pixels0: ArrayVec<f32, NUM_PIXELS> =
+        let k_ta_pixels0: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
             e.k_ta_pixels(Subpage::Zero).copied().collect();
-        let k_ta_pixels1: ArrayVec<f32, NUM_PIXELS> =
+        let k_ta_pixels1: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
             e.k_ta_pixels(Subpage::One).copied().collect();
         // Subpage is ignored for K_Ta
         assert_eq!(k_ta_pixels0, k_ta_pixels1);
@@ -581,8 +587,10 @@ pub(crate) mod test {
     #[test]
     fn k_v_pixels() {
         let e = datasheet_eeprom();
-        let k_v_pixels0: ArrayVec<f32, NUM_PIXELS> = e.k_v_pixels(Subpage::Zero).copied().collect();
-        let k_v_pixels1: ArrayVec<f32, NUM_PIXELS> = e.k_v_pixels(Subpage::One).copied().collect();
+        let k_v_pixels0: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.k_v_pixels(Subpage::Zero).copied().collect();
+        let k_v_pixels1: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.k_v_pixels(Subpage::One).copied().collect();
         // Subpage is ignored for K_V
         assert_eq!(k_v_pixels0, k_v_pixels1);
         assert_eq!(k_v_pixels0[TEST_PIXEL_INDEX], 0.3251953);
@@ -646,8 +654,10 @@ pub(crate) mod test {
     #[test]
     fn pixel_alpha() {
         let e = datasheet_eeprom();
-        let alpha0: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::One).copied().collect();
-        let alpha1: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::Zero).copied().collect();
+        let alpha0: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.alpha_pixels(Subpage::One).copied().collect();
+        let alpha1: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.alpha_pixels(Subpage::Zero).copied().collect();
         // MLX90641 doesn't vary alpha on subpage
         assert_eq!(alpha0, alpha1);
         let pixel = alpha0[TEST_PIXEL_INDEX];

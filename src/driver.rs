@@ -385,12 +385,12 @@ where
     /// The height of the thermal image, in pixels.
     pub fn height(&self) -> usize {
         // const generics make this silly.
-        HEIGHT
+        Cam::HEIGHT
     }
 
     /// The width of the thermal image, in pixels.
     pub fn width(&self) -> usize {
-        WIDTH
+        Cam::WIDTH
     }
 
     fn read_ram(&mut self, subpage: Subpage) -> Result<RamData, Error<I2C>> {
@@ -614,7 +614,7 @@ mod test {
 
     use crate::{mlx90640, mlx90641};
     use crate::{test::*, Subpage};
-    use crate::{I2cRegister, Mlx90640Driver, Mlx90641Driver, StatusRegister};
+    use crate::{I2cRegister, MelexisCamera, Mlx90640Driver, Mlx90641Driver, StatusRegister};
 
     fn create_mlx90640() -> Mlx90640Driver<MockCameraBus<MLX90640_RAM_LENGTH>> {
         // Specifically using a non-default address to make sure assumptions aren't being made
@@ -685,15 +685,30 @@ mod test {
     }
 
     #[test]
+    fn set_reflected_temperature() {
+        // The true temperature of the ambient environment is unknown initially, so it should be
+        // none at first.
+        let mut cam = create_mlx90640();
+        assert!(cam.reflected_temperature().is_none());
+        // We should be able to set the reflected temperature
+        const T_R: f32 = 10.5;
+        cam.set_reflected_temperature(Some(T_R));
+        assert_eq!(cam.reflected_temperature(), Some(T_R));
+        // And un-set it.
+        cam.set_reflected_temperature(None);
+        assert!(cam.reflected_temperature().is_none());
+    }
+
+    #[test]
     fn mlx90640_datasheet_integration() {
         let mut cam = create_mlx90640();
-        let mut temperatures = [0f32; mlx90640::NUM_PIXELS];
+        let mut temperatures = [0f32; mlx90640::Mlx90640::NUM_PIXELS];
         // The pixel used in the datasheet is part of Subpage 0, but the mocked example is on
         // Subpage 1 currently so we can't use `generate_image_if_ready`.
         let res = cam.generate_image_subpage_to(Subpage::Zero, &mut temperatures);
         assert!(res.is_ok());
         // Test pixel is (12, 16)
-        const PIXEL_INDEX: usize = 11 * mlx90640::WIDTH + 15;
+        const PIXEL_INDEX: usize = 11 * mlx90640::Mlx90640::WIDTH + 15;
         // The final calculations for T_o are nearly a worst-case scenario for precision. The
         // datasheet examples use arbitrary precision, which we just can't match with f32 (or even
         // f64).
@@ -703,12 +718,12 @@ mod test {
     #[test]
     fn mlx90641_datasheet_integration() {
         let mut cam = create_mlx90641();
-        let mut temperatures = [0f32; mlx90641::NUM_PIXELS];
+        let mut temperatures = [0f32; mlx90641::Mlx90641::NUM_PIXELS];
         let res = cam.generate_image_if_ready(&mut temperatures);
         assert!(res.is_ok());
         assert!(res.unwrap());
         // Test pixel is (6, 9)
-        const PIXEL_INDEX: usize = 5 * mlx90641::WIDTH + 8;
+        const PIXEL_INDEX: usize = 5 * mlx90641::Mlx90641::WIDTH + 8;
         assert_approx_eq!(f32, temperatures[PIXEL_INDEX], 80.129812, epsilon = 0.5);
     }
 
@@ -718,7 +733,7 @@ mod test {
         let mut mocked = example_mlx90640_at_address(i2c_address);
         mocked.set_data_available(false);
         let mut cam = Mlx90640Driver::new(mocked.clone(), i2c_address).unwrap();
-        let mut temperatures = [f32::NAN; mlx90640::NUM_PIXELS];
+        let mut temperatures = [f32::NAN; mlx90640::Mlx90640::NUM_PIXELS];
         // Make sure that nothing happens if the camera doesn't have data ready
         let not_ready = cam.generate_image_if_ready(&mut temperatures);
         assert!(!not_ready.unwrap());
@@ -752,8 +767,8 @@ mod test {
         }
     }
 
-    fn create_sentinel_buffer() -> [u8; mlx90641::NUM_PIXELS * 2] {
-        let mut buf = [0u8; mlx90641::NUM_PIXELS * 2];
+    fn create_sentinel_buffer() -> [u8; mlx90641::Mlx90641::NUM_PIXELS * 2] {
+        let mut buf = [0u8; mlx90641::Mlx90641::NUM_PIXELS * 2];
         // Initialize to 0xDEADBEEF to mark untouched memory
         buf.chunks_exact_mut(4).for_each(|chunk| {
             chunk[0] = 0xDE;
@@ -788,13 +803,14 @@ mod test {
         let mut buf = create_sentinel_buffer();
         let i2c_address = 0x47;
         let mut mock_bus = mock_mlx90641_at_address(i2c_address);
-        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::HEIGHT }>(
-            &mut mock_bus,
-            i2c_address,
-            crate::AccessPattern::Interleave,
-            crate::Subpage::Zero,
-            &mut buf,
-        );
+        let ram_data_result =
+            super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::Mlx90641::HEIGHT }>(
+                &mut mock_bus,
+                i2c_address,
+                crate::AccessPattern::Interleave,
+                crate::Subpage::Zero,
+                &mut buf,
+            );
         assert!(ram_data_result.is_ok());
         check_sentinel_buffer(&buf);
     }
@@ -804,13 +820,14 @@ mod test {
         let mut buf = create_sentinel_buffer();
         let i2c_address = 0x49;
         let mut mock_bus = mock_mlx90641_at_address(i2c_address);
-        let ram_data_result = super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::HEIGHT }>(
-            &mut mock_bus,
-            i2c_address,
-            crate::AccessPattern::Interleave,
-            crate::Subpage::One,
-            &mut buf,
-        );
+        let ram_data_result =
+            super::read_ram::<mlx90641::Mlx90641, _, { mlx90641::Mlx90641::HEIGHT }>(
+                &mut mock_bus,
+                i2c_address,
+                crate::AccessPattern::Interleave,
+                crate::Subpage::One,
+                &mut buf,
+            );
         assert!(ram_data_result.is_ok());
         check_sentinel_buffer(&buf);
     }

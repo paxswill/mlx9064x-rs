@@ -17,7 +17,7 @@ use crate::register::Subpage;
 use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
-use super::{Mlx90640, NUM_PIXELS, WIDTH};
+use super::Mlx90640;
 
 /// The number of corner temperatures an MLX90640 has.
 const NUM_CORNER_TEMPERATURES: usize = 4;
@@ -52,11 +52,11 @@ pub struct Mlx90640Calibration {
 
     alpha_correction: [f32; NUM_CORNER_TEMPERATURES],
 
-    alpha_pixels: [f32; NUM_PIXELS],
+    alpha_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     alpha_cp: [f32; 2],
 
-    offset_reference_pixels: [i16; NUM_PIXELS],
+    offset_reference_pixels: [i16; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     offset_reference_cp: [i16; 2],
 
@@ -64,7 +64,7 @@ pub struct Mlx90640Calibration {
 
     k_v_cp: f32,
 
-    k_ta_pixels: [f32; NUM_PIXELS],
+    k_ta_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     k_ta_cp: f32,
 
@@ -79,16 +79,19 @@ impl Mlx90640Calibration {
     /// and remainder scaling factors.
     /// The calculated array, the remainder scaling factor, and the value occupying the 4 bits
     /// preceding the scaling factors are returned (in that order).
-    fn calculate_bulk_pixel_calibration(data: &mut &[u8]) -> ([i16; NUM_PIXELS], u8, u8) {
+    fn calculate_bulk_pixel_calibration(
+        data: &mut &[u8],
+    ) -> ([i16; <Self as CalibrationData>::Camera::NUM_PIXELS], u8, u8) {
         let (extra_value, row_scale, column_scale, remainder_scale) = {
             let scales = word_to_u4s(data);
             (scales[0], scales[1], scales[2], scales[3])
         };
         let offset_average = data.get_i16();
-        let mut pixel_calibration = [offset_average; NUM_PIXELS];
+        let mut pixel_calibration = [offset_average; Mlx90640::NUM_PIXELS];
         const VALUES_PER_DATA_ROW: usize = 4;
         // Add row offsets
-        for row_chunks in pixel_calibration.chunks_exact_mut(WIDTH * VALUES_PER_DATA_ROW) {
+        for row_chunks in pixel_calibration.chunks_exact_mut(Mlx90640::WIDTH * VALUES_PER_DATA_ROW)
+        {
             let rows_coefficients = word_to_i4s(data);
             // Create a nice lazy iterator that converts the values to i16, scales them, and
             // reverses that order of the data (because the data is laid out backwards in the EEPROM).
@@ -96,12 +99,15 @@ impl Mlx90640Calibration {
                 .map(i16::from)
                 .map(|coeff| coeff << row_scale)
                 .rev();
-            for (row, coefficient) in row_chunks.chunks_exact_mut(WIDTH).zip(rows_coefficients) {
+            for (row, coefficient) in row_chunks
+                .chunks_exact_mut(Mlx90640::WIDTH)
+                .zip(rows_coefficients)
+            {
                 row.iter_mut().for_each(|element| *element += coefficient);
             }
         }
         // Add column offsets. Slightly more involved as the offsets are in row-major order.
-        for column_chunk_index in 0..(WIDTH / VALUES_PER_DATA_ROW) {
+        for column_chunk_index in 0..(Mlx90640::WIDTH / VALUES_PER_DATA_ROW) {
             // TODO: This could probably be optimized better
             let column_coefficients = word_to_i4s(data);
             // Same deal as the row coefficients, except cycle so that the same iterator can be
@@ -112,7 +118,7 @@ impl Mlx90640Calibration {
                 .map(i16::from)
                 .map(|coeff| coeff << column_scale)
                 .rev();
-            for row in pixel_calibration.chunks_exact_mut(WIDTH) {
+            for row in pixel_calibration.chunks_exact_mut(Mlx90640::WIDTH) {
                 let start_index = column_chunk_index * VALUES_PER_DATA_ROW;
                 let row_range = start_index..(start_index + VALUES_PER_DATA_ROW);
                 row[row_range]
@@ -149,11 +155,11 @@ impl Mlx90640Calibration {
         let even_row_pattern = core::array::IntoIter::new([row_even_col_even, row_even_col_odd]);
         let odd_row_pattern = core::array::IntoIter::new([row_odd_col_even, row_odd_col_odd]);
         // Repeat the pattern across the row
-        let even_row = even_row_pattern.cycle().take(WIDTH).map(T::from);
-        let odd_row = odd_row_pattern.cycle().take(WIDTH).map(T::from);
+        let even_row = even_row_pattern.cycle().take(Mlx90640::WIDTH).map(T::from);
+        let odd_row = odd_row_pattern.cycle().take(Mlx90640::WIDTH).map(T::from);
         // Then chain the two rows together, repeating to fill the array
         let repeating_rows = even_row.chain(odd_row).cycle();
-        repeating_rows.take(NUM_PIXELS)
+        repeating_rows.take(Mlx90640::NUM_PIXELS)
     }
 
     /// Calculate the per-pixel K<sub>T<sub>A</sub></sub> values.
@@ -190,10 +196,11 @@ impl Mlx90640Calibration {
         let alpha_ptat = alpha_ptat / 4 + 8;
         let (alpha_pixels, alpha_correction_remainder_scale, alpha_scale_exp) =
             Self::calculate_bulk_pixel_calibration(&mut buf);
-        let alpha_pixels: ArrayVec<f32, NUM_PIXELS> = core::array::IntoIter::new(alpha_pixels)
-            .map(f32::from)
-            .collect();
-        // Safe to unwrap as the length of pixel arrays are *all* NUM_PIXELS long.
+        let alpha_pixels: ArrayVec<f32, { Mlx90640::NUM_PIXELS }> =
+            core::array::IntoIter::new(alpha_pixels)
+                .map(f32::from)
+                .collect();
+        // Safe to unwrap as the length of pixel arrays are *all* Mlx90640::NUM_PIXELS long.
         let mut alpha_pixels = alpha_pixels.into_inner().unwrap();
         // Calculate the actual alpha scaling value from the exponent value. The alpha scaling
         // exponenet also has 30 added to it (not 27 like alpha_scale_cp).
@@ -279,7 +286,7 @@ impl Mlx90640Calibration {
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // Calculate the rest of the per-pixel data using the remainder/k_ta data
-        let mut k_ta_pixels = [0f32; NUM_PIXELS];
+        let mut k_ta_pixels = [0f32; Mlx90640::NUM_PIXELS];
         offset_reference_pixels
             .iter_mut()
             .zip(alpha_pixels.iter_mut())
@@ -434,9 +441,9 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < NUM_PIXELS {
-            let row = self.index / WIDTH;
-            let column = self.index % WIDTH;
+        if self.index < Mlx90640::NUM_PIXELS {
+            let row = self.index / Mlx90640::WIDTH;
+            let column = self.index % Mlx90640::WIDTH;
             self.index += 1;
             Some(match (row % 2 == 0, column % 2 == 0) {
                 (true, true) => &self.source[0],
@@ -502,8 +509,8 @@ pub(crate) mod test {
     use arrayvec::ArrayVec;
     use float_cmp::{assert_approx_eq, ApproxEq};
 
-    use crate::common::CalibrationData;
-    use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
+    use crate::common::{CalibrationData, MelexisCamera};
+    use crate::mlx90640::Mlx90640;
     use crate::register::Subpage;
     use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
@@ -563,21 +570,21 @@ pub(crate) mod test {
     fn repeat_chessboard() {
         // The pattern order is (for row, column): EE, OE, EO, OO
         let pattern = [1, 2, 3, 4];
-        let test_pattern: ArrayVec<i8, NUM_PIXELS> =
+        let test_pattern: ArrayVec<i8, { Mlx90640::NUM_PIXELS }> =
             Mlx90640Calibration::repeat_chessboard(pattern).collect();
         // Print the test pattern (when std is available), as that makes it much easier to see
         // what's going on.
         #[cfg(feature = "std")]
-        for row in 0..HEIGHT {
-            for column in 0..WIDTH {
-                let index = row * WIDTH + column;
+        for row in 0..Mlx90640::HEIGHT {
+            for column in 0..Mlx90640::WIDTH {
+                let index = row * Mlx90640::WIDTH + column;
                 print!("{} ", test_pattern[index]);
             }
             println!();
         }
-        for column in 0..WIDTH {
-            for row in 0..HEIGHT {
-                let index = row * WIDTH + column;
+        for column in 0..Mlx90640::WIDTH {
+            for row in 0..Mlx90640::HEIGHT {
+                let index = row * Mlx90640::WIDTH + column;
                 let expected = match (row % 2, column % 2) {
                     (0, 0) => 1,
                     (1, 0) => 2,
@@ -681,10 +688,10 @@ pub(crate) mod test {
     }
 
     fn test_pixels_common<T: PartialEq + core::fmt::Debug + core::fmt::Display + Copy>(
-        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
-        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
+        example_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
         datasheet_expected: T,
-        example_expected: &[T; NUM_PIXELS],
+        example_expected: &[T; Mlx90640::NUM_PIXELS],
         subpage: Option<Subpage>,
         check: &dyn Fn(T, T) -> bool,
     ) {
@@ -693,7 +700,7 @@ pub(crate) mod test {
             assert_eq!(example_data[0], example_data[1]);
         }
         // Test the single pixel from the datasheet
-        let datasheet_index = 11 * WIDTH + 15;
+        let datasheet_index = 11 * Mlx90640::WIDTH + 15;
         let subpage_index: usize = subpage.unwrap_or(Subpage::Zero).into();
         let pixel = datasheet_data[subpage_index][datasheet_index];
         assert!(
@@ -722,10 +729,10 @@ pub(crate) mod test {
     }
 
     fn test_pixels_approx<T>(
-        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
-        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
+        example_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
         datasheet_expected: T,
-        example_expected: &[T; NUM_PIXELS],
+        example_expected: &[T; Mlx90640::NUM_PIXELS],
         subpage: Option<Subpage>,
         margin: Option<<T as ApproxEq>::Margin>,
     ) where
@@ -743,10 +750,10 @@ pub(crate) mod test {
     }
 
     fn test_pixels<T: PartialEq + core::fmt::Debug + core::fmt::Display + Copy>(
-        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
-        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
+        example_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
         datasheet_expected: T,
-        example_expected: &[T; NUM_PIXELS],
+        example_expected: &[T; Mlx90640::NUM_PIXELS],
         subpage: Option<Subpage>,
     ) {
         let check = |actual: T, expected: T| actual == expected;
@@ -763,7 +770,7 @@ pub(crate) mod test {
     #[test]
     fn pixel_offset() {
         let datasheet = datasheet_eeprom();
-        let datasheet_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
+        let datasheet_offsets: [ArrayVec<i16, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet
                 .offset_reference_pixels(Subpage::Zero)
                 .copied()
@@ -774,7 +781,7 @@ pub(crate) mod test {
                 .collect(),
         ];
         let example = example_eeprom();
-        let example_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
+        let example_offsets: [ArrayVec<i16, { Mlx90640::NUM_PIXELS }>; 2] = [
             example
                 .offset_reference_pixels(Subpage::Zero)
                 .copied()
@@ -797,12 +804,12 @@ pub(crate) mod test {
     #[test]
     fn pixel_k_ta() {
         let datasheet = datasheet_eeprom();
-        let datasheet_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let datasheet_k_ta: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet.k_ta_pixels(Subpage::Zero).copied().collect(),
             datasheet.k_ta_pixels(Subpage::One).copied().collect(),
         ];
         let example = example_eeprom();
-        let example_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example_k_ta: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             example.k_ta_pixels(Subpage::Zero).copied().collect(),
             example.k_ta_pixels(Subpage::One).copied().collect(),
         ];
@@ -821,12 +828,12 @@ pub(crate) mod test {
     #[test]
     fn k_v_pixels() {
         let datasheet = datasheet_eeprom();
-        let datasheet_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let datasheet_k_v: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet.k_v_pixels(Subpage::Zero).copied().collect(),
             datasheet.k_v_pixels(Subpage::One).copied().collect(),
         ];
         let example = example_eeprom();
-        let example_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example_k_v: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             example.k_v_pixels(Subpage::Zero).copied().collect(),
             example.k_v_pixels(Subpage::One).copied().collect(),
         ];
@@ -977,12 +984,12 @@ pub(crate) mod test {
     fn pixel_alpha() {
         // MLX90640 doesn't vary alpha on subpage
         let datasheet = datasheet_eeprom();
-        let datasheet_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let datasheet_alpha: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet.alpha_pixels(Subpage::Zero).copied().collect(),
             datasheet.alpha_pixels(Subpage::One).copied().collect(),
         ];
         let example = example_eeprom();
-        let example_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example_alpha: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             example.alpha_pixels(Subpage::Zero).copied().collect(),
             example.alpha_pixels(Subpage::One).copied().collect(),
         ];

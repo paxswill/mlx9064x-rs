@@ -133,16 +133,16 @@ pub type Mlx90640Driver<I2C> = CameraDriver<
     mlx90640::Mlx90640,
     mlx90640::Mlx90640Calibration,
     I2C,
-    { mlx90640::HEIGHT },
-    { mlx90640::WIDTH },
-    { mlx90640::NUM_PIXELS * 2 },
+    { mlx90640::Mlx90640::HEIGHT },
+    { mlx90640::Mlx90640::WIDTH },
+    { mlx90640::Mlx90640::NUM_PIXELS * 2 },
 >;
 
 pub type Mlx90641Driver<I2C> = CameraDriver<
     mlx90641::Mlx90641,
     mlx90641::Mlx90641Calibration,
     I2C,
-    { mlx90641::HEIGHT },
-    { mlx90641::WIDTH },
-    { mlx90641::NUM_PIXELS * 2 },
+    { mlx90641::Mlx90641::HEIGHT },
+    { mlx90641::Mlx90641::WIDTH },
+    { mlx90641::Mlx90641::NUM_PIXELS * 2 },
 >;

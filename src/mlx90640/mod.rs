@@ -14,15 +14,6 @@ use crate::register::{AccessPattern, Subpage};
 pub use address::RamAddress;
 pub use eeprom::Mlx90640Calibration;
 
-/// The height of the image captured by sensor in pixels.
-pub const HEIGHT: usize = 24;
-
-/// The width of the image captured by the sensor in pixels.
-pub const WIDTH: usize = 32;
-
-/// The total number of pixels an MLX90640 has.
-pub const NUM_PIXELS: usize = HEIGHT * WIDTH;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640();
 
@@ -37,7 +28,7 @@ impl MelexisCamera for Mlx90640 {
             start_address: RamAddress::Base.into(),
             buffer_offset: 0,
             // Each pixel is two bytes
-            length: NUM_PIXELS * 2,
+            length: Self::NUM_PIXELS * 2,
         }])
     }
 
@@ -76,6 +67,12 @@ impl MelexisCamera for Mlx90640 {
 
     // Implicitly documented in section 11.2.2.9 of the datasheet.
     const SELF_HEATING: f32 = 8.0;
+
+    const HEIGHT: usize = 24;
+
+    const WIDTH: usize = 32;
+
+    const NUM_PIXELS: usize = Self::HEIGHT * Self::WIDTH;
 }
 
 /// An iterator for determining which pixels are part of the current subpage.
@@ -108,9 +105,9 @@ impl Iterator for Mlx90640PixelSubpage {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < NUM_PIXELS {
-            let row = self.index / WIDTH;
-            let column = self.index % WIDTH;
+        if self.index < Mlx90640::NUM_PIXELS {
+            let row = self.index / Mlx90640::WIDTH;
+            let column = self.index % Mlx90640::WIDTH;
             self.index += 1;
             Some(match self.access_pattern {
                 AccessPattern::Chess => {
@@ -132,16 +129,16 @@ impl Iterator for Mlx90640PixelSubpage {
 mod test {
     use core::iter::repeat;
 
-    use crate::{AccessPattern, Subpage};
+    use crate::{AccessPattern, MelexisCamera, Subpage};
 
-    use super::{Mlx90640PixelSubpage, NUM_PIXELS, WIDTH};
+    use super::{Mlx90640, Mlx90640PixelSubpage};
 
     #[test]
     fn pixel_subpage_interleaved() {
         let seq0 = Mlx90640PixelSubpage::new(AccessPattern::Interleave, Subpage::Zero);
         let pattern0 = repeat(true)
-            .take(WIDTH)
-            .chain(repeat(false).take(WIDTH))
+            .take(Mlx90640::WIDTH)
+            .chain(repeat(false).take(Mlx90640::WIDTH))
             .cycle();
         seq0.zip(pattern0)
             .enumerate()
@@ -150,8 +147,8 @@ mod test {
             });
         let seq1 = Mlx90640PixelSubpage::new(AccessPattern::Interleave, Subpage::One);
         let pattern1 = repeat(false)
-            .take(WIDTH)
-            .chain(repeat(true).take(WIDTH))
+            .take(Mlx90640::WIDTH)
+            .chain(repeat(true).take(Mlx90640::WIDTH))
             .cycle();
         seq1.zip(pattern1)
             .enumerate()
@@ -163,9 +160,17 @@ mod test {
     #[test]
     fn pixel_subpage_chess() {
         let subpages = [Subpage::Zero, Subpage::One];
-        let zero_first = subpages.iter().copied().cycle().take(WIDTH);
-        let one_first = subpages.iter().copied().cycle().skip(1).take(WIDTH);
-        let chessboard = zero_first.chain(one_first).cycle().take(NUM_PIXELS);
+        let zero_first = subpages.iter().copied().cycle().take(Mlx90640::WIDTH);
+        let one_first = subpages
+            .iter()
+            .copied()
+            .cycle()
+            .skip(1)
+            .take(Mlx90640::WIDTH);
+        let chessboard = zero_first
+            .chain(one_first)
+            .cycle()
+            .take(Mlx90640::NUM_PIXELS);
 
         let seq0 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::Zero);
         let seq1 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::One);
