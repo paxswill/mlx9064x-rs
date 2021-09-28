@@ -1,5 +1,13 @@
 # Unreleased
 
+* T_r can now be specified to account for reflected radiation when emissivity is
+  <1.
+* The estimated self heating method for determining T_r is more accurate on 641s
+  (they self-heat less, ~5 degrees compared to ~8 for the 640).
+* Multiple functions on `MelexisCamera` are now associated constants.
+* Image size constants (`HEIGHT`, `WIDTH`, `NUM_PIXELS`) are now on the
+  `MelexisCamera` trait instead of free constants in the specific camera module.
+
 # v0.1.1
 
 * Register access methods have been exposed for the low-level API.
