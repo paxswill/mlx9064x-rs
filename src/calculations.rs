@@ -711,10 +711,15 @@ mod test {
     {
         let clb_640 = mlx90640_calibration::<F>();
         let clb_641 = mlx90641_calibration::<F>();
+        // The value from the 640 datasheet terminally repeats, so expressing it as a fraction here
+        // (the actual fraction is \frac{-59}{-3168}, but cannot be simplified further as 59 is
+        // prime).
+        let expected_640 = F::coerce(59u16) / F::coerce(3168u16);
+        // The 641 value = 138 / (-3136)
+        let expected_641 = F::coerce(-0.04400510204081632653061224489796);
         // Input argument is v_dd_pixel
-        assert_approx_eq!(F, super::delta_v(&clb_640, -13115), F::coerce(0.018623737));
-        // Difference from datasheet: extra precision added (03)
-        assert_approx_eq!(F, super::delta_v(&clb_641, -13430), F::coerce(-0.044005103));
+        assert_approx_eq!(F, super::delta_v(&clb_640, -13115), expected_640);
+        assert_approx_eq!(F, super::delta_v(&clb_641, -13430), expected_641);
     }
 
     #[test]
@@ -724,18 +729,21 @@ mod test {
     {
         let clb_640 = mlx90640_calibration::<F>();
         let clb_641 = mlx90641_calibration::<F>();
-        let resolution_correction = F::coerce(0.5f64);
-        // MLX90640 datasheet has ≈3.319
+        let resolution_correction = F::ONE;
+        // MLX90640 datasheet has ≈3.319. Recalculated below for greater precision.
+        // Because this uses delta_v, the same issue presents here (terminally repeating).
+        let expected_640 = F::coerce(59u16) / F::coerce(3168u16) + F::THREE_POINT_THREE;
         assert_approx_eq!(
             F,
             super::v_dd(&clb_640, resolution_correction, F::coerce(0.018623737)),
-            F::coerce(3.3186)
+            expected_640
         );
-        // MLX90641 datasheet has ≈ 3.25599
+        // MLX90641 datasheet has ≈ 3.25599. Recalculated value below for more precision.
+        let expected_641 = F::coerce(3.255994897959183673469387755102);
         assert_approx_eq!(
             F,
             super::v_dd(&clb_641, resolution_correction, F::coerce(-0.0440051)),
-            F::coerce(3.25599)
+            expected_641
         );
     }
 
