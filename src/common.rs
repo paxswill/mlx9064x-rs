@@ -334,6 +334,12 @@ pub trait MelexisCamera {
     /// the temperature range with α<sub>correction</sub>(r) = 1. Also note that this library uses
     /// 0-indexing as opposed to the datasheets that use 1-indexing.
     const BASIC_TEMPERATURE_RANGE: usize;
+
+    /// The expected amount of self-heating for this camera.
+    ///
+    /// In normal operation the camera generates some heat. If T<sub>r</sub> is not available, it
+    /// can be calculated by subtracting this value from T<sub>a</sub>.
+    const SELF_HEATING: f32;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -71,6 +71,9 @@ impl MelexisCamera for Mlx90641 {
 
     // It's defined as 2 in the datasheet(well, 3, but 1-indexed, so 2 when 0-indexed).
     const BASIC_TEMPERATURE_RANGE: usize = 2;
+
+    // Implicitly documented in section 11.2.2.9 of the datasheet.
+    const SELF_HEATING: f32 = 5.0;
 }
 
 #[derive(Clone, Copy, Debug)]

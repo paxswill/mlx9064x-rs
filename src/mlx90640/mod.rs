@@ -73,6 +73,9 @@ impl MelexisCamera for Mlx90640 {
 
     // It's defined as 1 in the datasheet(well, 2, but 1-indexed, so 1 when 0-indexed).
     const BASIC_TEMPERATURE_RANGE: usize = 1;
+
+    // Implicitly documented in section 11.2.2.9 of the datasheet.
+    const SELF_HEATING: f32 = 8.0;
 }
 
 /// An iterator for determining which pixels are part of the current subpage.

@@ -85,6 +85,12 @@ pub struct CameraDriver<
     /// The current access pattern the camera is using.
     access_pattern: AccessPattern,
 
+    /// The temperature of the ambient environment.
+    ///
+    /// This value is used as the "reflected temperature" for converting the observed IR data to
+    /// actual temperatures.
+    reflected_temperature: Option<f32>,
+
     _camera: PhantomData<Cam>,
 }
 
@@ -137,6 +143,7 @@ where
             ambient_temperature: None,
             emissivity,
             access_pattern,
+            reflected_temperature: None,
             _camera: PhantomData,
         })
     }
@@ -340,11 +347,37 @@ where
         self.emissivity = default_emissivity.unwrap_or(1f32);
     }
 
+    /// Retrieve the current reflected temperature value.
+    ///
+    /// When the temperature of the ambient environment is not known, this function will return
+    /// `None`. See [`set_reflected_temperature`][Self::set_reflected_temperature] for more
+    /// information.
+    pub fn reflected_temperature(&self) -> Option<f32> {
+        self.reflected_temperature
+    }
+
+    /// Set the reflected temperature value.
+    ///
+    /// This value is used to compensate for infrared radiation not being emitted by an object
+    /// itself, but being emitted by the ambient environment and reflected by an object being
+    /// measured. This value is distinct from the one from [`ambient_temperature`], but if not
+    /// explicitly known it can be estimated from that value.
+    pub fn set_reflected_temperature(&mut self, new_value: Option<f32>) {
+        self.reflected_temperature = new_value;
+    }
+
     /// Get the most recent ambient temperature calculation.
     ///
-    /// The ambient temperature is calculated as part of the overall image calculations. If that
-    /// process hasn't been performed yet (by calling `generate_image_if_ready` or similar), this
-    /// method will return `None`.
+    /// What the datasheets (and this crate) refer to as "ambient temperature" should be better
+    /// understood as the ambient temperature of the camera itself, not of the area being imaged.
+    /// These values will usually be different because the camera generates some heat itself, and
+    /// the sensor used for this value is within the camera module. See
+    /// [`MelexisCamera::SELF_HEATING`] for more details.
+    ///
+    /// This value is calculated as part of the overall image calculations. If that
+    /// process hasn't been performed yet (by calling
+    /// [`generate_image_if_ready`][Self::generate_image_if_ready] or similar), this method will
+    /// return `None`.
     pub fn ambient_temperature(&self) -> Option<f32> {
         self.ambient_temperature
     }
@@ -401,6 +434,7 @@ where
         let t_a = raw_pixels_to_temperatures(
             &self.calibration,
             self.emissivity,
+            self.reflected_temperature,
             self.resolution_correction,
             &self.pixel_buffer,
             ram,
@@ -451,6 +485,7 @@ where
             let ambient_temperature = raw_pixels_to_temperatures(
                 &self.calibration,
                 self.emissivity,
+                self.reflected_temperature,
                 self.resolution_correction,
                 &self.pixel_buffer,
                 ram,

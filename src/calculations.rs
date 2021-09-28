@@ -524,6 +524,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
     calibration: &'a Clb,
     emissivity: f32,
     t_a: f32,
+    t_r: Option<f32>,
     subpage: Subpage,
     valid_pixels: &mut Px,
     destination: &mut [f32],
@@ -538,10 +539,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
     let k_s_to_basic = calibration.k_s_to()[Clb::Camera::BASIC_TEMPERATURE_RANGE];
     let alpha_coefficient = sensitivity_correction_coefficient(calibration, t_a);
-    // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
-    // of the surrounding environment (but not T_a, which is basically the temperature of the
-    // sensor itself). For now hard-coding this to 8 degrees lower than T_a.
-    let t_r = t_a - 8.0;
+    let t_r = t_r.unwrap_or_else(|| t_a - Clb::Camera::SELF_HEATING);
     let t_ar = t_ar(t_a, t_r, emissivity);
 
     destination
@@ -567,6 +565,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
 pub fn raw_pixels_to_temperatures<'a, Clb, Px>(
     calibration: &'a Clb,
     emissivity: f32,
+    t_r: Option<f32>,
     resolution_correction: f32,
     pixel_data: &[u8],
     ram: RamData,
@@ -601,10 +600,7 @@ where
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
     let k_s_to_basic = calibration.k_s_to()[Clb::Camera::BASIC_TEMPERATURE_RANGE];
     let alpha_coefficient = sensitivity_correction_coefficient(calibration, common.t_a);
-    // TODO: design a way to provide T-r, the reflected temperature. Basically, the temperature
-    // of the surrounding environment (but not T_a, which is basically the temperature of the
-    // sensor itself). For now hard-coding this to 8 degrees lower than T_a.
-    let t_r = common.t_a - 8.0;
+    let t_r = t_r.unwrap_or_else(|| common.t_a - Clb::Camera::SELF_HEATING);
     let t_ar = t_ar(common.t_a, t_r, emissivity);
     // At this point, we're now going to start calculating and copying over the pixel data. It
     // will *not* be actual temperatures, but it can be used for some imaging purposes.
@@ -798,6 +794,16 @@ mod test {
         let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
         // 641 datasheet (in section 11.2.2.7) rounds 1784.78049 to 1785
         assert_approx_eq!(f32, v_ir, 1784.78049, epsilon = 0.01);
+    }
+
+    #[test]
+    fn t_ar_640() {
+        // Using the values from the datasheet's worked example as the inputs.
+        let t_a = 39.184;
+        let t_r = 31.0;
+        let emissivity = 1.0;
+        let t_ar = super::t_ar(t_a, t_r, emissivity);
+        assert_approx_eq!(f32, t_ar, 9516495632.56);
     }
 
     #[test]
