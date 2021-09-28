@@ -669,27 +669,32 @@ mod test {
         let clb_640 = mlx90640_calibration();
         let clb_641 = mlx90641_calibration();
         // Input argument is v_dd_pixel
-        assert_eq!(super::delta_v(&clb_640, -13115), 0.018623737);
-        // DIfference from datasheet: extra precision added (03)
-        assert_eq!(super::delta_v(&clb_641, -13430), -0.044005103);
+        // The value from the 640 datasheet is rounded, but can be represented exactly by the
+        // faction 59 / 3168.
+        assert_eq!(super::delta_v(&clb_640, -13115), 59.0 / 3168.0);
+        // Same deal as the value above, just the fraction this time is 138 / -3136
+        assert_eq!(super::delta_v(&clb_641, -13430), 138.0 / -3136.0);
     }
 
     #[test]
     fn v_dd() {
         let clb_640 = mlx90640_calibration();
         let clb_641 = mlx90641_calibration();
-        let resolution_correction = 0.5;
+        // The resolution correction is 1 in both datasheets
+        let resolution_correction = 1.0;
         // MLX90640 datasheet has ≈3.319
         assert_approx_eq!(
             f32,
             super::v_dd(&clb_640, resolution_correction, 0.018623737),
-            3.3186
+            3.319,
+            epsilon = 0.001
         );
         // MLX90641 datasheet has ≈ 3.25599
         assert_approx_eq!(
             f32,
             super::v_dd(&clb_641, resolution_correction, -0.0440051),
-            3.25599
+            3.25599,
+            epsilon = 0.00001
         );
     }
 
@@ -698,9 +703,18 @@ mod test {
         let clb_640 = mlx90640_calibration();
         let clb_641 = mlx90641_calibration();
         // Inputs are t_a_ptat (aka v_ptat) and t_a_v_be
-        assert_eq!(super::v_ptat_art(&clb_640, 1711, 19442), 12873.57952);
-        // difference from datasheet: precision added (2)
-        assert_eq!(super::v_ptat_art(&clb_641, 1752, 19540), 13007.712);
+        assert_approx_eq!(
+            f32,
+            super::v_ptat_art(&clb_640, 1711, 19442),
+            12873.57952,
+            epsilon = 0.00001
+        );
+        assert_approx_eq!(
+            f32,
+            super::v_ptat_art(&clb_641, 1752, 19540),
+            13007.71,
+            epsilon = 0.01
+        );
     }
 
     #[test]
@@ -711,16 +725,24 @@ mod test {
         let delta_v_641 = super::delta_v(&clb_641, -13430);
         let v_ptat_art_640 = super::v_ptat_art(&clb_640, 1711, 19442);
         let v_ptat_art_641 = super::v_ptat_art(&clb_641, 1752, 19540);
-        // The datasheet is a bit more precise than I can get with f32, so approx_eq here
+        // Both datasheets round the final value, but have extended precision on the same step, so
+        // the expected value is using that extended precision.
         assert_approx_eq!(
             f32,
             super::ambient_temperature(&clb_640, v_ptat_art_640, delta_v_640),
-            39.18440152
+            // Using the same numbers as the dataasheet, with an arbitrary precision calculator,
+            // yields this value instead of the datasheet's value of 39.18440152
+            39.18442383,
+            epsilon = 0.00000001
         );
         assert_approx_eq!(
             f32,
             super::ambient_temperature(&clb_641, v_ptat_art_641, delta_v_641),
-            42.022
+            // Same deal as above, the datasheet calculates 42.022 as T_a, but using the same
+            // numbers they do, a calculator (that is *not* using floating point) yields this
+            // value instead.
+            42.09766048,
+            epsilon = 0.001
         );
     }
 
@@ -746,9 +768,10 @@ mod test {
         };
         let raw_pixel: i16 = 609;
         let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
-        // I'm getting 700.89, which is close enough considering how many places to lose precision
-        // there are in this step.
-        assert_approx_eq!(f32, v_ir, 700.882495690866, epsilon = 0.01);
+        // Same deal as t_a, performing the same calculations as the datasheet (in an arbitrary
+        // precision calculator) results in a different value than is in the datasheet's example.
+        // In this case the datasheet has 700.882495690866
+        assert_approx_eq!(f32, v_ir, 700.8974671440075625);
     }
 
     #[test]
@@ -773,9 +796,8 @@ mod test {
         };
         let raw_pixel: i16 = 972;
         let v_ir = super::per_pixel_v_ir(raw_pixel, &common, *offset, *k_v, *k_ta);
-        // I'm getting 700.89, which is close enough considering how many places to lose precision
-        // there are in this step.
-        assert_approx_eq!(f32, v_ir, 1785f32, epsilon = 0.01);
+        // 641 datasheet (in section 11.2.2.7) rounds 1784.78049 to 1785
+        assert_approx_eq!(f32, v_ir, 1784.78049, epsilon = 0.01);
     }
 
     #[test]

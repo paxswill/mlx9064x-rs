@@ -634,23 +634,28 @@ pub(crate) mod test {
         assert_approx_eq!(
             f32,
             datasheet_eeprom().k_v_ptat(),
-            0.0053710938
+            0.005371094,
+            epsilon = 0.000000001
         );
         assert_approx_eq!(
             f32,
             example_eeprom().k_v_ptat(),
-            mlx90640_example_data::K_V_PTAT
+            mlx90640_example_data::K_V_PTAT,
+            epsilon = 0.00001
         );
     }
 
     #[test]
     fn k_t_ptat() {
+        // These values are scaled by 1/8 and are not too large so they can be exactly represented
+        // in an f32.
         assert_eq!(datasheet_eeprom().k_t_ptat(), 42.25);
         assert_eq!(example_eeprom().k_t_ptat(), mlx90640_example_data::K_T_PTAT);
     }
 
     #[test]
     fn v_ptat_25() {
+        // These values are integers for the 640.
         assert_eq!(datasheet_eeprom().v_ptat_25(), 12273f32);
         assert_eq!(
             example_eeprom().v_ptat_25(),
@@ -660,6 +665,7 @@ pub(crate) mod test {
 
     #[test]
     fn alpha_ptat() {
+        // The example values are both integers
         assert_eq!(datasheet_eeprom().alpha_ptat(), 9f32);
         assert_eq!(
             example_eeprom().alpha_ptat(),
@@ -669,6 +675,7 @@ pub(crate) mod test {
     #[test]
 
     fn gain() {
+        // The EEPROM gain value is an integer for the 640
         assert_eq!(datasheet_eeprom().gain(), 6383f32);
         assert_eq!(example_eeprom().gain(), mlx90640_example_data::GAIN_EE);
     }
@@ -720,10 +727,11 @@ pub(crate) mod test {
         datasheet_expected: T,
         example_expected: &[T; NUM_PIXELS],
         subpage: Option<Subpage>,
+        margin: Option<<T as ApproxEq>::Margin>,
     ) where
         T: ApproxEq + PartialEq + core::fmt::Debug + core::fmt::Display + Copy,
     {
-        let check = |actual: T, expected: T| actual.approx_eq(expected, T::Margin::default());
+        let check = |actual: T, expected: T| actual.approx_eq(expected, margin.unwrap_or_default());
         test_pixels_common(
             datasheet_data,
             example_data,
@@ -805,6 +813,8 @@ pub(crate) mod test {
             &mlx90640_example_data::K_TA_PIXELS,
             // MLX90640 doesn't vary k_ta on subpage
             None,
+            // The example spreadsheet goes out to eight decimal places
+            Some((10E-8, 2).into()),
         );
     }
 
@@ -826,6 +836,9 @@ pub(crate) mod test {
             0.5f32,
             &mlx90640_example_data::K_V_PIXELS,
             // MLX90640 doesn't vary k_v on subpage
+            None,
+            // The values in the datasheet are all exactly representable in a float, so no need for
+            // an explicit margin.
             None,
         );
     }
@@ -856,27 +869,34 @@ pub(crate) mod test {
 
     #[test]
     fn k_ta_cp() {
+        // The 640 doesn't vary k_ta_cp on subpage.
         // datasheet
         let datasheet = datasheet_eeprom();
+        // This value is more precise than an f32, so skipping an explicit margin
         let expected = 0.00457763671875;
-        assert_eq!(datasheet.k_ta_cp(Subpage::Zero), expected);
-        assert_eq!(datasheet.k_ta_cp(Subpage::One), expected);
+        assert_approx_eq!(f32, datasheet.k_ta_cp(Subpage::Zero), expected);
+        assert_approx_eq!(f32, datasheet.k_ta_cp(Subpage::One), expected);
         // example
         let example = example_eeprom();
+        // The example value is only given to 6 decimal places
         assert_approx_eq!(
             f32,
             example.k_ta_cp(Subpage::Zero),
-            mlx90640_example_data::K_TA_CP
+            mlx90640_example_data::K_TA_CP,
+            epsilon = 10E-6
         );
         assert_approx_eq!(
             f32,
             example.k_ta_cp(Subpage::One),
-            mlx90640_example_data::K_TA_CP
+            mlx90640_example_data::K_TA_CP,
+            epsilon = 10E-6
         );
     }
 
     #[test]
     fn k_v_cp() {
+        // Both the datasheet and the example spreadsheet values are fractional powers of 2 and can
+        // be exactly represented by floats.
         // datasheet
         let datasheet = datasheet_eeprom();
         let expected = 0.5;
@@ -905,27 +925,51 @@ pub(crate) mod test {
     fn alpha_cp() {
         // datasheet
         let datasheet = datasheet_eeprom();
-        assert_eq!(datasheet.alpha_cp(Subpage::Zero), 4.07453626394272E-9);
-        assert_eq!(datasheet.alpha_cp(Subpage::One), 3.851710062200835E-9);
+        // The datasheet values go out to 11 decimal places
+        assert_approx_eq!(
+            f32,
+            datasheet.alpha_cp(Subpage::Zero),
+            4.07453626394272E-9,
+            epsilon = 10E-11
+        );
+        assert_approx_eq!(
+            f32,
+            datasheet.alpha_cp(Subpage::One),
+            3.851710062200835E-9,
+            epsilon = 10E-11
+        );
         // example
         let example = example_eeprom();
-        assert_eq!(
+        // The example data goes out to 19 decimal places (but only 12 significant figures).
+        assert_approx_eq!(
+            f32,
             example.alpha_cp(Subpage::Zero),
             mlx90640_example_data::ALPHA_CP[0],
+            epsilon = 10E-19
         );
-        assert_eq!(
+        assert_approx_eq!(
+            f32,
             example.alpha_cp(Subpage::One),
             mlx90640_example_data::ALPHA_CP[1],
+            epsilon = 10E-19
         );
     }
 
     #[test]
     fn k_s_ta() {
-        assert_eq!(datasheet_eeprom().k_s_ta(), -0.001953125);
+        assert_approx_eq!(
+            f32,
+            datasheet_eeprom().k_s_ta(),
+            -0.001953125,
+            // The datasheet value is specified out to 9 decimal places
+            epsilon = 10E-9
+        );
         assert_approx_eq!(
             f32,
             example_eeprom().k_s_ta(),
-            mlx90640_example_data::K_S_TA
+            mlx90640_example_data::K_S_TA,
+            // Example value is only specified out to 6 decimal places
+            epsilon = 10E-6
         );
     }
 
@@ -948,19 +992,33 @@ pub(crate) mod test {
             1.262233122690854E-7,
             &mlx90640_example_data::ALPHA_PIXELS,
             None,
+            // The example data goes out to 19 decimal places (but only 12 significant figures).
+            Some((10E-19, 2).into()),
         );
     }
 
     #[test]
     fn k_s_to() {
-        assert_eq!(datasheet_eeprom().k_s_to()[1], -0.00080108642578125);
+        assert_approx_eq!(
+            f32,
+            datasheet_eeprom().k_s_to()[1],
+            -0.00080108642578125,
+            // Datasheet value is exactly reproduced above, so 17 decimal places
+            epsilon = 10E-17
+        );
         let example = example_eeprom();
         let example_pairs = example
             .k_s_to()
             .iter()
             .zip(mlx90640_example_data::K_S_TO.iter());
         for (actual, expected) in example_pairs {
-            assert_approx_eq!(f32, *actual, *expected);
+            assert_approx_eq!(
+                f32,
+                *actual,
+                *expected,
+                // The example values are only specified out to 6 decimal places
+                epsilon = 10E-6
+            );
         }
     }
 
