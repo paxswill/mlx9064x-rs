@@ -1,3 +1,5 @@
+//! Types for interacting with Melexis camera registers.
+
 use core::convert::{TryFrom, TryInto};
 use core::time::Duration;
 
@@ -20,7 +22,7 @@ pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
     fn address() -> Address;
 }
 
-/// Represents the possible states of the status register (0x8000).
+/// Expose the fields of the status register (0x8000).
 #[derive(Clone, Copy, Debug)]
 pub struct StatusRegister(u16);
 
@@ -44,7 +46,7 @@ impl StatusRegister {
 
     /// Set when there is new data available in RAM. Read-write.
     ///
-    /// This flag is set to by the camera, and can only be reset by the controller.
+    /// This flag is enabled by the camera, and can only be reset by the controller.
     pub fn new_data(&self) -> bool {
         self.0 & Self::NEW_DATA_MASK > 0
     }
@@ -55,6 +57,8 @@ impl StatusRegister {
     }
 
     /// Whether data in RAM can be overwritten.
+    ///
+    /// See the documentation for [`ControlRegister::data_hold`] for more details on this flag.
     pub fn overwrite_enabled(&self) -> bool {
         self.0 & Self::OVERWRITE_ENABLED_MASK > 0
     }
@@ -68,13 +72,13 @@ impl StatusRegister {
         }
     }
 
-    /// Start a measurement in step mode.
+    /// Whether a step-mode measurement is to be started.
     ///
     /// This value must be enabled by the controller, and will then be reset by the camera once the
     /// measurement is complete. Each measurement covers one subpage, so if you want to retrieve
     /// both subpages you will need to trigger two measurements.
     /// This value is only applicable in step mode, and the documentation has been removed from
-    /// more recent datasheets. See `ControlRegister::step_mode` for more details.
+    /// more recent datasheets. See [`ControlRegister::step_mode`] for more details.
     pub fn start_measurement(&self) -> bool {
         self.0 & Self::STEP_MODE_MASK > 0
     }
@@ -86,6 +90,10 @@ impl StatusRegister {
 }
 
 impl PartialEq for StatusRegister {
+    /// This method only compares non-reserved bits between two registers.
+    ///
+    /// While step mode is no longer documented in the datasheets, it is not considered reserved
+    /// for this method.
     fn eq(&self, other: &Self) -> bool {
         let mask = Self::SUBPAGE_MASK
             | Self::NEW_DATA_MASK
@@ -126,7 +134,7 @@ impl From<StatusRegister> for [u8; 2] {
     }
 }
 
-/// Represents the possible states of the control register (0x800D).
+/// Expose the fields of the control register (0x800D).
 #[derive(Clone, Copy, Debug)]
 pub struct ControlRegister(u16);
 
@@ -182,11 +190,12 @@ impl ControlRegister {
 
     /// Check if step mode is enabled.
     ///
-    /// In step mode the camera is idle until signalled with [`StatusRegister::start_measurement`],
-    /// which then starts a single measurement. The camera is not calibrated for step mode, and the
-    /// values are inaccurate. Melexis no longer documents step mode because of this.
+    /// Melexis no longer includes step mode in the documentation as the cameras are not calibrated
+    /// to be run in step mode.
     ///
-    /// The default is continuous mode (i.e. step mode disabled).
+    /// In step mode the camera is idle until signalled with [`StatusRegister::start_measurement`],
+    /// which then starts a single measurement. The default is continuous mode (i.e. step mode
+    /// disabled).
     pub fn step_mode(&self) -> bool {
         self.0 & Self::STEP_MODE_MASK > 0
     }
@@ -205,7 +214,7 @@ impl ControlRegister {
     /// Check if data holding is enabled.
     ///
     /// By default data is transferred into RAM for each frame, but if this flag is enabled data
-    /// will only be written into RAM when the `StatusRegister::overwrite_enabled` flag is set.
+    /// will only be written into RAM when the [`StatusRegister::overwrite_enabled`] flag is set.
     pub fn data_hold(&self) -> bool {
         self.0 & Self::DATA_HOLD_MASK > 0
     }
@@ -221,8 +230,8 @@ impl ControlRegister {
 
     /// Check to see if the camera automatically alternates between subpages.
     ///
-    /// This value only has an effect when `use_subpages` is enabled. The default is disabled,
-    /// meaning the camera automatically alternates between subpages.
+    /// This value only has an effect when [`use_subpages`][Self::use_subpages] is enabled. The
+    /// default is disabled, meaning the camera automatically alternates between subpages.
     pub fn subpage_repeat(&self) -> bool {
         self.0 & Self::SUBPAGE_REPEAT_MASK > 0
     }
@@ -254,7 +263,7 @@ impl ControlRegister {
 
     /// The frame rate the camera runs at.
     ///
-    /// See the note on `FrameRate` for I²C bus clock rate requirements. The default is
+    /// See the note on [`FrameRate`] for I²C bus clock rate requirements. The default is
     /// [2Hz][FrameRate::Two].
     pub fn frame_rate(&self) -> FrameRate {
         let raw = (self.0 & Self::FRAME_RATE_MASK) >> Self::FRAME_RATE_MASK.trailing_zeros();
@@ -318,7 +327,6 @@ impl PartialEq for ControlRegister {
 
 impl Register for ControlRegister {
     fn write_mask() -> [u8; 2] {
-        // *Technically* it's 0x1FFD, but the second bit is documented to always be 0
         [0x1F, 0xFF]
     }
 
