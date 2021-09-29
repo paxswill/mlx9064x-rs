@@ -167,6 +167,7 @@ impl Mlx90641Calibration {
     /// on for three words, starting at 0x2419. Each scale value also need to be added to 20.
     /// $\textit{Row}\_{\textit{max}}$ is stored as an unsigned 11-bit integer, with one value per
     /// word, starting at 0x241C.
+    #[doc = include_str!("../katex.html")]
     fn get_sensitivity_reference(buf: &mut &[u8]) -> Result<[f32; 6], LibraryError> {
         let mut scales: ArrayVec<u8, 6> = ArrayVec::new();
         for _ in 0..3 {

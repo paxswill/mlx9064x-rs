@@ -3,6 +3,7 @@
 
 //! Calculations for turning sensor output into temperatures
 //!
+#![doc = include_str!("katex.html")]
 //! The MLX90640 and MLX90641 datasheets have roughly a third of their pages dedicated to
 //! mathematical formulas, which can be a little intimidating. Fortunately most of the formulas
 //! can be simplified by assuming that treating some raw bits as a signed integer is a "free"
@@ -77,6 +78,7 @@ const KELVINS_TO_CELSIUS: f32 = 273.15;
 ///
 /// The constants $V_{DD_{25}}$ and $K_{V_{DD}}$ are retrieved from the `calibration` argument,
 /// while $V_{DD_{pix}}$ (`v_dd_pixel`) is read from the camera's RAM.
+#[doc = include_str!("katex.html")]
 pub fn delta_v<'a, Clb: CalibrationData<'a>>(calibration: &'a Clb, v_dd_pixel: i16) -> f32 {
     f32::from(v_dd_pixel - calibration.v_dd_25()) / f32::from(calibration.k_v_dd())
 }
@@ -100,6 +102,7 @@ pub fn delta_v<'a, Clb: CalibrationData<'a>>(calibration: &'a Clb, v_dd_pixel: i
 /// [`MelexisCamera::resolution_correction`][mlx-cam-res].
 ///
 /// [mlx-cam-res]: crate::common::MelexisCamera::resolution_correction
+#[doc = include_str!("katex.html")]
 pub fn v_dd<'a, Clb: CalibrationData<'a>>(
     calibration: &'a Clb,
     resolution_correction: f32,
@@ -120,6 +123,7 @@ pub fn v_dd<'a, Clb: CalibrationData<'a>>(
 ///
 /// $Alpha_{PTAT}$ is retrieved from the `calibration` argument, while $T_{a_{PTAT}}$ (`t_a_ptat`)
 /// and $T_{a_{V_{BE}}}$ (`t_a_v_be`) are read from the camera's RAM.
+#[doc = include_str!("katex.html")]
 pub fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
     calibration: &'a Clb,
     t_a_ptat: i16,
@@ -144,6 +148,7 @@ pub fn v_ptat_art<'a, Clb: CalibrationData<'a>>(
 /// $V_{PTAT_{25}}$, are taken from `calibration`, while
 /// $V_{PTAT_{art}}$ (`v_ptat_art`) and $\Delta V$ (`delta_v`) are the results of
 /// [`v_ptat_art`] and [`delta_v`] respectively.
+#[doc = include_str!("katex.html")]
 pub fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
     calibration: &'a Clb,
     v_ptat_art: f32,
@@ -158,6 +163,7 @@ pub fn ambient_temperature<'a, Clb: CalibrationData<'a>>(
 ///
 /// This structure is the non-EEPROM, non-register input when [creating
 /// `CommonIrData`][CommonIrData::new].
+#[doc = include_str!("katex.html")]
 #[derive(Clone, Copy, Debug)]
 pub struct RamData {
     /// $T_{a_{V_{BE}}}$
@@ -182,6 +188,7 @@ pub struct RamData {
     pub compensation_pixel: i16,
 }
 
+#[doc = include_str!("katex.html")]
 impl RamData {
     /// Read a value from the camera's RAM.
     ///
@@ -235,6 +242,7 @@ impl RamData {
 ///
 /// These values only need to be calculated once per frame and are then shared for the per-pixel
 /// calculations later.
+#[doc = include_str!("katex.html")]
 #[derive(Debug, PartialEq)]
 pub struct CommonIrData {
     /// The gain parameter ($K_{gain}$)
@@ -326,6 +334,7 @@ impl CommonIrData {
 ///
 /// This function is also used for calculating the compensation pixel values when using thermal
 /// gradient compensation.
+#[doc = include_str!("katex.html")]
 #[inline]
 pub fn per_pixel_v_ir(
     pixel_data: i16,
@@ -433,6 +442,7 @@ where
 /// (`t_r`) as well as the emissivity ($\varepsilon$) of the object are combined with the ambient
 /// temperature of the sensor itself (`t_a`). This calculation is described in section 11.2.2.9 in
 /// both datasheets.
+#[doc = include_str!("katex.html")]
 #[inline]
 pub fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
     // Again, start with the steps common to all pixels
@@ -458,6 +468,7 @@ pub fn t_ar(t_a: f32, t_r: f32, emissivity: f32) -> f32 {
 /// common factor used when calculating $T\_o$. In section 11.2.2.8 of the datasheet,
 /// $1 + K\_{S\_{T\_a}} \* (T\_a - T\_{a\_0})$ is common to all pixel sensitivity calculation, so
 /// calculating it once is done to improve performance.
+#[doc = include_str!("katex.html")]
 pub fn sensitivity_correction_coefficient<'a, Clb>(calibration: &'a Clb, t_a: f32) -> f32
 where
     Clb: CalibrationData<'a>,
@@ -505,6 +516,7 @@ where
 /// This function calculates the temperature for the basic temperature range only; extended
 /// temperature range calculations are not implemented yet and will probably be done in a separate
 /// function.
+#[doc = include_str!("katex.html")]
 #[inline]
 pub fn per_pixel_temperature(v_ir: f32, alpha: f32, t_ar: f32, k_s_to: f32) -> f32 {
     // This function is a mess of raising floats to the third and fourth powers, doing some
@@ -520,6 +532,7 @@ pub fn per_pixel_temperature(v_ir: f32, alpha: f32, t_ar: f32, k_s_to: f32) -> f
 /// the `destination` array in-place, replacing the $V\_{IR}$ data with the temperatures. The
 /// ambient temperature (`t_a`, $T\_a$) needs to be given from the same frame that produced the IR
 /// data.
+#[doc = include_str!("katex.html")]
 pub fn raw_ir_to_temperatures<'a, Clb, Px>(
     calibration: &'a Clb,
     emissivity: f32,
