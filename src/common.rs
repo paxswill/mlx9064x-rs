@@ -150,7 +150,7 @@ pub trait CalibrationData<'a> {
     /// depending on the temperature range.
     ///
     /// This is a slight variance from the datasheet's nomenclature. In the symbol above,
-    /// <var>n</sub> is the index of the temperature range, which the datasheet normally just
+    /// <var>n</var> is the index of the temperature range, which the datasheet normally just
     /// writes out (ex: K<sub>S<sub>T<sub>o</sub>1</sub></sub> through how every many temperature
     /// ranges the camera has).
     ///

@@ -174,7 +174,7 @@ pub struct RamData {
 
     /// $T_{a_{PTAT}}$
     ///
-    /// This value is labelled as $T_{a_{PTAT}}$ on the EEPROM map, but is labelled $V_{PTAT}
+    /// This value is labelled as $T_{a_{PTAT}}$ on the EEPROM map, but is labelled $V_{PTAT}$
     /// elsewhere in the datasheet.
     pub t_a_ptat: i16,
 
