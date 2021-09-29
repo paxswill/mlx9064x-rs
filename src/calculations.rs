@@ -325,8 +325,9 @@ impl CommonIrData {
 /// \end{align*}
 ///
 /// [`CalibrationData`] provides the per-pixel [offset], $K_{V}$ ([`k_v_pixels`]), and $K_{T_{a}}$
-/// ([`k_ta_pixels`]) values, while $K_{gain}$, $V_{dd}$, $T_{a}$, and emissivity ($\varepsilon$)
-/// are provided by [`CommonIrData`].
+/// ([`k_ta_pixels`]) values, while $K_{gain}$, $V_{DD}$, $T_{a}$, and emissivity ($\varepsilon$)
+/// are provided by [`CommonIrData`]. $V_{DD_0}$ and $T_{a_0}$ are defined as 3.3 and 25
+/// respectively.
 ///
 /// [offset]: CalibrationData::offset_reference_pixels
 /// [`k_v_pixels`]: CalibrationData::k_v_pixels
