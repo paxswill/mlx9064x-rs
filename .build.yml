@@ -19,6 +19,11 @@ tasks:
         --profile minimal \
         --quiet \
         -y
+  - check_nono: |
+      source $HOME/.cargo/env
+      RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-nono
+      cd mlx9064x
+      cargo nono check --no-default-features
   - test: |
       cd mlx9064x
       source $HOME/.cargo/env
