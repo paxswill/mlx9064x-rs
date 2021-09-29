@@ -311,7 +311,7 @@ impl CommonIrData {
 /// Calculate a measurement of raw IR captured by a single pixel
 ///
 /// This function combines all per-pixel calculations related to the raw IR data as described by
-/// section 11.2.2.5 in the both datasheets. If just an "image" is required but not the actual
+/// section 11.2.2.5 in both datasheets. If just an "image" is required but not the actual
 /// temperature, the datasheets recommend stopping at this step instead of continuing on with the
 /// calculations performed by [`per_pixel_temperature`].
 ///
