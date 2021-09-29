@@ -469,16 +469,43 @@ pub enum Subpage {
     One = 1,
 }
 
-/// The possible refresh rates supported by the cameras. Before using the higher refresh rates,
-/// ensure your I²C bus is fast enough. A quick rundown of the the maximum frame rate some common
-/// I²C bus speeds can support:
+/// The frame rates the cameras are able to run at.
 ///
-/// * 100kHz: [4Hz][FrameRate::Four]
-/// * 400kHz: [16Hz][FrameRate::Sixteen]
-/// * 1MHz: [64Hz][FrameRate::Four] (barely, [32Hz][FrameRate::ThirtyTwo] is safer)
+/// Before using the higher refresh rates, ensure your I²C bus is fast enough. Because the image is
+/// smaller (and it has a more efficient access pattern) the MLX90641 can use the faster frame
+/// rates with slower I²C bus speeds. With the read patterns used by the included [`MelexisCamera`
+/// implementations], here are the maximum frame rates for common different bus speeds.
 ///
-/// On top of this requirement, your hardware has to be fast enough to be able to process each
-/// frame of data before the next frame is ready.
+/// | Bus Speed | MLX90640 ([Chess]) | MLX 90640 ([Interleaved]) | MLX90641 |
+/// | --- | --- | --- | --- |
+/// | 100kHz |  4Hz |  8Hz | 16Hz |
+/// | 400kHz | 16Hz | 32Hz | 64Hz |
+/// |   1MHz | 64Hz (barely, 32Hz is more realistic) | 64Hz | 64Hz |
+///
+/// On top of the bus speed, your hardware also has to be able to process each frame before the
+/// next frame is ready. As a final warning, the EEPROM cannot be accessed above 400kHz so if
+/// you're using a 1MHz bus speed you will need to read the calibration data at 400kHz then
+/// increase the bus speed afterwards.
+///
+/// [`MelexisCamera` implementations]: crate::common::MelexisCamera::pixel_ranges
+/// [Chess]: AccessPattern::Chess
+/// [Interleaved]: AccessPattern::Interleave
+///
+/// # Usage
+///
+/// Besides accessing the enum variants directly, standard conversion traits are provided for both
+/// `f32`, `u8`, and `core::time::Duration`.
+///
+/// ```rust
+/// # use mlx9064x::register::FrameRate;
+/// use core::convert::TryInto;
+/// use core::time::Duration;
+///
+/// assert_eq!(Duration::from_secs(2), FrameRate::Half.into());
+/// assert_eq!(8.try_into(), Ok(FrameRate::Eight));
+/// assert_eq!(0.5f32.try_into(), Ok(FrameRate::Half));
+/// assert_eq!(0.5f32, FrameRate::Half.into());
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum FrameRate {
     /// 0.5 Hz, one frame every two seconds.
@@ -490,19 +517,19 @@ pub enum FrameRate {
     /// 2Hz, which is also the default for the MLX90640 and MLX90641.
     Two,
 
-    // 4Hz.
+    /// 4Hz.
     Four,
 
-    // 8Hz.
+    /// 8Hz.
     Eight,
 
-    // 16 Hz.
+    /// 16 Hz.
     Sixteen,
 
-    // 32Hz.
+    /// 32Hz.
     ThirtyTwo,
 
-    // 64Hz.
+    /// 64Hz.
     SixtyFour,
 }
 
