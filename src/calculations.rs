@@ -53,23 +53,23 @@
 //! # Glossary
 //! <dl>
 //! <dt>
-//! α, alpha
+//! $\alpha$, alpha
 //! </dt><dd>
 //! Sensitivity coefficient.
 //! </dd>
 //! <dt>
-//! CP
+//! <var>CP</var>
 //! </dt><dd>
 //! Compensation pixel.
 //! </dd>
 //! <dt>
-//! ε, emissivity
+//! $\varepsilon$, emissivity
 //! </dt><dd>
 //! A measure of how well a material emits IR radiation. For a better explanation, see
 //! <a href="https://en.wikipedia.org/wiki/Emissivity">Wikipedia</a>.
 //! </dd>
 //! <dt>
-//! K
+//! <var>K</var>
 //! </dt><dd>
 //! Prefix for constants.
 //! </dd>
@@ -79,28 +79,28 @@
 //! Proportional to ambient temperature
 //! </dd>
 //! <dt>
-//! T<sub>a</sub>
+//! $T_a$
 //! </dt><dd>
 //! Ambient temperature of the camera.
 //! </dd>
 //! <dt>
-//! T<sub>a<sub>0</sub></sub>
+//! $T_{a_{0}}$
 //! </dt><dd>
 //! Ambient temperature reference, 25.0 ℃. If it looks like 0, it's probably "o" as this value is
 //! really only used in one place.
 //! </dd>
 //! <dt>
-//! T<sub>o</sub>
+//! $T_o$
 //! </dt><dd>
 //! Object temperature, meaning the temperature an individual pixel has detected for an object.
 //! </dd>
 //! <dt>
-//! V<sub>DD</sub>
+//! $V_{DD}$
 //! </dt><dd>
 //! Pixel supply voltage.
 //! </dd>
 //! <dt>
-//! V<sub>DD<sub>25</sub></sub>
+//! $V_{DD_{25}}$
 //! </dt><dd>
 //! Pixel supply voltage reference at 25.0 ℃.
 //! </dd>
