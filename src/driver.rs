@@ -113,7 +113,7 @@ where
 
     /// Create a `CameraDriver` for accessing the camera at the given I²C address.
     ///
-    /// MLX90964\*s can be configured to use any I²C address (except 0x00), but the default address
+    /// MLX9064\*s can be configured to use any I²C address (except 0x00), but the default address
     /// is 0x33.
     pub fn new_with_calibration(
         bus: I2C,

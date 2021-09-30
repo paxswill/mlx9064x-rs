@@ -2,7 +2,7 @@
 // Copyright © 2021 Will Ross
 use crate::{mlx90641, MelexisCamera};
 
-/// The size of the EEPROM for the MLX990640 and MLX909641 in bytes.
+/// The size of the EEPROM for the MLX990640 and MLX90641 in bytes.
 ///
 /// Both cameras (MLX90640 and MLX90641) have the same size EEPROM. 0x273F is the last address in
 /// the EEPROM, so add one to that to include it, while 0x2400 is the first address. Each address
@@ -22,7 +22,7 @@ const MLX90640_EEPROM_HEADER: &'static [u8] = b"\
     \x18\xef\x2f\xf1\x59\x52\x9d\x68\x54\x54\x09\x94\x69\x56\x53\x54\
     \x23\x63\xe4\x46\xfb\xb5\x04\x4b\xf0\x20\x97\x97\x97\x97\x28\x89";
 
-/// Create a buffer with the example MLX909640 EEPROM data.
+/// Create a buffer with the example MLX90640 EEPROM data.
 pub(crate) fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     // Create the EEPROM data by starting with the header and then filling in the rest with the
     // pixel used in the worked example from the datasheet.
@@ -37,7 +37,7 @@ pub(crate) fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     eeprom_data
 }
 
-/// Example MLX9909641 EEPROM data from the datasheet.
+/// Example MLX90641 EEPROM data from the datasheet.
 // Same structure as MLX90640_EEPROM_HEADER.
 const MLX90641_EEPROM_HEADER: &'static [u8] = b"\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
