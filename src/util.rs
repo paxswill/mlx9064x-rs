@@ -118,6 +118,9 @@ impl Buffer for &[u8] {
     }
 }
 
+/// A hidden public trait to mark certain traits as only implementable within this crate.
+pub trait Sealed {}
+
 /// Check if the n-th bit is set.
 ///
 /// Bits are 0-indexed, from the LSB.

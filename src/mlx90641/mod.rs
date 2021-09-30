@@ -14,12 +14,15 @@ use core::iter;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
+use crate::util::Sealed;
 
 pub use address::RamAddress;
 pub use eeprom::Mlx90641Calibration;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90641();
+
+impl Sealed for Mlx90641 {}
 
 impl MelexisCamera for Mlx90641 {
     type PixelRangeIterator = SubpageInterleave;

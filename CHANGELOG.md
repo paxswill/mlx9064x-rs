@@ -10,6 +10,7 @@
   `MelexisCamera` trait instead of free constants in the specific camera module.
 * The `address_enum_ops` and `expose_member` macros are no longer part of the
   documented API.
+* The `MelexisCamera` trait is now sealed.
 
 # v0.1.1
 

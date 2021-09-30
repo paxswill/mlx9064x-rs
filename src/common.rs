@@ -6,6 +6,7 @@ use core::fmt;
 use arrayvec::ArrayVec;
 
 use crate::register::{AccessPattern, Subpage};
+use crate::util::Sealed;
 
 pub trait FromI2C<I2C> {
     type Error;
@@ -207,7 +208,9 @@ impl From<Address> for usize {
 ///
 /// The values from this trait are common between all cameras of a single model, and do not depend
 /// on the calibration values from a specific camera.
-pub trait MelexisCamera {
+///
+/// This is a sealed trait, and can only be implemented by types defined within this crate.
+pub trait MelexisCamera: Sealed {
     type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
 
     type PixelsInSubpageIterator: IntoIterator<Item = bool>;

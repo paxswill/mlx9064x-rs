@@ -10,12 +10,15 @@ use num_traits::Float;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
+use crate::util::Sealed;
 
 pub use address::RamAddress;
 pub use eeprom::Mlx90640Calibration;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640();
+
+impl Sealed for Mlx90640 {}
 
 impl MelexisCamera for Mlx90640 {
     type PixelRangeIterator = core::array::IntoIter<PixelAddressRange, 1>;
