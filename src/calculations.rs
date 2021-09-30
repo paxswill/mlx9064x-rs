@@ -50,6 +50,61 @@
 //!
 //! [sign extension]: https://en.wikipedia.org/wiki/Sign_extension
 //!
+//! # Glossary
+//! <dl>
+//! <dt>
+//! α, alpha
+//! </dt><dd>
+//! Sensitivity coefficient.
+//! </dd>
+//! <dt>
+//! CP
+//! </dt><dd>
+//! Compensation pixel.
+//! </dd>
+//! <dt>
+//! ε, emissivity
+//! </dt><dd>
+//! A measure of how well a material emits IR radiation. For a better explanation, see
+//! <a href="https://en.wikipedia.org/wiki/Emissivity">Wikipedia</a>.
+//! </dd>
+//! <dt>
+//! K
+//! </dt><dd>
+//! Prefix for constants.
+//! </dd>
+//! <dt>
+//! PTAT
+//! </dt><dd>
+//! Proportional to ambient temperature
+//! </dd>
+//! <dt>
+//! T<sub>a</sub>
+//! </dt><dd>
+//! Ambient temperature of the camera.
+//! </dd>
+//! <dt>
+//! T<sub>a<sub>0</sub></sub>
+//! </dt><dd>
+//! Ambient temperature reference, 25.0 ℃. If it looks like 0, it's probably "o" as this value is
+//! really only used in one place.
+//! </dd>
+//! <dt>
+//! T<sub>o</sub>
+//! </dt><dd>
+//! Object temperature, meaning the temperature an individual pixel has detected for an object.
+//! </dd>
+//! <dt>
+//! V<sub>DD</sub>
+//! </dt><dd>
+//! Pixel supply voltage.
+//! </dd>
+//! <dt>
+//! V<sub>DD<sub>25</sub></sub>
+//! </dt><dd>
+//! Pixel supply voltage reference at 25.0 ℃.
+//! </dd>
+//! </dl>
 
 use core::convert::TryInto;
 
