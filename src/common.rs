@@ -25,21 +25,22 @@ pub trait FromI2C<I2C> {
 /// variables used in the formulas in the datasheet. Most users of this library can make use fo the
 /// provided implementations, but if you're trying to minimize memory usage or tweak performance
 /// for a specific use case, this might be a way to do it.
+#[doc = include_str!("katex.html")]
 pub trait CalibrationData<'a> {
     /// The camera model this caliberation data is for.
     type Camera: MelexisCamera;
 
-    /// Pixel supply voltage constant (K<sub>V<sub>DD</sub></sub>).
+    /// Pixel supply voltage constant ($K_{V_{DD}}$).
     fn k_v_dd(&self) -> i16;
 
-    /// Constant for pixel supply voltage at 25℃ (V<sub>DD<sub>25</sub></sub>).
+    /// Constant for pixel supply voltage at 25℃ ($K_{V_{DD_{25}}}$).
     fn v_dd_25(&self) -> i16;
 
     /// ADC resolution this camera was calibrated at.
     // TODO: Should this return `Resolution`?
     fn resolution(&self) -> u8;
 
-    /// Pixel supply voltage (V<sub>DD<sub>0</sub></sub>).
+    /// Pixel supply voltage ($K_{DD_0}$).
     ///
     /// This is the voltage supplied to the device, and should be 3.3V for the MLX90640 and
     /// MLX90641. The default implementation is hardcoded to return `3.3f32`, but if there's a
@@ -48,22 +49,22 @@ pub trait CalibrationData<'a> {
         3.3f32
     }
 
-    /// Voltage proportional to ambient temperature constant (K<sub>V<sub>PTAT</sub></sub>).
+    /// Voltage proportional to ambient temperature constant ($K_{V_{PTAT}}$).
     fn k_v_ptat(&self) -> f32;
 
-    /// Temperature proportional to ambient temperature constant (K<sub>T<sub>PTAT</sub></sub>).
+    /// Temperature proportional to ambient temperature constant ($K_{T_{PTAT}}$).
     fn k_t_ptat(&self) -> f32;
 
-    /// Voltage proportional to ambient temperature at 25℃ (V<sub>PTAT<sub>25</sub></sub>).
+    /// Voltage proportional to ambient temperature at 25℃ ($V_{PTAT_{25}}$).
     fn v_ptat_25(&self) -> f32;
 
-    /// Sensitivity proportional to ambient temperature (α<sub>PTAT</sub>).
+    /// Sensitivity proportional to ambient temperature ($\alpha_{PTAT}$).
     fn alpha_ptat(&self) -> f32;
 
     /// The gain constant. Usually written as <var>GAIN</var> in the datasheets.
     fn gain(&self) -> f32;
 
-    /// Sensitivity constant for ambient temperature (K<sub>S<sub>T<sub>a</sub></sub></sub>).
+    /// Sensitivity constant for ambient temperature ($K_{S_{T_{a}}}$).
     fn k_s_ta(&self) -> f32;
 
     /// A slice of the "corner temperatures".
@@ -73,19 +74,19 @@ pub trait CalibrationData<'a> {
     /// aware of the difference.
     fn corner_temperatures(&self) -> &[i16];
 
-    /// Constant for the object temperature sensitivity (K<sub>s<sub>T<sub>o</sub>(n)</sub></sub>)
+    /// Constant for the object temperature sensitivity ($K_{s_{T_{o}N}}$)
     /// depending on the temperature range.
     ///
     /// This is a slight variance from the datasheet's nomenclature. In the symbol above,
-    /// <var>n</var> is the index of the temperature range, which the datasheet normally just
-    /// writes out (ex: K<sub>S<sub>T<sub>o</sub>1</sub></sub> through how every many temperature
+    /// <var>N</var> is the index of the temperature range, which the datasheet normally just
+    /// writes out (ex: $K_{S_{T_{o}1}}$ through how every many temperature
     /// ranges the camera has).
     ///
     /// This method returns a slice of values equal in length to
     /// [`corner_temperatures`](CalibrationData::corner_temperatures).
     fn k_s_to(&self) -> &[f32];
 
-    /// Temperature range sensitivity correction (α<sub>correction</sub>(n))
+    /// Temperature range sensitivity correction ($\alpha_{\text{correction}_{N}}$)
     ///
     /// Like [`k_s_to`], the name of this method is slightly different that the naming in the
     /// datasheet. Also like `k_s_to`, this method returns a slice of values with a length equal to
@@ -106,7 +107,7 @@ pub trait CalibrationData<'a> {
     type OffsetReferenceIterator: Iterator<Item = &'a i16>;
 
     /// An iterator over the per-pixel offset reference values for the given subpage
-    /// (Offset<sub>reference</sub>(i, j)).
+    /// ($\text{Offset}_\text{reference}(i, j)$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -114,12 +115,12 @@ pub trait CalibrationData<'a> {
     fn offset_reference_pixels(&'a self, subpage: Subpage) -> Self::OffsetReferenceIterator;
 
     /// The offset reference value for the compensation pixel corresponding to the given subpage
-    /// (Offset<sub>reference<sub>CP</sub></sub>).
+    /// ($\text{Offset}\_{\text{reference}\_{CP}}$).
     fn offset_reference_cp(&self, subpage: Subpage) -> i16;
 
     type AlphaIterator: Iterator<Item = &'a f32>;
 
-    /// An iterator over the per-pixel sensitivity calibration values (α<sub>pixel</sub>(i, j)).
+    /// An iterator over the per-pixel sensitivity calibration values ($\alpha_{pixel}(i, j)$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -127,12 +128,12 @@ pub trait CalibrationData<'a> {
     fn alpha_pixels(&'a self, subpage: Subpage) -> Self::AlphaIterator;
 
     /// The sensitivity calibration value for the compensation pixel for the given subpage
-    /// (α<sub>CP</sub>).
+    /// ($\alpha_{CP}$).
     fn alpha_cp(&self, subpage: Subpage) -> f32;
 
     type KvIterator: Iterator<Item = &'a f32>;
 
-    /// An iterator over the per-pixel voltage calibration constants (K<sub>V<sub>pixel</sub></sub>).
+    /// An iterator over the per-pixel voltage calibration constants ($K_{V_{pixel}}$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -140,12 +141,12 @@ pub trait CalibrationData<'a> {
     fn k_v_pixels(&'a self, subpage: Subpage) -> Self::KvIterator;
 
     /// The voltage calibration constant for the compensation pixel for the given subpage
-    /// (K<sub>V<sub>CP</sub></sub>).
+    /// ($K_{V_{CP}}$).
     fn k_v_cp(&self, subpage: Subpage) -> f32;
 
     type KtaIterator: Iterator<Item = &'a f32>;
 
-    /// The per pixel ambient temperature calibration constants (K<sub>T<sub>a</sub>pixel</sub>).
+    /// The per pixel ambient temperature calibration constants ($K_{T_{a}pixel}$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -153,10 +154,10 @@ pub trait CalibrationData<'a> {
     fn k_ta_pixels(&'a self, subpage: Subpage) -> Self::KtaIterator;
 
     /// The ambient temperature calibration constant for the compensation pixel for the given
-    /// subpage (K<sub>T<sub>a</sub>CP</sub>).
+    /// subpage ($K_{T_{a}CP}$).
     fn k_ta_cp(&self, subpage: Subpage) -> f32;
 
-    /// Temperature gradient coefficient (TGC).
+    /// Temperature gradient coefficient (<var>TGC</var>).
     ///
     /// Some devices do not support a TGC (it can also be disabled manually on other devices).
     fn temperature_gradient_coefficient(&self) -> Option<f32>;
@@ -210,6 +211,7 @@ impl From<Address> for usize {
 /// on the calibration values from a specific camera.
 ///
 /// This is a sealed trait, and can only be implemented by types defined within this crate.
+#[doc = include_str!("katex.html")]
 pub trait MelexisCamera: Sealed {
     type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
 
@@ -237,10 +239,10 @@ pub trait MelexisCamera: Sealed {
         access_pattern: AccessPattern,
     ) -> Self::PixelsInSubpageIterator;
 
-    /// The address for T<sub>a<sub>V<sub>BE</sub></sub></sub>.
+    /// The address for $T_{a_{V_{BE}}}$.
     const T_A_V_BE: Address;
 
-    /// The address for T<sub>a<sub>PTAT</sub></sub>
+    /// The address for $T_{a_{PTAT}}$.
     const T_A_PTAT: Address;
 
     /// The address of the compensation pixel for the given subpage.
@@ -249,7 +251,7 @@ pub trait MelexisCamera: Sealed {
     /// The address of the current gain.
     const GAIN: Address;
 
-    /// The address for V<sub>DD<sub>pixel</sub></sub>.
+    /// The address for $V_{DD_{pixel}}$.
     const V_DD_PIXEL: Address;
 
     /// Calculate the ADC resolution correction factor
@@ -266,8 +268,8 @@ pub trait MelexisCamera: Sealed {
 
     /// The expected amount of self-heating for this camera.
     ///
-    /// In normal operation the camera generates some heat. If T<sub>r</sub> is not available, it
-    /// can be calculated by subtracting this value from T<sub>a</sub>.
+    /// In normal operation the camera generates some heat. If $T_r$ is not available, it
+    /// can be calculated by subtracting this value from $T_a$.
     const SELF_HEATING: f32;
 
     /// The height of the thermal image in pixels.
