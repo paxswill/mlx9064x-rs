@@ -8,6 +8,7 @@ use arrayvec::ArrayVec;
 use crate::register::{AccessPattern, Subpage};
 use crate::util::Sealed;
 
+/// A trait for types that can be created by reading data from an I²C device.
 pub trait FromI2C<I2C> {
     type Error;
     type Ok;
