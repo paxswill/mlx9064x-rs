@@ -221,7 +221,9 @@ pub trait MelexisCamera: Sealed {
     ///
     /// Different cameras with different [access patterns][crate::AccessPattern] have different optimal
     /// ways of loading data from RAM. In some cases loading by row and then ignoring half the data
-    /// may be appropriate, in other loading individual pixels may be best.
+    /// may be appropriate, in other loading individual pixels may be more efficient.
+    ///
+    /// The returned iterator will yield at most [`Self::HEIGHT`] items.
     fn pixel_ranges(subpage: Subpage, access_pattern: AccessPattern) -> Self::PixelRangeIterator;
 
     /// Returns an iterator of booleans for whether or not a pixel should be considered for a
@@ -282,10 +284,16 @@ pub trait MelexisCamera: Sealed {
     const NUM_PIXELS: usize;
 }
 
+/// A range of camera memory.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PixelAddressRange {
+    /// The address of memory to start reading from.
     pub(crate) start_address: Address,
+    /// The offset of this range of pixels in the larger image.
     pub(crate) buffer_offset: usize,
+    /// The number of bytes in this range of pixels.
+    ///
+    /// Remember that each pixel is *two* bytes.
     pub(crate) length: usize,
 }
 
