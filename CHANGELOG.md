@@ -1,5 +1,6 @@
 # Unreleased
 
+* Unintended dependency on `alloc` has been removed.
 * T_r can now be specified to account for reflected radiation when emissivity is
   <1.
 * The estimated self heating method for determining T_r is more accurate on 641s
