@@ -2,6 +2,7 @@
 // Copyright © 2021 Will Ross
 
 /// Define addition and subtraction for address enumerations.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! address_enum_ops {
     ($typ:ident) => {
@@ -58,6 +59,7 @@ macro_rules! address_enum_ops {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! expose_member {
     ($name:ident, $typ:ty) => {

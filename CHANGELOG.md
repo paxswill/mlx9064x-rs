@@ -7,6 +7,8 @@
 * Multiple functions on `MelexisCamera` are now associated constants.
 * Image size constants (`HEIGHT`, `WIDTH`, `NUM_PIXELS`) are now on the
   `MelexisCamera` trait instead of free constants in the specific camera module.
+* The `address_enum_ops` and `expose_member` macros are no longer part of the
+  documented API.
 
 # v0.1.1
 
