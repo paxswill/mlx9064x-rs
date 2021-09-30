@@ -3,6 +3,8 @@
 mod address;
 mod eeprom;
 
+use core::iter;
+
 // Various floating point operations are not implemented in core, so we use libm to provide them as
 // needed.
 #[cfg_attr(feature = "std", allow(unused_imports))]
@@ -10,10 +12,16 @@ use num_traits::Float;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
-use crate::util::Sealed;
+use crate::util::{self, Sealed};
 
 pub use address::RamAddress;
 pub use eeprom::Mlx90640Calibration;
+
+type SubpageInterleave = util::SubpageInterleave<
+    { <Mlx90640 as MelexisCamera>::WIDTH as u16 },
+    { (<Mlx90640 as MelexisCamera>::HEIGHT / 2) as u16 },
+    { RamAddress::Base as u16 },
+>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640();
@@ -21,18 +29,11 @@ pub struct Mlx90640();
 impl Sealed for Mlx90640 {}
 
 impl MelexisCamera for Mlx90640 {
-    type PixelRangeIterator = core::array::IntoIter<PixelAddressRange, 1>;
+    type PixelRangeIterator = Mlx90640Pixels;
     type PixelsInSubpageIterator = Mlx90640PixelSubpage;
 
-    fn pixel_ranges(_subpage: Subpage, _access_pattern: AccessPattern) -> Self::PixelRangeIterator {
-        // For the MLX90640, the best strategy (no matter the access mode) is to just load
-        // everything.
-        core::array::IntoIter::new([PixelAddressRange {
-            start_address: RamAddress::Base.into(),
-            buffer_offset: 0,
-            // Each pixel is two bytes
-            length: Self::NUM_PIXELS * 2,
-        }])
+    fn pixel_ranges(subpage: Subpage, access_pattern: AccessPattern) -> Self::PixelRangeIterator {
+        Mlx90640Pixels::new(subpage, access_pattern)
     }
 
     fn pixels_in_subpage(
@@ -76,6 +77,48 @@ impl MelexisCamera for Mlx90640 {
     const WIDTH: usize = 32;
 
     const NUM_PIXELS: usize = Self::HEIGHT * Self::WIDTH;
+}
+
+/// An iterator for memory ranges to read from the camera.
+///
+/// Each I²C read transaction has an overhead of 4 bytes (1 byte for the write start message, 2
+/// bytes for the address to read, 1 byte for the read start message). In chess board mode almost
+/// all pixels are non-contiguous, so the most efficient method is to load all of the pixels at
+/// once. In interleaved mode though it is more efficient to load each row at a time.
+pub enum Mlx90640Pixels {
+    #[doc(hidden)]
+    Chess(iter::Once<PixelAddressRange>),
+    #[doc(hidden)]
+    Interleave(SubpageInterleave),
+}
+
+impl Mlx90640Pixels {
+    fn new(subpage: Subpage, access_pattern: AccessPattern) -> Self {
+        match access_pattern {
+            AccessPattern::Chess => {
+                let once = iter::once(PixelAddressRange {
+                    start_address: RamAddress::Base.into(),
+                    buffer_offset: 0,
+                    // each pixel is two bytes
+                    length: Mlx90640::NUM_PIXELS * 2,
+                });
+                Self::Chess(once)
+            }
+            AccessPattern::Interleave => Self::Interleave(SubpageInterleave::new(subpage)),
+        }
+    }
+}
+
+impl iter::Iterator for Mlx90640Pixels {
+    type Item = PixelAddressRange;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let inner: &mut dyn iter::Iterator<Item = Self::Item> = match self {
+            Self::Chess(inner) => inner,
+            Self::Interleave(inner) => inner,
+        };
+        inner.next()
+    }
 }
 
 /// An iterator for determining which pixels are part of the current subpage.
@@ -132,9 +175,84 @@ impl Iterator for Mlx90640PixelSubpage {
 mod test {
     use core::iter::repeat;
 
-    use crate::{AccessPattern, MelexisCamera, Subpage};
+    use crate::{AccessPattern, Address, MelexisCamera, Subpage};
 
-    use super::{Mlx90640, Mlx90640PixelSubpage};
+    use super::{Mlx90640, Mlx90640PixelSubpage, RamAddress};
+
+    #[test]
+    fn pixel_access_chess() {
+        // In the chess access pattern, the optimal access pattern is to load all the pixels at
+        // once.
+        let mut pixel_iter0 = Mlx90640::pixel_ranges(Subpage::Zero, AccessPattern::Chess);
+        let range0 = pixel_iter0.next();
+        assert!(range0.is_some());
+        assert!(
+            pixel_iter0.next().is_none(),
+            "Mlx90640::pixel_ranges() should only yield one range for chess mode"
+        );
+        let mut pixel_iter1 = Mlx90640::pixel_ranges(Subpage::One, AccessPattern::Chess);
+        let range1 = pixel_iter1.next();
+        assert!(range1.is_some());
+        assert!(
+            pixel_iter1.next().is_none(),
+            "Mlx90640::pixel_ranges() should only yield one range for chess mode"
+        );
+        assert_eq!(
+            range0, range1,
+            "MLX90640 pixel ranges don't vary on subpage in chess mode"
+        );
+        let range0 = range0.unwrap();
+        assert_eq!(range0.start_address, RamAddress::Base.into());
+        assert_eq!(range0.buffer_offset, 0);
+        assert_eq!(range0.length, Mlx90640::NUM_PIXELS * 2);
+    }
+
+    fn access_interleave_test(
+        pixel_iter: <Mlx90640 as MelexisCamera>::PixelRangeIterator,
+        first_address: Address,
+    ) {
+        // In chess mode the optimal access pattern is by row, only covering the rows that belong
+        // to the current subpage.
+        let mut count = 0;
+        let base_offset: u16 = first_address.into();
+        for (index, range) in pixel_iter.enumerate() {
+            // The offset of this row relative to the beginning of the RAM range.
+            let ram_offset = index * Mlx90640::WIDTH;
+            assert_eq!(
+                range.buffer_offset,
+                ram_offset * 2,
+                "Buffer offset is incorrect"
+            );
+            let start = base_offset + ram_offset as u16;
+            assert_eq!(
+                range.start_address,
+                start.into(),
+                "Range starting address incorrect"
+            );
+            assert_eq!(range.length, Mlx90640::WIDTH * 2, "Range length incorrect");
+            count += 1;
+        }
+        // When interleaved, only half the rows are updated at a time.
+        assert_eq!(count, Mlx90640::HEIGHT / 2);
+    }
+
+    #[test]
+    fn pixel_access_interleave_subpage0() {
+        access_interleave_test(
+            Mlx90640::pixel_ranges(Subpage::Zero, AccessPattern::Interleave),
+            RamAddress::Base.into(),
+        );
+    }
+
+    #[test]
+    fn pixel_access_interleave_subpage1() {
+        // For the first subpage, we're based on the second row
+        let second_row = RamAddress::Base as u16 + Mlx90640::WIDTH as u16;
+        access_interleave_test(
+            Mlx90640::pixel_ranges(Subpage::One, AccessPattern::Interleave),
+            second_row.into(),
+        );
+    }
 
     #[test]
     fn pixel_subpage_interleaved() {
