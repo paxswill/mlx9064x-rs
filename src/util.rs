@@ -80,7 +80,7 @@ macro_rules! expose_member {
 /// If/when `bytes` removes their dependency on `alloc`, this can be removed.
 ///
 /// [bytes::Buf]: https://docs.rs/bytes/*/bytes/trait.Buf.html
-pub trait Buffer {
+pub(crate) trait Buffer {
     fn advance(&mut self, cnt: usize);
     fn get_u8(&mut self) -> u8;
     fn get_i8(&mut self) -> i8;
