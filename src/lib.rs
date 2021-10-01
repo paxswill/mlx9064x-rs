@@ -89,6 +89,7 @@ compile_error!("Either the 'std' or 'libm' feature must be enabled.");
 
 pub mod calculations;
 pub mod common;
+#[doc(hidden)]
 pub mod driver;
 #[doc(hidden)]
 pub mod error;
@@ -100,6 +101,7 @@ mod test;
 mod util;
 
 pub use common::{Address, CalibrationData, MelexisCamera};
+#[doc(inline)]
 pub use driver::CameraDriver;
 #[doc(inline)]
 pub use error::{Error, LibraryError};
