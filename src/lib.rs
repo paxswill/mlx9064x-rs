@@ -58,29 +58,12 @@
 //! types available in the [`mlx90640`] and [`mlx90641`] modules.
 //!
 //! # Subpages and Access Patterns
-//! One of the key differences between these cameras and other common thermal cameras is that not
-//! all of the image is updated at once. The imaging area is divided into two [subpages][Subpage],
-//! each being updated in turn. The pixels are split into subpages depending on the current [access
-//! pattern][AccessPattern]. In chess board mode, the pixels alternate subpages in both the X and
-//! Y axes, resulting in a chess or checker board-like pattern:
-//! ```text
-//! 0 1 0 1 0 1 0 1
-//! 1 0 1 0 1 0 1 0
-//! 0 1 0 1 0 1 0 1
-//! 1 0 1 0 1 0 1 0
-//! ```
-//! The other access mode interleaves each row, so pixels will alternate subpages only on the Y
-//! axis. This is also referred to as "TV" mode in the manufacturer's datasheet.
-//! ```text
-//! 0 0 0 0 0 0 0 0
-//! 1 1 1 1 1 1 1 1
-//! 0 0 0 0 0 0 0 0
-//! 1 1 1 1 1 1 1 1
-//! ```
-//! The default mode is different between these two cameras, and the datasheet either strongly
-//! advises against changing the access mode (90640), or doesn't mention the impact of changing the
-//! access mode at all (90641).
-//!
+//! A significant difference between these Melexis cameras and other common thermal cameras is how
+//! the Melexis cameras update their image data. Each frame, one [subpage][Subpage] of data is
+//! updated. For the MLX90640 each subpage covers half of the pixels, and the [access
+//! pattern][AccessPattern] determines how the pixels are divided between the subpages. The
+//! MLX90641's subpages cover *all* of the pixels (and the access pattern should *not* be changed
+//! from [interleave][AccessPattern::Interleave]).
 
 #![no_std]
 

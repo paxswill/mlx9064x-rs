@@ -731,14 +731,33 @@ impl Default for Resolution {
 }
 
 /// The pixel access pattern used by a camera.
+///
+/// In chess board mode, the pixels alternate subpages in both the X and
+/// Y axes, resulting in a chess or checker board-like pattern:
+/// ```text
+/// 0 1 0 1 0 1 0 1
+/// 1 0 1 0 1 0 1 0
+/// 0 1 0 1 0 1 0 1
+/// 1 0 1 0 1 0 1 0
+/// ```
+/// The other access mode interleaves each row, so pixels will alternate subpages only on the Y
+/// axis. This is also referred to as "TV" mode in the manufacturer's datasheet.
+/// ```text
+/// 0 0 0 0 0 0 0 0
+/// 1 1 1 1 1 1 1 1
+/// 0 0 0 0 0 0 0 0
+/// 1 1 1 1 1 1 1 1
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
 pub enum AccessPattern {
     /// Pixels alternate between subpages, resulting in a chess or checker board pattern.
     ///
-    /// This is the default (and strongly recommended value) for the MLX90640. The MLX90641 updates
-    /// the entire frame at once with only the read location being alternated. This means that
-    /// chess mode has no benefit for the MLX90641, and this library doesn't support it.
+    /// This is the default (and strongly recommended value) for the MLX90640.
+    ///
+    /// The MLX90641 updates the entire frame at once with only the read location being alternated.
+    /// This means that chess mode has no benefit for the MLX90641, and this library doesn't
+    /// support it.
     Chess = 1,
 
     /// Each row of pixels is in the same subpage, with the rows alternating between subpages.
