@@ -480,7 +480,7 @@ pub enum Subpage {
 /// | --- | --- | --- | --- |
 /// | 100kHz |  4Hz |  8Hz | 16Hz |
 /// | 400kHz | 16Hz | 32Hz | 64Hz |
-/// |   1MHz | 64Hz (barely, 32Hz is more realistic) | 64Hz | 64Hz |
+/// |   1MHz | 64Hz (barely, 32Hz is more realistic) | 32Hz | 64Hz |
 ///
 /// On top of the bus speed, your hardware also has to be able to process each frame before the
 /// next frame is ready. As a final warning, the EEPROM cannot be accessed above 400kHz so if
@@ -506,6 +506,7 @@ pub enum Subpage {
 /// assert_eq!(0.5f32.try_into(), Ok(FrameRate::Half));
 /// assert_eq!(0.5f32, FrameRate::Half.into());
 /// ```
+// NOTE: For the maximum frame rates, see "mlx9064x_timing.ods" in the repo for the calculations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum FrameRate {
     /// 0.5 Hz, one frame every two seconds.
