@@ -506,7 +506,7 @@ where
     ///
     /// This function ignores any new data, then forces a new measurement by the camera, only
     /// returning when that measurement is complete. This can be used to synchronize frame access
-    /// form the controller to the update time of the camera.
+    /// from the controller to the update time of the camera.
     pub fn synchronize(&mut self) -> Result<(), Error<I2C>> {
         let mut status_register = self.status_register()?;
         status_register.reset_new_data();

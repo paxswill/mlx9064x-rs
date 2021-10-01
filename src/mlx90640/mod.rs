@@ -84,7 +84,7 @@ impl MelexisCamera for Mlx90640 {
     const NUM_PIXELS: usize = Self::HEIGHT * Self::WIDTH;
 }
 
-/// An iterator for memory ranges to read from the camera.
+/// An iterator of memory ranges to read from the camera.
 ///
 /// Each I²C read transaction has an overhead of 4 bytes (1 byte for the write start message, 2
 /// bytes for the address to read, 1 byte for the read start message). In chess board mode almost
