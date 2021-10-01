@@ -9,7 +9,6 @@ pub mod hamming;
 #[cfg_attr(feature = "std", allow(unused_imports))]
 use num_traits::Float;
 
-use core::cmp::Ordering;
 use core::iter;
 
 use crate::common::{Address, MelexisCamera};
@@ -42,7 +41,7 @@ impl Sealed for Mlx90641 {}
 
 impl MelexisCamera for Mlx90641 {
     type PixelRangeIterator = SubpageInterleave;
-    type PixelsInSubpageIterator = AllPixels<{ Self::NUM_PIXELS }>;
+    type PixelsInSubpageIterator = iter::Take<iter::Repeat<bool>>;
 
     fn pixel_ranges(subpage: Subpage, _access_pattern: AccessPattern) -> Self::PixelRangeIterator {
         // The 90641 updates an entire frame at a time and only vary the data location on subpage
@@ -53,7 +52,8 @@ impl MelexisCamera for Mlx90641 {
         _subpage: Subpage,
         _access_pattern: AccessPattern,
     ) -> Self::PixelsInSubpageIterator {
-        AllPixels::default()
+        // All pixels in the image are valid, each subpage covers all of the pixels.
+        iter::repeat(true).take(Self::NUM_PIXELS)
     }
 
     const T_A_V_BE: Address = Address::new(RamAddress::AmbientTemperatureVoltageBe as u16);
@@ -90,23 +90,4 @@ impl MelexisCamera for Mlx90641 {
     const WIDTH: usize = 16;
 
     const NUM_PIXELS: usize = Self::HEIGHT * Self::WIDTH;
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AllPixels<const COUNT: usize> {
-    current: usize,
-}
-
-impl<const COUNT: usize> iter::Iterator for AllPixels<COUNT> {
-    type Item = bool;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.current.cmp(&COUNT) {
-            Ordering::Less => {
-                self.current += 1;
-                Some(true)
-            }
-            _ => None,
-        }
-    }
 }
