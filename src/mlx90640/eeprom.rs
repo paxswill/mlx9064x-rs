@@ -25,7 +25,7 @@ const NUM_CORNER_TEMPERATURES: usize = 4;
 /// The word size of the MLX90640 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
 
-/// MLX990640-specific calibration processing.
+/// MLX90640-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640Calibration {
     k_v_dd: i16,

@@ -107,6 +107,7 @@ pub use driver::CameraDriver;
 pub use error::{Error, LibraryError};
 pub use register::*;
 
+/// High-level MLX90640 driver.
 pub type Mlx90640Driver<I2C> = CameraDriver<
     mlx90640::Mlx90640,
     mlx90640::Mlx90640Calibration,
@@ -116,6 +117,7 @@ pub type Mlx90640Driver<I2C> = CameraDriver<
     { mlx90640::Mlx90640::NUM_PIXELS * 2 },
 >;
 
+/// High-level MLX90641 driver.
 pub type Mlx90641Driver<I2C> = CameraDriver<
     mlx90641::Mlx90641,
     mlx90641::Mlx90641Calibration,

@@ -118,6 +118,7 @@ impl From<EepromAddress> for Address {
     }
 }
 
+/// Important MLX90640 RAM addresses.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
 #[repr(u16)]
 pub enum RamAddress {

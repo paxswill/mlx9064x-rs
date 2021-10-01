@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
+//! MLX90640 specific details.
 mod address;
 mod eeprom;
 
@@ -23,6 +24,10 @@ type SubpageInterleave = util::SubpageInterleave<
     { RamAddress::Base as u16 },
 >;
 
+/// MLX90640-specific constants and supporting functions.
+///
+/// The functionality of this type covers any MLX90640 camera module. The individual
+/// camera-specific processing is performed by [`Mlx90640Calibration`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640();
 
