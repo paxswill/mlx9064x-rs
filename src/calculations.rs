@@ -4,6 +4,7 @@
 //! Calculations for turning sensor output into temperatures
 //!
 #![doc = include_str!("katex.html")]
+//!
 //! The MLX90640 and MLX90641 datasheets have roughly a third of their pages dedicated to
 //! mathematical formulas, which can be a little intimidating. Fortunately most of the formulas
 //! can be simplified by assuming that treating some raw bits as a signed integer is a "free"
