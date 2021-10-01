@@ -7,7 +7,7 @@ use core::fmt;
 
 use embedded_hal::blocking::i2c;
 
-/// Errors that don't involve I²C.
+/// Specific kinds of errors that don't involve I²C.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LibraryError {
     /// When a value from the camera is malformed in some way.
@@ -38,16 +38,20 @@ impl fmt::Display for LibraryError {
 #[cfg(feature = "std")]
 impl std::error::Error for LibraryError {}
 
+/// Errors originating from this library.
 pub enum Error<I2C>
 where
     I2C: i2c::WriteRead + i2c::Write,
 {
-    /// Errors originating from the I²C implementation.
+    /// Errors involved with reading from I²C.
+    ///
+    /// All reads done by this library are preceded by a short write.
     I2cWriteReadError(<I2C as i2c::WriteRead>::Error),
 
+    /// Errors involved with only writing to I²C.
     I2cWriteError(<I2C as i2c::Write>::Error),
 
-    /// Errors originating from within this library.
+    /// Other errors originating from within this library.
     LibraryError(LibraryError),
 }
 

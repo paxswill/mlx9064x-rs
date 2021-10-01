@@ -90,6 +90,7 @@ compile_error!("Either the 'std' or 'libm' feature must be enabled.");
 pub mod calculations;
 pub mod common;
 pub mod driver;
+#[doc(hidden)]
 pub mod error;
 pub mod mlx90640;
 pub mod mlx90641;
@@ -100,7 +101,8 @@ mod util;
 
 pub use common::{Address, CalibrationData, MelexisCamera};
 pub use driver::CameraDriver;
-pub use error::Error;
+#[doc(inline)]
+pub use error::{Error, LibraryError};
 pub use register::*;
 
 pub type Mlx90640Driver<I2C> = CameraDriver<
