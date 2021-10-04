@@ -96,3 +96,30 @@ impl MelexisCamera for Mlx90641 {
 
     const NUM_PIXELS: usize = Self::HEIGHT * Self::WIDTH;
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{AccessPattern, MelexisCamera, Resolution, Subpage};
+
+    use super::Mlx90641;
+
+    #[test]
+    fn resolution_correction() {
+        let resolutions = [
+            (Resolution::Sixteen, 4.0),
+            (Resolution::Seventeen, 2.0),
+            (Resolution::Eighteen, 1.0),
+            (Resolution::Nineteen, 0.5),
+        ];
+        for (register_resolution, expected) in resolutions {
+            assert_eq!(
+                Mlx90641::resolution_correction(
+                    // Using 18 as the calibration value as that's the default calibration value.
+                    Resolution::Eighteen as u8,
+                    register_resolution as u8
+                ),
+                expected,
+            )
+        }
+    }
+}

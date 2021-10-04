@@ -180,9 +180,29 @@ impl Iterator for Mlx90640PixelSubpage {
 mod test {
     use core::iter::repeat;
 
-    use crate::{AccessPattern, Address, MelexisCamera, Subpage};
+    use crate::{AccessPattern, Address, MelexisCamera, Resolution, Subpage};
 
     use super::{Mlx90640, Mlx90640PixelSubpage, RamAddress};
+
+    #[test]
+    fn resolution_correction() {
+        let resolutions = [
+            (Resolution::Sixteen, 4.0),
+            (Resolution::Seventeen, 2.0),
+            (Resolution::Eighteen, 1.0),
+            (Resolution::Nineteen, 0.5),
+        ];
+        for (register_resolution, expected) in resolutions {
+            assert_eq!(
+                Mlx90640::resolution_correction(
+                    // Using 18 as the calibration value as that's the default calibration value.
+                    Resolution::Eighteen as u8,
+                    register_resolution as u8
+                ),
+                expected,
+            )
+        }
+    }
 
     #[test]
     fn pixel_access_chess() {
