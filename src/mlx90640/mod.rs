@@ -194,7 +194,7 @@ impl Iterator for Mlx90640PixelSubpage {
 mod test {
     use core::iter::repeat;
 
-    use crate::{AccessPattern, Address, MelexisCamera, Resolution, Subpage};
+    use crate::{AccessPattern, MelexisCamera, Resolution, Subpage};
     use crate::common::PixelAddressRange;
 
     use super::{Mlx90640, Mlx90640PixelSubpage, RamAddress};
