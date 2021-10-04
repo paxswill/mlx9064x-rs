@@ -651,6 +651,7 @@ fn word_to_i4s(data: &mut &[u8]) -> [i8; 4] {
 }
 
 #[cfg(test)]
+#[allow(clippy::excessive_precision)]
 pub(crate) mod test {
     #[cfg(feature = "std")]
     extern crate std;
@@ -668,13 +669,12 @@ pub(crate) mod test {
     use super::Mlx90640Calibration;
 
     fn datasheet_eeprom() -> Mlx90640Calibration {
-        let mut eeprom_bytes = mlx90640_datasheet_eeprom();
-        Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
+        let eeprom_bytes = mlx90640_datasheet_eeprom();
+        Mlx90640Calibration::from_data(&eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
     fn example_eeprom() -> Mlx90640Calibration {
-        let mut example_bytes = &mlx90640_example_data::EEPROM_DATA[..];
-        Mlx90640Calibration::from_data(&mut example_bytes)
+        Mlx90640Calibration::from_data(mlx90640_example_data::EEPROM_DATA)
             .expect("The example data should be parseable")
     }
 

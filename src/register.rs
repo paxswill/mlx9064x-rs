@@ -777,7 +777,11 @@ mod test {
             let value: u16 = $value;
             let bytes = value.to_be_bytes();
             let packed: $register = From::from(&bytes[..]);
-            assert_eq!(packed.$field(), $expected);
+            // Allow bool comparisions as this is a generic macro
+            #[allow(clippy::bool_assert_comparison)]
+            {
+                assert_eq!(packed.$field(), $expected);
+            }
             let unpacked: [u8; 2] = packed.into();
             assert_eq!(unpacked, bytes);
         };

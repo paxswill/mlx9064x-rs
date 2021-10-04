@@ -745,6 +745,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::excessive_precision)]
 mod test {
     use float_cmp::assert_approx_eq;
 

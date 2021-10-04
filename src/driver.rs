@@ -610,6 +610,7 @@ fn write_raw_register<I2C: i2c::Write>(
 }
 
 #[cfg(test)]
+#[allow(clippy::excessive_precision)]
 mod test {
     extern crate std;
 
@@ -748,8 +749,8 @@ mod test {
         assert!(ready.unwrap());
         // Set the next frame of data
         mocked.update_frame(
-            &mlx90640_example_data::FRAME_1_DATA[..],
-            &mlx90640_example_data::FRAME_1_STATUS_REGISTER[..],
+            mlx90640_example_data::FRAME_1_DATA,
+            mlx90640_example_data::FRAME_1_STATUS_REGISTER,
         );
         mocked.set_data_available(true);
         assert!(cam.generate_image_if_ready(&mut temperatures).unwrap());

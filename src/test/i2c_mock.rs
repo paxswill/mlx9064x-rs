@@ -129,7 +129,7 @@ impl MockCameraBus<MLX90640_RAM_LENGTH> {
         let mut i2c_register_owned = [0u8; 2];
         i2c_register_owned.copy_from_slice(i2c_register);
         MockCameraBus {
-            i2c_address: i2c_address,
+            i2c_address,
             rom_range: 0x0000..=0x03FF,
             ram_range: (mlx90640::RamAddress::Base.into())..=(mlx90640::RamAddress::End.into()),
             eeprom_range: 0x2400..=0x273F,
@@ -226,11 +226,8 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
         // Divide by two to get the number of words
         let end_address: u16 = start_address + (data.len() as u16 / 2);
         // Same as get, but a little more restrictive
-        if self.rom_range.contains(&start_address) {
-            // It's in the name, Read-Only Memory
-            Err(MockError::IllegalWriteAddress(address))
-        } else if self.ram_range.contains(&start_address) {
-            // Only the camera is allowed to write to its RAM.
+        if self.rom_range.contains(&start_address) || self.ram_range.contains(&start_address) {
+            // It's in the name, Read-Only Memory; and only the camera is allowed to write to it's RAM.
             Err(MockError::IllegalWriteAddress(address))
         } else if self.eeprom_range.contains(&start_address) {
             // Technically you can write anywhere in the EEPROM, but then the config data is lost
@@ -282,20 +279,20 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
                 let (mask_bytes, existing_bytes) = match start_address {
                     STATUS_REGISTER_ADDRESS => (
                         STATUS_REGISTER_WRITE_MASK,
-                        self.status_register.borrow().clone(),
+                        *self.status_register.borrow(),
                     ),
                     CONTROL_REGISTER_ONE_ADDRESS => (
                         CONTROL_REGISTER_1_WRITE_MASK,
-                        self.control_register.borrow().clone(),
+                        *self.control_register.borrow(),
                     ),
                     I2C_CONFIG_REGISTER_ADDRESS => (
                         I2C_CONFIG_REGISTER_WRITE_MASK,
-                        self.i2c_config_register.borrow().clone(),
+                        *self.i2c_config_register.borrow(),
                     ),
                     _ => return Err(MockError::IllegalWriteAddress(address)),
                 };
                 let mask_word = u16::from_be_bytes(mask_bytes);
-                let existing_word = u16::from_be_bytes(existing_bytes.try_into().unwrap());
+                let existing_word = u16::from_be_bytes(existing_bytes);
                 if !check_new_against_mask(existing_word, mask_word, new_word) {
                     let bad_address = start_address.into();
                     return Err(MockError::IllegalWriteValue(bad_address, new_word));
@@ -388,7 +385,7 @@ impl<const RAM_LENGTH: usize> i2c::WriteRead for MockCameraBus<RAM_LENGTH> {
             return Err(MockError::UnknownI2cAddress(i2c_address));
         }
         // Write-reads should only be writing the address, so write_buffer should only be two bytes
-        if write_buffer.len() != 2 || out_buffer.len() == 0 {
+        if write_buffer.len() != 2 || out_buffer.is_empty() {
             return Err(MockError::IllegalOperation);
         }
         let raw_address = self.extract_address(write_buffer)?;
@@ -491,10 +488,10 @@ pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
 pub(crate) fn example_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
     MockCameraBus::new_mlx90640(
         i2c_address,
-        &mlx90640_example_data::EEPROM_DATA[..],
-        &mlx90640_example_data::FRAME_0_DATA[..],
-        &mlx90640_example_data::CONTROL_REGISTER[..],
-        &mlx90640_example_data::FRAME_0_STATUS_REGISTER[..],
+        mlx90640_example_data::EEPROM_DATA,
+        mlx90640_example_data::FRAME_0_DATA,
+        mlx90640_example_data::CONTROL_REGISTER,
+        mlx90640_example_data::FRAME_0_STATUS_REGISTER,
         b"\x00\x00",
     )
 }

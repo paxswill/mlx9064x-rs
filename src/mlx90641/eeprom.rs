@@ -454,6 +454,7 @@ fn get_6_5_split(buf: &mut &[u8]) -> Result<(u8, u8), LibraryError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::excessive_precision)]
 pub(crate) mod test {
     use arrayvec::ArrayVec;
 
@@ -469,8 +470,8 @@ pub(crate) mod test {
     const TEST_PIXEL_INDEX: usize = 5 * Mlx90641::WIDTH + 8;
 
     pub(crate) fn datasheet_eeprom() -> Mlx90641Calibration {
-        let mut eeprom_bytes = mlx90641_datasheet_eeprom();
-        Mlx90641Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
+        let eeprom_bytes = mlx90641_datasheet_eeprom();
+        Mlx90641Calibration::from_data(&eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
     #[test]

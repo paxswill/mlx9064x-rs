@@ -12,7 +12,7 @@ pub(crate) const EEPROM_LENGTH: usize = (0x2740 - 0x2400) * 2;
 /// Example MLX90640 EEPROM data from the datasheet (from the worked example).
 // Each line is 8 bytes. The first two lines are empty, as that data is ignored for calibration
 // purposes. The next six lines are the shared calibration data.
-const MLX90640_EEPROM_HEADER: &'static [u8] = b"\
+const MLX90640_EEPROM_HEADER: &[u8] = b"\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x42\x10\xff\xbb\x02\x02\xf2\x02\xf2\xf2\xe2\xe2\xd1\xe1\xb1\xd1\
@@ -28,9 +28,8 @@ pub(crate) fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     // pixel used in the worked example from the datasheet.
     let pixel_data = b"\x08\xa0";
     let mut eeprom_data = [0u8; EEPROM_LENGTH];
-    let header_slice = &MLX90640_EEPROM_HEADER[..];
-    eeprom_data[..header_slice.len()].copy_from_slice(header_slice);
-    eeprom_data[header_slice.len()..]
+    eeprom_data[..MLX90640_EEPROM_HEADER.len()].copy_from_slice(MLX90640_EEPROM_HEADER);
+    eeprom_data[MLX90640_EEPROM_HEADER.len()..]
         .iter_mut()
         .zip(pixel_data.iter().copied().cycle())
         .for_each(|(eeprom_byte, pixel_byte)| *eeprom_byte = pixel_byte);
@@ -39,7 +38,7 @@ pub(crate) fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
 
 /// Example MLX90641 EEPROM data from the datasheet.
 // Same structure as MLX90640_EEPROM_HEADER.
-const MLX90641_EEPROM_HEADER: &'static [u8] = b"\
+const MLX90641_EEPROM_HEADER: &[u8] = b"\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x00\x00\xb7\xe8\xd0\x16\x00\x00\x00\x00\xc2\xfd\x1a\x43\xca\x9a\
@@ -60,9 +59,8 @@ pub(crate) fn mlx90641_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     // sensitivity for each pixel, then a combined K_ta and K_v for each pixel, then offsets for
     // subpage 1 for each pixel.
     let mut eeprom_data = [0u8; EEPROM_LENGTH];
-    let header_slice = &MLX90641_EEPROM_HEADER[..];
-    eeprom_data[..header_slice.len()].copy_from_slice(header_slice);
-    let mut offset = header_slice.len();
+    eeprom_data[..MLX90641_EEPROM_HEADER.len()].copy_from_slice(MLX90641_EEPROM_HEADER);
+    let mut offset = MLX90641_EEPROM_HEADER.len();
     // Multiply by two to get number of bytes
     let pixel_data_length = mlx90641::Mlx90641::NUM_PIXELS * 2;
     for single_pixel_data in [offset_0, sensitivity, k_ta_with_k_v, offset_1] {
