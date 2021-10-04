@@ -19,6 +19,9 @@ tasks:
         --profile minimal \
         --quiet \
         -y
+      source $HOME/.cargo/env
+      rustup component add clippy
+      rustup component add rustfmt
   - check_nono: |
       source $HOME/.cargo/env
       RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-nono
@@ -30,8 +33,6 @@ tasks:
       # Test with and without std
       cargo test
       cargo test --no-default-features --features libm
-  # TODO: Add clippy and rustfmt lints. When doing that, make sure to add those
-  # components to the rustup task above.
   - test-docs: |
       cd mlx9064x
       source $HOME/.cargo/env
@@ -42,3 +43,9 @@ tasks:
         --deny private_intra_doc_links \
         --deny invalid_codeblock_attributes \
         --deny bare_urls
+  - lints: |
+      cd mlx9064x
+      source $HOME/.cargo/env
+      cargo clippy -- -D warnings
+      cargo clippy --tests -- -D warnings
+      cargo fmt -- --check
