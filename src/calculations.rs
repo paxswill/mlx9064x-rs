@@ -403,8 +403,7 @@ pub fn per_pixel_v_ir(
     access_mode_compensation: Option<f32>,
 ) -> f32 {
     let pixel_gain = f32::from(pixel_data) * common.gain;
-    let mut pixel_offset = pixel_gain
-        + access_mode_compensation.unwrap_or_default()
+    let mut pixel_offset = pixel_gain + access_mode_compensation.unwrap_or_default()
         - f32::from(reference_offset)
             * (1f32 + k_ta * (common.t_a - 25f32))
             * (1f32 + k_v * (common.v_dd - 3.3f32));

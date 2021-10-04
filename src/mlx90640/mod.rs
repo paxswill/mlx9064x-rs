@@ -194,8 +194,8 @@ impl Iterator for Mlx90640PixelSubpage {
 mod test {
     use core::iter::repeat;
 
-    use crate::{AccessPattern, MelexisCamera, Resolution, Subpage};
     use crate::common::PixelAddressRange;
+    use crate::{AccessPattern, MelexisCamera, Resolution, Subpage};
 
     use super::{Mlx90640, Mlx90640PixelSubpage, RamAddress};
 
@@ -298,7 +298,7 @@ mod test {
     fn pixel_access_interleave_subpage0() {
         access_interleave_test(
             Mlx90640::pixel_ranges(Subpage::Zero, AccessPattern::Interleave),
-            RamAddress::Base.into()
+            RamAddress::Base.into(),
         );
     }
 

@@ -10,8 +10,8 @@ pub mod hamming;
 #[cfg_attr(feature = "std", allow(unused_imports))]
 use num_traits::Float;
 
-use core::iter;
 use core::cmp::Ordering;
+use core::iter;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
