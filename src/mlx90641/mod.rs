@@ -104,6 +104,24 @@ mod test {
     use super::Mlx90641;
 
     #[test]
+    fn pixels_in_subpage() {
+        let mut count = 0;
+        // Only testing interleave as chess mode isn't used with the MLX90641
+        let sub0 = Mlx90641::pixels_in_subpage(Subpage::Zero, AccessPattern::Interleave);
+        let sub1 = Mlx90641::pixels_in_subpage(Subpage::One, AccessPattern::Interleave);
+        for (zero, one) in sub0.zip(sub1) {
+            assert_eq!(zero, one, "MLX90641 doesn't vary pixels on subpages");
+            assert!(zero, "Every pixel is valid for MLX90641");
+            count += 1;
+        }
+        assert_eq!(
+            count,
+            Mlx90641::NUM_PIXELS,
+            "Ever pixels needs a value for pixels_in_subpage()"
+        );
+    }
+
+    #[test]
     fn resolution_correction() {
         let resolutions = [
             (Resolution::Sixteen, 4.0),
