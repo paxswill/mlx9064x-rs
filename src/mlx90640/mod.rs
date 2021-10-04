@@ -13,16 +13,10 @@ use num_traits::Float;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
-use crate::util::{self, Sealed};
+use crate::util::Sealed;
 
 pub use address::RamAddress;
 pub use eeprom::Mlx90640Calibration;
-
-type SubpageInterleave = util::SubpageInterleave<
-    { <Mlx90640 as MelexisCamera>::WIDTH as u16 },
-    { (<Mlx90640 as MelexisCamera>::HEIGHT / 2) as u16 },
-    { RamAddress::Base as u16 },
->;
 
 /// MLX90640-specific constants and supporting functions.
 ///
@@ -94,7 +88,7 @@ pub enum Mlx90640Pixels {
     #[doc(hidden)]
     Chess(iter::Once<PixelAddressRange>),
     #[doc(hidden)]
-    Interleave(SubpageInterleave),
+    Interleave(u16),
 }
 
 impl Mlx90640Pixels {
@@ -109,7 +103,13 @@ impl Mlx90640Pixels {
                 });
                 Self::Chess(once)
             }
-            AccessPattern::Interleave => Self::Interleave(SubpageInterleave::new(subpage)),
+            AccessPattern::Interleave => {
+                let starting_address = match subpage {
+                    Subpage::Zero => 0,
+                    Subpage::One => Mlx90640::WIDTH as u16,
+                };
+                Self::Interleave(starting_address)
+            }
         }
     }
 }
@@ -118,11 +118,25 @@ impl iter::Iterator for Mlx90640Pixels {
     type Item = PixelAddressRange;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let inner: &mut dyn iter::Iterator<Item = Self::Item> = match self {
-            Self::Chess(inner) => inner,
-            Self::Interleave(inner) => inner,
-        };
-        inner.next()
+        match self {
+            Self::Chess(inner) => inner.next(),
+            Mlx90640Pixels::Interleave(current_offset) => {
+                // current_offset is the offset *in camera addresses*
+                if *current_offset < Mlx90640::NUM_PIXELS as u16 {
+                    let next_value = PixelAddressRange {
+                        start_address: (RamAddress::Base as u16 + *current_offset).into(),
+                        // To convert from address offsets to buffer offsets, multiply by two
+                        // (because each address refers to two bytes).
+                        buffer_offset: (*current_offset * 2) as usize,
+                        length: Mlx90640::WIDTH * 2,
+                    };
+                    *current_offset += Mlx90640::WIDTH as u16 * 2;
+                    Some(next_value)
+                } else {
+                    None
+                }
+            }
+        }
     }
 }
 
@@ -181,6 +195,7 @@ mod test {
     use core::iter::repeat;
 
     use crate::{AccessPattern, Address, MelexisCamera, Resolution, Subpage};
+    use crate::common::PixelAddressRange;
 
     use super::{Mlx90640, Mlx90640PixelSubpage, RamAddress};
 
@@ -233,39 +248,57 @@ mod test {
     }
 
     fn access_interleave_test(
-        pixel_iter: <Mlx90640 as MelexisCamera>::PixelRangeIterator,
-        first_address: Address,
+        mut ranges: <Mlx90640 as MelexisCamera>::PixelRangeIterator,
+        start_address: u16,
     ) {
-        // In chess mode the optimal access pattern is by row, only covering the rows that belong
-        // to the current subpage.
-        let mut count = 0;
-        let base_offset: u16 = first_address.into();
-        for (index, range) in pixel_iter.enumerate() {
-            // The offset of this row relative to the beginning of the RAM range.
-            let ram_offset = index * Mlx90640::WIDTH;
-            assert_eq!(
-                range.buffer_offset,
-                ram_offset * 2,
-                "Buffer offset is incorrect"
-            );
-            let start = base_offset + ram_offset as u16;
-            assert_eq!(
-                range.start_address,
-                start.into(),
-                "Range starting address incorrect"
-            );
-            assert_eq!(range.length, Mlx90640::WIDTH * 2, "Range length incorrect");
-            count += 1;
-        }
-        // When interleaved, only half the rows are updated at a time.
-        assert_eq!(count, Mlx90640::HEIGHT / 2);
+        // Only checking the first four ranges, as from there the pattern should be set.
+        const RANGE_LENGTH: usize = Mlx90640::WIDTH * 2;
+        let buffer_start_offset = (start_address - RamAddress::Base as u16) as usize * 2;
+        let first = ranges.next().unwrap();
+        assert_eq!(
+            first,
+            PixelAddressRange {
+                start_address: start_address.into(),
+                buffer_offset: buffer_start_offset,
+                length: RANGE_LENGTH
+            }
+        );
+        let second = ranges.next().unwrap();
+        assert_eq!(
+            second,
+            PixelAddressRange {
+                start_address: (start_address + Mlx90640::WIDTH as u16 * 2).into(),
+                buffer_offset: buffer_start_offset + RANGE_LENGTH * 2,
+                length: RANGE_LENGTH
+            }
+        );
+        let third = ranges.next().unwrap();
+        assert_eq!(
+            third,
+            PixelAddressRange {
+                start_address: (start_address + Mlx90640::WIDTH as u16 * 4).into(),
+                buffer_offset: buffer_start_offset + RANGE_LENGTH * 4,
+                length: RANGE_LENGTH
+            }
+        );
+        let fourth = ranges.next().unwrap();
+        assert_eq!(
+            fourth,
+            PixelAddressRange {
+                start_address: (start_address + Mlx90640::WIDTH as u16 * 6).into(),
+                buffer_offset: buffer_start_offset + RANGE_LENGTH * 6,
+                length: RANGE_LENGTH
+            }
+        );
+        // There can only be eight more rows
+        assert_eq!(ranges.count(), 8);
     }
 
     #[test]
     fn pixel_access_interleave_subpage0() {
         access_interleave_test(
             Mlx90640::pixel_ranges(Subpage::Zero, AccessPattern::Interleave),
-            RamAddress::Base.into(),
+            RamAddress::Base.into()
         );
     }
 
@@ -275,7 +308,7 @@ mod test {
         let second_row = RamAddress::Base as u16 + Mlx90640::WIDTH as u16;
         access_interleave_test(
             Mlx90640::pixel_ranges(Subpage::One, AccessPattern::Interleave),
-            second_row.into(),
+            second_row,
         );
     }
 
