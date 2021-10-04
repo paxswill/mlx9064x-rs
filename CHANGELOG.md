@@ -1,5 +1,7 @@
 # Unreleased
 
+# v0.2.0
+
 * Unintended dependency on `alloc` has been removed.
 * T_r can now be specified to account for reflected radiation when emissivity is
   <1.
