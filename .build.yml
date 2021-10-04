@@ -39,10 +39,10 @@ tasks:
       # Ensure all doc comments are well formed (even private ones)
       cargo rustdoc -- \
         --document-private-items \
-        --deny broken_intra_doc_links \
-        --deny private_intra_doc_links \
-        --deny invalid_codeblock_attributes \
-        --deny bare_urls
+        --deny rustdoc::broken_intra_doc_links \
+        --deny rustdoc::private_intra_doc_links \
+        --deny rustdoc::invalid_codeblock_attributes \
+        --deny rustdoc::bare_urls
   - lints: |
       cd mlx9064x
       source $HOME/.cargo/env
