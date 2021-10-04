@@ -66,6 +66,7 @@
 //! from [interleave][AccessPattern::Interleave]).
 
 #![no_std]
+#![allow(clippy::float_cmp)]
 
 #[cfg(not(any(feature = "std", feature = "libm")))]
 compile_error!("Either the 'std' or 'libm' feature must be enabled.");

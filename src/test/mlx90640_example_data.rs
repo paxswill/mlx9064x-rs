@@ -14,6 +14,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::excessive_precision)]
+
 use crate::{mlx90640, MelexisCamera};
 
 /// Raw EEPROM dump
