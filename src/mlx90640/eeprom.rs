@@ -492,6 +492,18 @@ impl<'a, T: 'a> ChessboardIter<'a, T> {
 impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
     type Item = &'a T;
 
+    fn count(self) -> usize {
+        self.size_hint().0
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        let remaining = self.size_hint().0;
+        match remaining {
+            0 => None,
+            _ => self.nth(remaining - 1),
+        }
+    }
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < Mlx90640::NUM_PIXELS {
             let row = self.index / Mlx90640::WIDTH;
@@ -507,7 +519,22 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
             None
         }
     }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        if n > 0 {
+            self.index += n - 1;
+        }
+        self.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = Mlx90640::NUM_PIXELS - self.index;
+        (remaining, Some(remaining))
+    }
 }
+
+impl<'a, T: 'a> iter::ExactSizeIterator for ChessboardIter<'a, T> {}
+impl<'a, T: 'a> iter::FusedIterator for ChessboardIter<'a, T> {}
 
 /// An iterator for the interleaved reading pattern values
 ///
@@ -584,6 +611,28 @@ impl<'a> PixelAccessPatternCompensation<'a> {
 impl<'a> Iterator for PixelAccessPatternCompensation<'a> {
     type Item = Option<&'a f32>;
 
+    fn count(self) -> usize {
+        match self {
+            PixelAccessPatternCompensation::Chess(taker) => taker.count(),
+            PixelAccessPatternCompensation::Interleave { index, .. } => {
+                Mlx90640::NUM_PIXELS - index
+            }
+        }
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        match self {
+            PixelAccessPatternCompensation::Chess(taker) => taker.last(),
+            PixelAccessPatternCompensation::Interleave { index, .. } => {
+                let remaining = Mlx90640::NUM_PIXELS - index;
+                match remaining {
+                    0 => None,
+                    _ => self.nth(remaining - 1),
+                }
+            }
+        }
+    }
+
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             PixelAccessPatternCompensation::Chess(inner) => inner.next(),
@@ -606,7 +655,32 @@ impl<'a> Iterator for PixelAccessPatternCompensation<'a> {
             }
         }
     }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        match self {
+            PixelAccessPatternCompensation::Chess(taker) => taker.nth(n),
+            PixelAccessPatternCompensation::Interleave { index, .. } => {
+                if n > 0 {
+                    *index += n - 1;
+                }
+                self.next()
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            PixelAccessPatternCompensation::Chess(taker) => taker.size_hint(),
+            PixelAccessPatternCompensation::Interleave { index, .. } => {
+                let remaining = Mlx90640::NUM_PIXELS - index;
+                (remaining, Some(remaining))
+            }
+        }
+    }
 }
+
+impl<'a> iter::ExactSizeIterator for PixelAccessPatternCompensation<'a> {}
+impl<'a> iter::FusedIterator for PixelAccessPatternCompensation<'a> {}
 
 /// Split a word into a 6-bit value and a 10-bit value.
 ///
