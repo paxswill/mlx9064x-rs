@@ -143,7 +143,7 @@ pub(crate) fn i16_from_bits(mut bytes: &[u8], num_bits: u8) -> i16 {
     (num << shift_amount) >> shift_amount
 }
 
-/// An iterator that yields [`common::PixelAddressRange`] for interleaved data.
+/// An iterator that yields [`crate::common::PixelAddressRange`] for interleaved data.
 ///
 /// # Generic parameters
 /// * `STRIDE_LENGTH` is the length of the stride in number of addresses.
