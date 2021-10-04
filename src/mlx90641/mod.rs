@@ -11,29 +11,14 @@ pub mod hamming;
 use num_traits::Float;
 
 use core::iter;
+use core::cmp::Ordering;
 
-use crate::common::{Address, MelexisCamera};
+use crate::common::{Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
-use crate::util::{self, Sealed};
+use crate::util::Sealed;
 
 pub use address::RamAddress;
 pub use eeprom::Mlx90641Calibration;
-
-/// Iterator of valid pixel ranges for the MLX90641.
-///
-/// The MLX90641 updates the entire frame at a time, but interleaves the data in memory. This
-/// means the access pattern doesn't really matter, the subpage only changes where to read
-/// from, and every pixel is written to.
-/// The datasheet documents the interleaved access mode, and in that mode pixels alternate
-/// subpages every 32 pixels, but each pixel is present in both subpages. In other words,
-/// starting at 0x0400, there are pixels 0 through 31 for subpage 0. Then there are pixels 0
-/// through 31 for subpage 1. Then pixels 32-63 for subpage 0, and so on.
-type SubpageInterleave = util::SubpageInterleave<
-    // There are two rows of the image per stride
-    { (<Mlx90641 as MelexisCamera>::WIDTH * 2) as u16 },
-    { (<Mlx90641 as MelexisCamera>::HEIGHT / 2) as u16 },
-    { RamAddress::Base as u16 },
->;
 
 /// MLX90641-specific constants and supporting functions.
 ///
@@ -95,6 +80,65 @@ impl MelexisCamera for Mlx90641 {
     const WIDTH: usize = 16;
 
     const NUM_PIXELS: usize = Self::HEIGHT * Self::WIDTH;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SubpageInterleave {
+    stride_count: u16,
+    base_address: u16,
+}
+
+impl SubpageInterleave {
+    /// Length of each section of pixels with a common subpage
+    ///
+    /// The MLX90641 updates the entire frame at a time, but interleaves the data in memory. This
+    /// means the access pattern doesn't really matter, the subpage only changes where to read
+    /// from, but every pixel is written to.
+    /// The datasheet documents the interleaved access mode, and in that mode pixels alternate
+    /// subpages every 32 pixels, but each pixel is present in both subpages. In other words,
+    /// starting at 0x0400, there are pixels 0 through 31 for subpage 0. Then there are pixels 0
+    /// through 31 for subpage 1. Then pixels 32-63 for subpage 0, and so on.
+    // Multiply by two to get the number of bytes.
+    const STRIDE_LENGTH: u16 = 32 * 2;
+
+    /// The beginning of the range of valid pixels.
+    const PIXEL_START_ADDRESS: u16 = RamAddress::Base as u16;
+
+    /// The number of strides in each frame.
+    const NUM_STRIDES: u16 = (Mlx90641::HEIGHT / 2) as u16;
+
+    fn new(subpage: Subpage) -> Self {
+        let starting_address: u16 = match subpage {
+            Subpage::Zero => Self::PIXEL_START_ADDRESS,
+            // We need to divide by two to get the *address* offset
+            Subpage::One => Self::PIXEL_START_ADDRESS + (Self::STRIDE_LENGTH / 2),
+        };
+        Self {
+            stride_count: 0,
+            base_address: starting_address,
+        }
+    }
+}
+
+impl iter::Iterator for SubpageInterleave {
+    type Item = PixelAddressRange;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // There are two frame rows per stride
+        match self.stride_count.cmp(&Self::NUM_STRIDES) {
+            Ordering::Less => {
+                let next_value = PixelAddressRange {
+                    start_address: (self.base_address + self.stride_count * Self::STRIDE_LENGTH)
+                        .into(),
+                    buffer_offset: (self.stride_count * Self::STRIDE_LENGTH) as usize,
+                    length: Self::STRIDE_LENGTH as usize,
+                };
+                self.stride_count += 1;
+                Some(next_value)
+            }
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
-use crate::common::PixelAddressRange;
-use crate::register::Subpage;
 
 /// Define addition and subtraction for address enumerations.
 #[doc(hidden)]
@@ -141,60 +139,6 @@ pub(crate) fn i16_from_bits(mut bytes: &[u8], num_bits: u8) -> i16 {
     };
     let shift_amount = 16 - num_bits;
     (num << shift_amount) >> shift_amount
-}
-
-/// An iterator that yields [`crate::common::PixelAddressRange`] for interleaved data.
-///
-/// # Generic parameters
-/// * `STRIDE_LENGTH` is the length of the stride in number of addresses.
-/// * `NUM_STRIDES` is the number of strides.
-/// * `PIXEL_START_ADDRESS` is the address of the very first pixel in the pixel range.
-#[derive(Clone, Copy, Debug)]
-pub struct SubpageInterleave<
-    const STRIDE_LENGTH: u16,
-    const NUM_STRIDES: u16,
-    const PIXEL_START_ADDRESS: u16,
-> {
-    stride_count: u16,
-    base_address: u16,
-}
-
-impl<const STRIDE_LENGTH: u16, const NUM_STRIDES: u16, const PIXEL_START_ADDRESS: u16>
-    SubpageInterleave<STRIDE_LENGTH, NUM_STRIDES, PIXEL_START_ADDRESS>
-{
-    pub(crate) fn new(subpage: Subpage) -> Self {
-        let starting_address: u16 = match subpage {
-            Subpage::Zero => PIXEL_START_ADDRESS,
-            Subpage::One => PIXEL_START_ADDRESS + STRIDE_LENGTH,
-        };
-        Self {
-            stride_count: 0,
-            base_address: starting_address,
-        }
-    }
-}
-
-impl<const STRIDE_LENGTH: u16, const NUM_STRIDES: u16, const PIXEL_START_ADDRESS: u16>
-    core::iter::Iterator for SubpageInterleave<STRIDE_LENGTH, NUM_STRIDES, PIXEL_START_ADDRESS>
-{
-    type Item = PixelAddressRange;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.stride_count.cmp(&NUM_STRIDES) {
-            core::cmp::Ordering::Less => {
-                let next_value = PixelAddressRange {
-                    start_address: (self.base_address + self.stride_count * STRIDE_LENGTH).into(),
-                    // buffer_offset and length are both counting *bytes*, not addresses so we need
-                    // to multiply them by 2
-                    buffer_offset: (self.stride_count * STRIDE_LENGTH * 2) as usize,
-                    length: (STRIDE_LENGTH * 2) as usize,
-                };
-                self.stride_count += 1;
-                Some(next_value)
-            }
-            _ => None,
-        }
-    }
 }
 
 #[cfg(test)]
