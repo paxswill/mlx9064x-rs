@@ -1,5 +1,7 @@
 # Unreleased
 
+# v0.2.1
+* Fix for two bugs preventing interleave mode from working with the MLX90640.
 # v0.2.0
 
 * Unintended dependency on `alloc` has been removed.
