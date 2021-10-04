@@ -6,7 +6,18 @@
 
 `mlx9064x` is a library for using the MLX90640 and MLX90641 thermal cameras from
 Melexis. It's `no_std`, but these cameras require a fair bit of memory and
-processing power to use fully.
+floating point processing power to use to their fullest extent.
 
-This library is still under development, but the final API will be pretty close
-to the current one.
+## Roadmap
+
+There's a few remaining features/tasks left before I consider this crate "done":
+
+ - [ ] Implement and expose dead pixels. The calibration data marks dead or out
+       of spec pixels. The manufacturer provided library also provides some
+       basic interpolation functions to fill in dead pixels, but I feel that's
+       better handled by a separate crate.
+ - [ ] Simplify access pattern iterators. I feel there's some extra performance
+       as well as a simpler way to handle the "which pixels need to be updated"
+       task that is currently handled by `MelexisCamera::pixels_in_subpage` (not
+       to mention the naming of that function and `pixel_ranges` can be
+       confisuing as to what they're doing).
