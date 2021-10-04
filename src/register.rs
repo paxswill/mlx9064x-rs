@@ -476,7 +476,7 @@ pub enum Subpage {
 /// rates with slower I²C bus speeds. With the read patterns used by the included [`MelexisCamera`
 /// implementations], here are the maximum frame rates for common different bus speeds.
 ///
-/// | Bus Speed | MLX90640 ([Chess]) | MLX 90640 ([Interleaved]) | MLX90641 |
+/// | Bus Speed | MLX90640 ([Chess]) | MLX90640 ([Interleaved]) | MLX90641 |
 /// | --- | --- | --- | --- |
 /// | 100kHz |  4Hz |  8Hz | 16Hz |
 /// | 400kHz | 16Hz | 32Hz | 64Hz |
