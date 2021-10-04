@@ -277,10 +277,9 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
             } else {
                 let new_word = u16::from_be_bytes(data.try_into().unwrap());
                 let (mask_bytes, existing_bytes) = match start_address {
-                    STATUS_REGISTER_ADDRESS => (
-                        STATUS_REGISTER_WRITE_MASK,
-                        *self.status_register.borrow(),
-                    ),
+                    STATUS_REGISTER_ADDRESS => {
+                        (STATUS_REGISTER_WRITE_MASK, *self.status_register.borrow())
+                    }
                     CONTROL_REGISTER_ONE_ADDRESS => (
                         CONTROL_REGISTER_1_WRITE_MASK,
                         *self.control_register.borrow(),
