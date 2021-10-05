@@ -5,6 +5,28 @@
 //!
 #![doc = include_str!("katex.html")]
 //!
+//! There are roughly four major steps to get temperatures for each pixel from the camera.
+//!
+//! 1. Read both per-pixel and per-frame data from the camera over I²C. The pixel data can be
+//!    read using the ranges from [`MelexisCamera::pixel_ranges`], while the per-frame data can be
+//!    read with [`RamData::from_i2c`].
+//! 2. Calculate per-frame values for $K_{gain}$, $V_{DD}$ (using [`delta_v`] and [`v_dd`]), and
+//!    $T_a$ (using [`ambient_temperature`]). The per-pixel calculations
+//!    require a common set of values which are encapsulated within [`CommonIrData`]. That
+//!    structure is [created][CommonIrData::new] using [`RamData`], the specific camera's
+//!    [`CalibrationData`], and
+//!    [`resolution_correction`][MelexisCamera::resolution_correction].
+//! 3. Calculate an "image" from the raw per-pixel values. The datasheets aren't clear what the
+//!    units of this image are, but they do recommend stopping at this step if actual temperatures
+//!    aren't required. [`raw_pixels_to_ir_data`] applies [`per_pixel_v_ir`] over the per-pixel
+//!    data (along with the `CommonIrData` from the previous step) to generate the image.
+//! 4. Calculate the temperature each pixel sees by applying [`per_pixel_temperature`] (via
+//!    [`raw_ir_to_temperatures`]) to the image generated in the previous step.
+//!
+//! [`raw_pixels_to_temperatures`] is a slightly optimized function that applies steps 3 and 4 in
+//! once pass through the input data.
+//!
+//! # Reading the Datasheets
 //! The MLX90640 and MLX90641 datasheets have roughly a third of their pages dedicated to
 //! mathematical formulas, which can be a little intimidating. Fortunately most of the formulas
 //! can be simplified by assuming that treating some raw bits as a signed integer is a "free"
