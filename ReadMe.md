@@ -21,3 +21,8 @@ There's a few remaining features/tasks left before I consider this crate "done":
        task that is currently handled by `MelexisCamera::pixels_in_subpage` (not
        to mention the naming of that function and `pixel_ranges` can be
        confisuing as to what they're doing).
+ - [ ] Implement extended temperature range calculations. Outside of the basic
+       temperature range (between 0 and a configurable upper limit, defaulting
+       to 160 for the MLX90640 and 80 for the MLX90641), extra calculations need
+       to be performed to account for non-linear sensitivity of the camera
+       sensors. Right now only the basic temperature calculation is performed.
