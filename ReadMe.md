@@ -16,7 +16,7 @@ There's a few remaining features/tasks left before I consider this crate "done":
        of spec pixels. The manufacturer provided library also provides some
        basic interpolation functions to fill in dead pixels, but I feel that's
        better handled by a separate crate.
- - [ ] Simplify access pattern iterators. I feel there's some extra performance
+ - [x] Simplify access pattern iterators. I feel there's some extra performance
        as well as a simpler way to handle the "which pixels need to be updated"
        task that is currently handled by `MelexisCamera::pixels_in_subpage` (not
        to mention the naming of that function and `pixel_ranges` can be

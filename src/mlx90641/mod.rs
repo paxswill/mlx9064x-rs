@@ -13,7 +13,7 @@ use num_traits::Float;
 use core::cmp::Ordering;
 use core::iter;
 
-use crate::common::{Address, MelexisCamera, PixelAddressRange};
+use crate::common::{AccessPatternFilter, Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
 use crate::util::Sealed;
 
@@ -31,19 +31,18 @@ impl Sealed for Mlx90641 {}
 
 impl MelexisCamera for Mlx90641 {
     type PixelRangeIterator = SubpageInterleave;
-    type PixelsInSubpageIterator = iter::Take<iter::Repeat<bool>>;
 
     fn pixel_ranges(subpage: Subpage, _access_pattern: AccessPattern) -> Self::PixelRangeIterator {
         // The 90641 updates an entire frame at a time and only vary the data location on subpage
         SubpageInterleave::new(subpage)
     }
 
-    fn pixels_in_subpage(
+    fn filter_by_subpage<I: IntoIterator>(
+        iter: I,
         _subpage: Subpage,
         _access_pattern: AccessPattern,
-    ) -> Self::PixelsInSubpageIterator {
-        // All pixels in the image are valid, each subpage covers all of the pixels.
-        iter::repeat(true).take(Self::NUM_PIXELS)
+    ) -> AccessPatternFilter<I::IntoIter> {
+        AccessPatternFilter::unfiltered(iter)
     }
 
     const T_A_V_BE: Address = Address::new(RamAddress::AmbientTemperatureVoltageBe as u16);
@@ -148,14 +147,25 @@ mod test {
     use super::Mlx90641;
 
     #[test]
-    fn pixels_in_subpage() {
+    fn filter_by_subpage() {
         let mut count = 0;
         // Only testing interleave as chess mode isn't used with the MLX90641
-        let sub0 = Mlx90641::pixels_in_subpage(Subpage::Zero, AccessPattern::Interleave);
-        let sub1 = Mlx90641::pixels_in_subpage(Subpage::One, AccessPattern::Interleave);
-        for (zero, one) in sub0.zip(sub1) {
-            assert_eq!(zero, one, "MLX90641 doesn't vary pixels on subpages");
-            assert!(zero, "Every pixel is valid for MLX90641");
+        let sub0 = Mlx90641::filter_by_subpage(
+            0..Mlx90641::NUM_PIXELS,
+            Subpage::Zero,
+            AccessPattern::Interleave,
+        );
+        let sub1 = Mlx90641::filter_by_subpage(
+            0..Mlx90641::NUM_PIXELS,
+            Subpage::One,
+            AccessPattern::Interleave,
+        );
+        for (expected, actual) in sub0.zip(sub1).enumerate() {
+            assert_eq!(
+                actual.0, actual.1,
+                "MLX90641 doesn't vary pixels on subpages"
+            );
+            assert_eq!(expected, actual.0, "Every pixel is valid for MLX90641");
             count += 1;
         }
         assert_eq!(

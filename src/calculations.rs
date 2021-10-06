@@ -442,14 +442,14 @@ pub fn per_pixel_v_ir(
 /// Celsius.
 ///
 /// The slices `pixel_data` and `destination` cover all of the camera pixels, but only the pixels
-/// belonging to `subpage` are calculated. Determining which pixels belong to which subpage is done
-/// with the `valid_pixels` iterator (see [`MelexisCamera::pixels_in_subpage`] for more details).
+/// belonging to `subpage` are calculated. Filtering out pixels that are not part of this subpage
+/// is done by [`MelexisCamera::filter_by_subpage`].
 ///
 /// The datasheets suggest that stopping at this step (instead of continuing on with calculating
 /// the temperatures of each pixel) can be appropriate if an "image" is all that is required (with
 /// an example use case of machine vision).
 #[allow(clippy::too_many_arguments)]
-pub fn raw_pixels_to_ir_data<'a, Clb, Px>(
+pub fn raw_pixels_to_ir_data<'a, Clb>(
     calibration: &'a Clb,
     emissivity: f32,
     resolution_correction: f32,
@@ -457,12 +457,10 @@ pub fn raw_pixels_to_ir_data<'a, Clb, Px>(
     ram: RamData,
     subpage: Subpage,
     access_pattern: AccessPattern,
-    valid_pixels: &mut Px,
     destination: &mut [f32],
 ) -> f32
 where
     Clb: CalibrationData<'a>,
-    Px: Iterator<Item = bool>,
 {
     // Knock out the values common to all pixels first.
     let common = CommonIrData::new(resolution_correction, emissivity, calibration, &ram);
@@ -486,7 +484,7 @@ where
     let access_mode_compensation = calibration
         .access_pattern_compensation_pixels(access_pattern)
         .map(|o| o.copied());
-    destination
+    let zipped = destination
         .iter_mut()
         // Chunk into two byte segments, for each 16-bit value
         .zip(pixel_data.chunks_exact(2))
@@ -495,10 +493,8 @@ where
         .zip(calibration.offset_reference_pixels(subpage))
         .zip(calibration.k_v_pixels(subpage))
         .zip(calibration.k_ta_pixels(subpage))
-        .zip(access_mode_compensation)
-        //.zip(calibration.access_pattern_compensation_pixels(access_pattern))
-        // filter out the pixels that aren't part of this subpage
-        .filter(|_| valid_pixels.next().unwrap_or_default())
+        .zip(access_mode_compensation);
+    Clb::Camera::filter_by_subpage(zipped, subpage, access_pattern)
         // feeling a little lispy in here with all these parentheses
         .for_each(
             |(
@@ -632,17 +628,16 @@ pub fn per_pixel_temperature(v_ir: f32, alpha: f32, t_ar: f32, k_s_to: f32) -> f
 /// ambient temperature (`t_a`, $T\_a$) needs to be given from the same frame that produced the IR
 /// data.
 #[doc = include_str!("katex.html")]
-pub fn raw_ir_to_temperatures<'a, Clb, Px>(
+pub fn raw_ir_to_temperatures<'a, Clb>(
     calibration: &'a Clb,
     emissivity: f32,
     t_a: f32,
     t_r: Option<f32>,
     subpage: Subpage,
-    valid_pixels: &mut Px,
+    access_pattern: AccessPattern,
     destination: &mut [f32],
 ) where
     Clb: CalibrationData<'a>,
-    Px: Iterator<Item = bool>,
 {
     // TODO: this step could probably be optimized a little bit (if needed) by pushing this
     // calculation to the calibration loading step.
@@ -653,20 +648,17 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
     let alpha_coefficient = sensitivity_correction_coefficient(calibration, t_a);
     let t_r = t_r.unwrap_or_else(|| t_a - Clb::Camera::SELF_HEATING);
     let t_ar = t_ar(t_a, t_r, emissivity);
-
-    destination
+    let zipped = destination
         .iter_mut()
-        .zip(calibration.alpha_pixels(subpage))
-        // filter out the pixels that aren't part of this subpage
-        .filter(|_| valid_pixels.next().unwrap_or_default())
-        .for_each(|(output, alpha)| {
-            let v_ir = *output;
-            let compensated_alpha = match alpha_compensation_pixel {
-                Some(alpha_compensation_pixel) => alpha - alpha_compensation_pixel,
-                None => *alpha,
-            } * alpha_coefficient;
-            *output = per_pixel_temperature(v_ir, compensated_alpha, t_ar, k_s_to_basic);
-        });
+        .zip(calibration.alpha_pixels(subpage));
+    Clb::Camera::filter_by_subpage(zipped, subpage, access_pattern).for_each(|(output, alpha)| {
+        let v_ir = *output;
+        let compensated_alpha = match alpha_compensation_pixel {
+            Some(alpha_compensation_pixel) => alpha - alpha_compensation_pixel,
+            None => *alpha,
+        } * alpha_coefficient;
+        *output = per_pixel_temperature(v_ir, compensated_alpha, t_ar, k_s_to_basic);
+    });
 }
 
 /// Calculate the temperature from all pixels, starting with the raw data from the camera
@@ -674,7 +666,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
 /// This function combines [`raw_pixels_to_ir_data`] and [`raw_ir_to_temperatures`], performing all
 /// per-pixel operations in a single pass.
 #[allow(clippy::too_many_arguments)]
-pub fn raw_pixels_to_temperatures<'a, Clb, Px>(
+pub fn raw_pixels_to_temperatures<'a, Clb>(
     calibration: &'a Clb,
     emissivity: f32,
     t_r: Option<f32>,
@@ -683,12 +675,10 @@ pub fn raw_pixels_to_temperatures<'a, Clb, Px>(
     ram: RamData,
     subpage: Subpage,
     access_pattern: AccessPattern,
-    valid_pixels: &mut Px,
     destination: &mut [f32],
 ) -> f32
 where
     Clb: CalibrationData<'a>,
-    Px: Iterator<Item = bool>,
 {
     // Knock out the values common to all pixels first.
     let common = CommonIrData::new(resolution_correction, emissivity, calibration, &ram);
@@ -721,7 +711,7 @@ where
     let access_mode_compensation = calibration
         .access_pattern_compensation_pixels(access_pattern)
         .map(|o| o.copied());
-    destination
+    let zipped = destination
         .iter_mut()
         // Chunk into two byte segments, for each 16-bit value
         .zip(pixel_data.chunks_exact(2))
@@ -731,9 +721,8 @@ where
         .zip(calibration.k_v_pixels(subpage))
         .zip(calibration.k_ta_pixels(subpage))
         .zip(calibration.alpha_pixels(subpage))
-        .zip(access_mode_compensation)
-        // filter out the pixels that aren't part of this subpage
-        .filter(|_| valid_pixels.next().unwrap_or_default())
+        .zip(access_mode_compensation);
+    Clb::Camera::filter_by_subpage(zipped, subpage, access_pattern)
         // feeling a little lispy in here with all these parentheses
         .for_each(
             |(

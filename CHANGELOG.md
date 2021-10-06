@@ -1,4 +1,25 @@
-# Unreleased
+# Unreleased (v0.3.0)
+
+## In `MelexisCamera`, `pixels_in_subpage()` is replaced by `filter_by_subpage()`
+Instead of an interator of boolean values which can then be used with
+`Iterator::filter()`, `filter_by_subpage()` wraps a provided iterator with a new
+iterator adapter, `AccessPatternFilter`. This adapter allows more efficient
+access by using `Iterator::nth()` to (potentially) skip elements without
+computing them in `Iterator::next()`. To support this change the other
+iterators in this crate now provide their own implementations of `nth()`,
+`count()`, `size_hint()`, and `last()` and implement `ExactSizedIterator` and
+`FusedIterator` when possible.
+
+This change also impacts a number of functions in the `calculations` module:
+
+* `raw_pixels_to_ir_data()`
+* `raw_ir_to_temperatures()`
+* `raw_pixels_to_temperatures()`
+
+Where before these functions took a `valid_pixels` argument, they now use
+`MelexisCamera::filter_by_subpage()` (via `CalibrationData::Camera`) to only
+process pixels in the current subpage. This should also help reduce code size
+with the removal of the `Px` generic parameter to these functions.
 
 # v0.2.1
 * Fix for two bugs preventing interleave mode from working with the MLX90640.

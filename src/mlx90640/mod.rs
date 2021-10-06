@@ -11,7 +11,7 @@ use core::iter;
 #[cfg_attr(feature = "std", allow(unused_imports))]
 use num_traits::Float;
 
-use crate::common::{Address, MelexisCamera, PixelAddressRange};
+use crate::common::{AccessPatternFilter, Address, MelexisCamera, PixelAddressRange};
 use crate::register::{AccessPattern, Subpage};
 use crate::util::Sealed;
 
@@ -29,17 +29,17 @@ impl Sealed for Mlx90640 {}
 
 impl MelexisCamera for Mlx90640 {
     type PixelRangeIterator = Mlx90640Pixels;
-    type PixelsInSubpageIterator = Mlx90640PixelSubpage;
 
     fn pixel_ranges(subpage: Subpage, access_pattern: AccessPattern) -> Self::PixelRangeIterator {
         Mlx90640Pixels::new(subpage, access_pattern)
     }
 
-    fn pixels_in_subpage(
+    fn filter_by_subpage<I: IntoIterator>(
+        iter: I,
         subpage: Subpage,
         access_pattern: AccessPattern,
-    ) -> Self::PixelsInSubpageIterator {
-        Mlx90640PixelSubpage::new(access_pattern, subpage)
+    ) -> AccessPatternFilter<I::IntoIter> {
+        AccessPatternFilter::new(iter, subpage, access_pattern, Self::WIDTH)
     }
 
     //const T_A_V_BE: Address = RamAddress::AmbientTemperatureVoltageBe.into();
@@ -140,64 +140,12 @@ impl iter::Iterator for Mlx90640Pixels {
     }
 }
 
-/// An iterator for determining which pixels are part of the current subpage.
-///
-/// This type is an implementation detail, and should not be relied upon by consumers of this
-/// crate.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Mlx90640PixelSubpage {
-    /// The count of the current pixel.
-    index: usize,
-
-    /// The access pattern being used.
-    access_pattern: AccessPattern,
-
-    /// The subpage (as a number) this sequence is being generated for.
-    subpage_num: usize,
-}
-
-impl Mlx90640PixelSubpage {
-    fn new(access_pattern: AccessPattern, subpage: Subpage) -> Self {
-        Self {
-            index: 0,
-            access_pattern,
-            subpage_num: subpage as usize,
-        }
-    }
-}
-
-impl Iterator for Mlx90640PixelSubpage {
-    type Item = bool;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < Mlx90640::NUM_PIXELS {
-            let row = self.index / Mlx90640::WIDTH;
-            let column = self.index % Mlx90640::WIDTH;
-            self.index += 1;
-            Some(match self.access_pattern {
-                AccessPattern::Chess => {
-                    if self.subpage_num == 0 {
-                        row % 2 == column % 2
-                    } else {
-                        row % 2 != column % 2
-                    }
-                }
-                AccessPattern::Interleave => row % 2 == self.subpage_num,
-            })
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use core::iter::repeat;
-
     use crate::common::PixelAddressRange;
     use crate::{AccessPattern, MelexisCamera, Resolution, Subpage};
 
-    use super::{Mlx90640, Mlx90640PixelSubpage, RamAddress};
+    use super::{Mlx90640, RamAddress};
 
     #[test]
     fn resolution_correction() {
@@ -310,55 +258,5 @@ mod test {
             Mlx90640::pixel_ranges(Subpage::One, AccessPattern::Interleave),
             second_row,
         );
-    }
-
-    #[test]
-    fn pixel_subpage_interleaved() {
-        let seq0 = Mlx90640PixelSubpage::new(AccessPattern::Interleave, Subpage::Zero);
-        let pattern0 = repeat(true)
-            .take(Mlx90640::WIDTH)
-            .chain(repeat(false).take(Mlx90640::WIDTH))
-            .cycle();
-        seq0.zip(pattern0)
-            .enumerate()
-            .for_each(|(index, (seq, expected))| {
-                assert_eq!(seq, expected, "{} is incorrect (pixel {})", seq, index)
-            });
-        let seq1 = Mlx90640PixelSubpage::new(AccessPattern::Interleave, Subpage::One);
-        let pattern1 = repeat(false)
-            .take(Mlx90640::WIDTH)
-            .chain(repeat(true).take(Mlx90640::WIDTH))
-            .cycle();
-        seq1.zip(pattern1)
-            .enumerate()
-            .for_each(|(index, (seq, expected))| {
-                assert_eq!(seq, expected, "{} is incorrect (pixel {})", seq, index)
-            });
-    }
-
-    #[test]
-    fn pixel_subpage_chess() {
-        let subpages = [Subpage::Zero, Subpage::One];
-        let zero_first = subpages.iter().copied().cycle().take(Mlx90640::WIDTH);
-        let one_first = subpages
-            .iter()
-            .copied()
-            .cycle()
-            .skip(1)
-            .take(Mlx90640::WIDTH);
-        let chessboard = zero_first
-            .chain(one_first)
-            .cycle()
-            .take(Mlx90640::NUM_PIXELS);
-
-        let seq0 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::Zero);
-        let seq1 = Mlx90640PixelSubpage::new(AccessPattern::Chess, Subpage::One);
-
-        let all = chessboard.zip(seq0.zip(seq1));
-
-        for (subpage, (seq0, seq1)) in all {
-            assert_eq!(subpage == Subpage::Zero, seq0);
-            assert_eq!(subpage == Subpage::One, seq1);
-        }
     }
 }

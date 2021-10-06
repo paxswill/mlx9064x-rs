@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
+use core::iter;
 
 /// Define addition and subtraction for address enumerations.
 #[doc(hidden)]
@@ -141,9 +142,115 @@ pub(crate) fn i16_from_bits(mut bytes: &[u8], num_bits: u8) -> i16 {
     (num << shift_amount) >> shift_amount
 }
 
+/// An iterator adapter that only yields elements in a chess board pattern.
+// This is hidden as it's an implementation detail for `AccessPatternFilter`.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ByDiagonals<I: Iterator> {
+    index: usize,
+    width: usize,
+    next_nth: usize,
+    source: I,
+}
+
+impl<I: Iterator> ByDiagonals<I> {
+    /// Create an iterator that yields elements in a chess board pattern.
+    ///
+    /// `is_even` controls if the elements yielded are the black spaces (`is_even == true`) or the
+    /// white spaces (`is_even == false`).
+    pub(crate) fn new<S>(source: S, is_even: bool, width: usize) -> Self
+    where
+        S: IntoIterator<IntoIter = I>,
+    {
+        let index = (!is_even) as usize;
+        Self {
+            index,
+            width,
+            next_nth: index,
+            source: source.into_iter(),
+        }
+    }
+
+    fn update_next_nth(&mut self) {
+        let column = self.index % self.width;
+        // The last element of each row is also the first element of the next row, which means
+        // from the second to last element we need to jump over *two* elements. Also a reminder
+        // that nth() is 0-indexed.
+        self.next_nth = match self.width.saturating_sub(column) {
+            // Handle the case where self.width is less than 2 (with 0)
+            0 | 1 => 0,
+            2 => 2,
+            _ => 1,
+        };
+        self.index += self.next_nth + 1;
+    }
+}
+
+impl<I: Iterator> Iterator for ByDiagonals<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let n = self.next_nth;
+        self.update_next_nth();
+        self.source.nth(n)
+    }
+}
+
+impl<I> iter::FusedIterator for ByDiagonals<I> where I: iter::FusedIterator {}
+
+/// An iterator adapter that only yields items that are in every n-th row.
+///
+/// The number of rows that are interlaced is controlled by the `NUM_INTERLACED` parameter.
+// This is hidden as it's an implementation detail for `AccessPatternFilter`.
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct Interlaced<I: Iterator, const NUM_INTERLACED: usize> {
+    index: usize,
+    width: usize,
+    source: iter::Skip<I>,
+    interlaced_row_index: usize,
+}
+
+impl<I: Iterator, const NUM_INTERLACED: usize> Interlaced<I, NUM_INTERLACED> {
+    /// Create an iterator that yields elements by row but only every `n`th row.
+    pub(crate) fn new<S>(source: S, n: usize, width: usize) -> Self
+    where
+        S: IntoIterator<IntoIter = I>,
+    {
+        let index = n * width;
+        Self {
+            index,
+            width,
+            // Skip the first few elements if needed.
+            source: source.into_iter().skip(index),
+            interlaced_row_index: n,
+        }
+    }
+}
+
+impl<I: Iterator, const NUM_INTERLACED: usize> Iterator for Interlaced<I, NUM_INTERLACED> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let row = self.index / self.width;
+        let n = if row % NUM_INTERLACED == self.interlaced_row_index {
+            0
+        } else {
+            self.width * (NUM_INTERLACED - 1)
+        };
+        self.index += n + 1;
+        self.source.nth(n)
+    }
+}
+
+impl<I: Iterator, const NUM_INTERLACED: usize> iter::FusedIterator for Interlaced<I, NUM_INTERLACED> where
+    iter::Skip<I>: iter::FusedIterator
+{
+}
+
 #[cfg(test)]
 mod test {
-    use super::Buffer;
+    use super::{Buffer, ByDiagonals, Interlaced};
 
     #[test]
     fn buffer_advance() {
@@ -214,5 +321,82 @@ mod test {
         // Now check that upper bits get ignored properly
         assert_eq!(super::i16_from_bits(b"\xf0\xff", 8), -1);
         assert_eq!(super::i16_from_bits(b"\xf3\xff", 10), -1);
+    }
+
+    #[test]
+    fn by_diagonal() {
+        #[rustfmt::skip]
+        let source = [
+            0, 1, 0, 1, 0, 1,
+            1, 0, 1, 0, 1, 0,
+            0, 1, 0, 1, 0, 1,
+            1, 0, 1, 0, 1, 0,
+        ];
+        let diagonal0 = ByDiagonals::new(source.iter().copied(), true, 6);
+        let diagonal1 = ByDiagonals::new(source.iter().copied(), false, 6);
+        let mut count = 0;
+        for (index, val) in diagonal0.enumerate() {
+            assert_eq!(val, 0, "index: {}", index);
+            count += 1;
+        }
+        assert_eq!(count, source.len() / 2);
+        let mut count = 0;
+        for (index, val) in diagonal1.enumerate() {
+            assert_eq!(val, 1, "index: {}", index);
+            count += 1;
+        }
+        assert_eq!(count, source.len() / 2);
+    }
+
+    #[test]
+    fn interlaced_2_wide_2_rows() {
+        #[rustfmt::skip]
+        let source = [
+            0, 0,
+            1, 1,
+            0, 0,
+            1, 1,
+            0, 0,
+            1, 1,
+            0, 0,
+            1, 1,
+        ];
+        for n in 0..2 {
+            let interlaced = Interlaced::<_, 2>::new(source.iter(), n, 2).copied();
+            let mut count = 0;
+            for (index, val) in interlaced.enumerate() {
+                assert_eq!(val, n, "index: {}", index);
+                count += 1;
+            }
+            assert_eq!(count, source.len() / 2);
+        }
+    }
+
+    #[test]
+    fn interlaced_2_wide_3_rows() {
+        #[rustfmt::skip]
+        let source = [
+            0, 0,
+            1, 1,
+            2, 2,
+            0, 0,
+            1, 1,
+            2, 2,
+            0, 0,
+            1, 1,
+            2, 2,
+            0, 0,
+            1, 1,
+            2, 2,
+        ];
+        for n in 0..3 {
+            let interlaced = Interlaced::<_, 3>::new(source.iter(), n, 2).copied();
+            let mut count = 0;
+            for (index, val) in interlaced.enumerate() {
+                assert_eq!(val, n, "index: {}", index);
+                count += 1;
+            }
+            assert_eq!(count, source.len() / 3);
+        }
     }
 }

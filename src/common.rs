@@ -6,7 +6,7 @@ use core::fmt;
 use arrayvec::ArrayVec;
 
 use crate::register::{AccessPattern, Subpage};
-use crate::util::Sealed;
+use crate::util::{self, Sealed};
 
 /// A trait for types that can be created by reading data from an I²C device.
 pub trait FromI2C<I2C> {
@@ -235,8 +235,6 @@ impl From<Address> for usize {
 pub trait MelexisCamera: Sealed {
     type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
 
-    type PixelsInSubpageIterator: IntoIterator<Item = bool>;
-
     /// Ranges of memory that should be read to load a subpage's data from RAM.
     ///
     /// Different cameras with different [access patterns][crate::AccessPattern] have different optimal
@@ -246,20 +244,15 @@ pub trait MelexisCamera: Sealed {
     /// The returned iterator will yield at most [`Self::HEIGHT`] items.
     fn pixel_ranges(subpage: Subpage, access_pattern: AccessPattern) -> Self::PixelRangeIterator;
 
-    /// Returns an iterator of booleans for whether or not a pixel should be considered for a
-    /// subpage.
+    /// Filter the given iterator, skipping items that are not present in this subpage.
     ///
-    /// This is a complement to [`pixel_ranges`][MelexisCamera::pixel_ranges], in that it lets an
-    /// implementation load extra memory when it's more efficient but then ignore the pixels for
-    /// later computations.
-    ///
-    /// The iterator should return true when the pixel is part of this subpage, and false when it is
-    /// not. The ordering is rows, then columns. The iterator must not be infinite; it should only
-    /// yield as many values as there are pixels.
-    fn pixels_in_subpage(
+    /// The elements must be in row-major order, and the iterator must not be infinite. Items are
+    /// skipped using [`Iterator::nth`].
+    fn filter_by_subpage<I: IntoIterator>(
+        iter: I,
         subpage: Subpage,
         access_pattern: AccessPattern,
-    ) -> Self::PixelsInSubpageIterator;
+    ) -> AccessPatternFilter<I::IntoIter>;
 
     /// The address for $T_{a_{V_{BE}}}$.
     const T_A_V_BE: Address;
@@ -351,5 +344,65 @@ fn alpha_corr_n(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32
             (1f32 + k_s_to[n - 1] * f32::from(ct[n] - ct[n - 1]))
                 * alpha_corr_n(n - 1, basic_range, ct, k_s_to)
         }
+    }
+}
+
+/// An iterator adapter that skips pixels that are not in a given subpage.
+///
+/// This type is created using the [`MelexisCamera::pixels_in_subpage_new`] function.
+#[derive(Clone, Debug)]
+pub enum AccessPatternFilter<I: Iterator> {
+    #[doc(hidden)]
+    Chess(util::ByDiagonals<I>),
+    #[doc(hidden)]
+    Interlaced(util::Interlaced<I, 2>),
+    #[doc(hidden)]
+    Unfiltered(I),
+}
+
+impl<I: Iterator> AccessPatternFilter<I> {
+    pub(crate) fn new<S>(
+        source: S,
+        subpage: Subpage,
+        access_pattern: AccessPattern,
+        width: usize,
+    ) -> Self
+    where
+        S: IntoIterator<IntoIter = I>,
+    {
+        let source = source.into_iter();
+        match access_pattern {
+            AccessPattern::Chess => Self::Chess(util::ByDiagonals::new(
+                source,
+                subpage == Subpage::Zero,
+                width,
+            )),
+            AccessPattern::Interleave => {
+                Self::Interlaced(util::Interlaced::new(source, subpage as usize, width))
+            }
+        }
+    }
+
+    pub(crate) fn unfiltered<S>(source: S) -> Self
+    where
+        S: IntoIterator<IntoIter = I>,
+    {
+        Self::Unfiltered(source.into_iter())
+    }
+
+    fn inner_mut(&mut self) -> &mut dyn Iterator<Item = I::Item> {
+        match self {
+            AccessPatternFilter::Chess(inner) => inner,
+            AccessPatternFilter::Interlaced(inner) => inner,
+            AccessPatternFilter::Unfiltered(inner) => inner,
+        }
+    }
+}
+
+impl<I: Iterator> Iterator for AccessPatternFilter<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner_mut().next()
     }
 }

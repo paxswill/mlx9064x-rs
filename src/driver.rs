@@ -409,7 +409,6 @@ where
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
-        let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
         let t_a = raw_pixels_to_ir_data(
             &self.calibration,
             self.emissivity,
@@ -418,7 +417,6 @@ where
             ram,
             subpage,
             self.access_pattern,
-            &mut valid_pixels,
             destination,
         );
         self.ambient_temperature = Some(t_a);
@@ -431,7 +429,6 @@ where
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
-        let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
         let t_a = raw_pixels_to_temperatures(
             &self.calibration,
             self.emissivity,
@@ -441,7 +438,6 @@ where
             ram,
             subpage,
             self.access_pattern,
-            &mut valid_pixels,
             destination,
         );
         self.ambient_temperature = Some(t_a);
@@ -476,7 +472,6 @@ where
         let mut status_register: StatusRegister = read_register(bus, address)?;
         if status_register.new_data() {
             let subpage = status_register.last_updated_subpage();
-            let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
             let ram = read_ram::<Cam, I2C, HEIGHT>(
                 bus,
                 address,
@@ -493,7 +488,6 @@ where
                 ram,
                 subpage,
                 self.access_pattern,
-                &mut valid_pixels,
                 destination,
             );
             self.ambient_temperature = Some(ambient_temperature);
