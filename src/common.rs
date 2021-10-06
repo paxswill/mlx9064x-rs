@@ -349,7 +349,7 @@ fn alpha_corr_n(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32
 
 /// An iterator adapter that skips pixels that are not in a given subpage.
 ///
-/// This type is created using the [`MelexisCamera::pixels_in_subpage_new`] function.
+/// This type is created using the [`MelexisCamera::filter_by_subpage`] function.
 #[derive(Clone, Debug)]
 pub enum AccessPatternFilter<I: Iterator> {
     #[doc(hidden)]

@@ -171,7 +171,6 @@ mod test {
         assert_eq!(
             count,
             Mlx90641::NUM_PIXELS,
-            "Ever pixels needs a value for pixels_in_subpage()"
         );
     }
 
