@@ -20,21 +20,33 @@ tasks:
         --default-toolchain nightly \
         --quiet \
         -y
+      source $HOME/.cargo/env
+      rustup component add clippy
+      rustup component add rustfmt
+  - check_nono: |
+      source $HOME/.cargo/env
+      RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-nono
+      cd mlx9064x
+      cargo nono check --no-default-features
   - test: |
       cd mlx9064x
       source $HOME/.cargo/env
       # Test with and without std
       cargo +nightly test
-      cargo +nightly test --no-default-features
-  # TODO: Add clippy and rustfmt lints. When doing that, make sure to add those
-  # components to the rustup task above.
+      cargo +nightly test --no-default-features --features libm
   - test-docs: |
       cd mlx9064x
       source $HOME/.cargo/env
       # Ensure all doc comments are well formed (even private ones)
       cargo +nightly rustdoc -- \
         --document-private-items \
-        --deny broken_intra_doc_links \
-        --deny private_intra_doc_links \
-        --deny invalid_codeblock_attributes \
-        --deny bare_urls
+        --deny rustdoc::broken_intra_doc_links \
+        --deny rustdoc::private_intra_doc_links \
+        --deny rustdoc::invalid_codeblock_attributes \
+        --deny rustdoc::bare_urls
+  - lints: |
+      cd mlx9064x
+      source $HOME/.cargo/env
+      cargo clippy -- -D warnings
+      cargo clippy --tests -- -D warnings
+      cargo fmt -- --check

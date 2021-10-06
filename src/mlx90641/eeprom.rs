@@ -2,35 +2,34 @@
 // Copyright © 2021 Will Ross
 
 //! MLX90641-specific EEPROM handling
-
+use core::iter;
 use core::slice;
 
 use arrayvec::ArrayVec;
-use bytes::Buf;
 use embedded_hal::blocking::i2c;
+
+// Various floating point operations are not implemented in core, so we use libm to provide them as
+// needed.
+#[cfg_attr(feature = "std", allow(unused_imports))]
+use num_traits::Float;
 
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
-use crate::register::Subpage;
-use crate::util::i16_from_bits;
+use crate::register::{AccessPattern, Subpage};
+use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
 use super::hamming::validate_checksum;
-use super::NUM_PIXELS;
+use super::Mlx90641;
 
 /// The number of corner temperatures an MLX90641 has.
 const NUM_CORNER_TEMPERATURES: usize = 8;
 
-/// The basic temperature range.
-///
-/// See discussion on [CalibrationData::basic_range] for more details.
-// It's defined as 2 in the datasheet(well, 3, but 1-indexed, so 2 when 0-indexed).
-const BASIC_TEMPERATURE_RANGE: usize = 2;
-
 /// The word size of the MLX90641 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
 
+/// MLX90641-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90641Calibration {
     k_v_dd: i16,
@@ -59,19 +58,19 @@ pub struct Mlx90641Calibration {
 
     emissivity: Option<f32>,
 
-    alpha_pixels: [f32; NUM_PIXELS],
+    alpha_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     alpha_cp: f32,
 
-    offset_reference_pixels: [[i16; NUM_PIXELS]; 2],
+    offset_reference_pixels: [[i16; <Self as CalibrationData>::Camera::NUM_PIXELS]; 2],
 
     offset_reference_cp: i16,
 
-    k_v_pixels: [f32; NUM_PIXELS],
+    k_v_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     k_v_cp: f32,
 
-    k_ta_pixels: [f32; NUM_PIXELS],
+    k_ta_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     k_ta_cp: f32,
 
@@ -79,8 +78,7 @@ pub struct Mlx90641Calibration {
 }
 
 impl Mlx90641Calibration {
-    pub fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
-        let mut buf = data;
+    pub fn from_data(mut buf: &[u8]) -> Result<Self, LibraryError> {
         // Much like the MLX90640 implementation, this is a mess of a function as the data is
         // scattered across the EEPROM.
         // Skip the first 16 words, they're not used for calibration data
@@ -117,8 +115,9 @@ impl Mlx90641Calibration {
         let k_v_cp = Self::get_scaled_cp_constant(&mut buf)?;
         let (resolution, tgc) = Self::get_resolution_with_tgc(&mut buf)?;
         let (corner_temperatures, k_s_to) = Self::get_temperature_range_data(&mut buf)?;
+        let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
-            alpha_correction_coefficients(BASIC_TEMPERATURE_RANGE, &corner_temperatures, &k_s_to);
+            alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // TODO: false pixel detection
         let pixel_offsets_0 = Self::get_pixel_offsets(&mut buf, offset_scale, offset_average)?;
         let alpha_pixels = Self::get_pixel_sensitivities(&mut buf, alpha_reference)?;
@@ -169,7 +168,8 @@ impl Mlx90641Calibration {
     /// on for three words, starting at 0x2419. Each scale value also need to be added to 20.
     /// $\textit{Row}\_{\textit{max}}$ is stored as an unsigned 11-bit integer, with one value per
     /// word, starting at 0x241C.
-    fn get_sensitivity_reference<B: Buf>(buf: &mut B) -> Result<[f32; 6], LibraryError> {
+    #[doc = include_str!("../katex.html")]
+    fn get_sensitivity_reference(buf: &mut &[u8]) -> Result<[f32; 6], LibraryError> {
         let mut scales: ArrayVec<u8, 6> = ArrayVec::new();
         for _ in 0..3 {
             let (first_scale, second_scale) = get_6_5_split(buf)?;
@@ -188,7 +188,7 @@ impl Mlx90641Calibration {
     ///
     /// These two values are stored in one word in the EEPROM, with the upper five bits being the
     /// scale, and the lower six bits the unscaled value.
-    fn get_scaled_cp_constant<B: Buf>(buf: &mut B) -> Result<f32, LibraryError> {
+    fn get_scaled_cp_constant(buf: &mut &[u8]) -> Result<f32, LibraryError> {
         let word = get_hamming_u16(buf)?;
         let raw_scale = (word & 0x07C0) >> 6;
         let value_bytes = (word & 0x003F).to_be_bytes();
@@ -203,7 +203,7 @@ impl Mlx90641Calibration {
     /// The values are returned as a tuple, with the resolution first, followed by the thermal
     /// gradient compensation (TGC) value. The TGC is pre-scaled, and needs no further calculations
     /// applied.
-    fn get_resolution_with_tgc<B: Buf>(buf: &mut B) -> Result<(u8, f32), LibraryError> {
+    fn get_resolution_with_tgc(buf: &mut &[u8]) -> Result<(u8, f32), LibraryError> {
         let word = get_hamming_u16(buf)?;
         let resolution = (word & 0x0600) >> 9;
         let tgc_bytes = (word & 0x01FF).to_be_bytes();
@@ -214,8 +214,8 @@ impl Mlx90641Calibration {
     }
 
     /// Extract the corner temperatures and $K\_{s\_{T\_o}}$ values
-    fn get_temperature_range_data<B: Buf>(
-        buf: &mut B,
+    fn get_temperature_range_data(
+        buf: &mut &[u8],
     ) -> Result<
         (
             [i16; NUM_CORNER_TEMPERATURES],
@@ -247,12 +247,12 @@ impl Mlx90641Calibration {
         Ok((corner_temperatures, k_s_to))
     }
 
-    fn get_pixel_offsets<B: Buf>(
-        buf: &mut B,
+    fn get_pixel_offsets(
+        buf: &mut &[u8],
         offset_scale: u8,
         offset_average: i16,
-    ) -> Result<[i16; NUM_PIXELS], LibraryError> {
-        let mut pixel_offsets = [0i16; NUM_PIXELS];
+    ) -> Result<[i16; <Self as CalibrationData>::Camera::NUM_PIXELS], LibraryError> {
+        let mut pixel_offsets = [0i16; <Self as CalibrationData>::Camera::NUM_PIXELS];
         let scale = 2i16.pow(offset_scale as u32);
         for pixel_offset in pixel_offsets.iter_mut() {
             // NOTE: There's a chance this will overflow, if offset_scale is too large
@@ -263,11 +263,11 @@ impl Mlx90641Calibration {
         Ok(pixel_offsets)
     }
 
-    fn get_pixel_sensitivities<B: Buf>(
-        buf: &mut B,
+    fn get_pixel_sensitivities(
+        buf: &mut &[u8],
         alpha_reference: [f32; 6],
-    ) -> Result<[f32; NUM_PIXELS], LibraryError> {
-        let mut pixel_sensitivites = [0f32; NUM_PIXELS];
+    ) -> Result<[f32; <Self as CalibrationData>::Camera::NUM_PIXELS], LibraryError> {
+        let mut pixel_sensitivites = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
         // The sensitivity reference value is shared across a band of 32 pixels, so chunk the
         // pixels by that, and xip the reference value in
         let referenced_rows = alpha_reference
@@ -284,15 +284,21 @@ impl Mlx90641Calibration {
         Ok(pixel_sensitivites)
     }
 
-    fn get_pixel_temperature_constants<B: Buf>(
-        buf: &mut B,
+    fn get_pixel_temperature_constants(
+        buf: &mut &[u8],
         k_ta_average: i16,
         k_ta_scales: (u8, u8),
         k_v_average: i16,
         k_v_scales: (u8, u8),
-    ) -> Result<([f32; NUM_PIXELS], [f32; NUM_PIXELS]), LibraryError> {
-        let mut k_ta_pixels = [0f32; NUM_PIXELS];
-        let mut k_v_pixels = [0f32; NUM_PIXELS];
+    ) -> Result<
+        (
+            [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
+            [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
+        ),
+        LibraryError,
+    > {
+        let mut k_ta_pixels = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
+        let mut k_v_pixels = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
         let k_ta_scale1 = f32::from(k_ta_scales.0).exp2();
         let k_ta_scale2 = f32::from(k_ta_scales.1).exp2();
         let k_v_scale1 = f32::from(k_v_scales.0).exp2();
@@ -332,6 +338,8 @@ where
 }
 
 impl CalibrationData for Mlx90641Calibration {
+    type Camera = Mlx90641;
+
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
@@ -345,10 +353,6 @@ impl CalibrationData for Mlx90641Calibration {
     expose_member!(&corner_temperatures, [i16]);
     expose_member!(&k_s_to, [f32]);
     expose_member!(&alpha_correction, [f32]);
-
-    fn basic_range(&self) -> usize {
-        BASIC_TEMPERATURE_RANGE
-    }
 
     expose_member!(emissivity, Option<f32>);
 
@@ -396,16 +400,34 @@ impl CalibrationData for Mlx90641Calibration {
     }
 
     expose_member!(temperature_gradient_coefficient, Option<f32>);
+
+    type AccessPatternCompensation<'a> = iter::Take<iter::Repeat<Option<&'a f32>>>;
+
+    /// The MLX90641 doesn't use access pattern compensation.
+    fn access_pattern_compensation_pixels<'a>(
+        &'a self,
+        _access_pattern: AccessPattern,
+    ) -> Self::AccessPatternCompensation<'a> {
+        iter::repeat(None).take(Self::Camera::NUM_PIXELS)
+    }
+
+    fn access_pattern_compensation_cp(
+        &self,
+        _subpage: Subpage,
+        _access_pattern: AccessPattern,
+    ) -> Option<f32> {
+        None
+    }
 }
 
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
-fn get_hamming_u16<B: Buf>(buf: &mut B) -> Result<u16, LibraryError> {
+fn get_hamming_u16(buf: &mut &[u8]) -> Result<u16, LibraryError> {
     let codeword = buf.get_u16();
     validate_checksum(codeword)
 }
 
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
-fn get_hamming_i16<B: Buf>(buf: &mut B) -> Result<i16, LibraryError> {
+fn get_hamming_i16(buf: &mut &[u8]) -> Result<i16, LibraryError> {
     let bytes = get_hamming_u16(buf)?.to_be_bytes();
     Ok(i16_from_bits(&bytes[..], 11))
 }
@@ -415,7 +437,7 @@ fn get_hamming_i16<B: Buf>(buf: &mut B) -> Result<i16, LibraryError> {
 /// Since the MLX90641 EEPROM has a Hamming code in the upper five bits, it can only fit eleven
 /// bits of data in each word. Some values need 16-bits though, so they're split across two words.
 /// This function combines the bits and returns two bytes.
-fn get_combined_word<B: Buf>(buf: &mut B) -> Result<[u8; 2], LibraryError> {
+fn get_combined_word(buf: &mut &[u8]) -> Result<[u8; 2], LibraryError> {
     let upper = get_hamming_u16(buf)?;
     let lower = get_hamming_u16(buf)?;
     // TODO: Follow up with Melexis to see if the high word could have more than 5 bits set
@@ -424,7 +446,7 @@ fn get_combined_word<B: Buf>(buf: &mut B) -> Result<[u8; 2], LibraryError> {
 }
 
 /// Split a word into two values: the upper six bits and the lower five bits
-fn get_6_5_split<B: Buf>(buf: &mut B) -> Result<(u8, u8), LibraryError> {
+fn get_6_5_split(buf: &mut &[u8]) -> Result<(u8, u8), LibraryError> {
     let word = get_hamming_u16(buf)?;
     let upper = (word & 0x07E0) >> 5;
     let lower = word & 0x001F;
@@ -432,24 +454,24 @@ fn get_6_5_split<B: Buf>(buf: &mut B) -> Result<(u8, u8), LibraryError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::excessive_precision)]
 pub(crate) mod test {
     use arrayvec::ArrayVec;
-    use bytes::Buf;
 
-    use crate::common::CalibrationData;
+    use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
-    use crate::mlx90641::{NUM_PIXELS, WIDTH};
-    use crate::register::Subpage;
+    use crate::mlx90641::Mlx90641;
+    use crate::register::{AccessPattern, Subpage};
     use crate::test::mlx90641_datasheet_eeprom;
 
     use super::Mlx90641Calibration;
 
     // The example is testing pixel (6, 9), so (5, 8) zero-indexed
-    const TEST_PIXEL_INDEX: usize = 5 * WIDTH + 8;
+    const TEST_PIXEL_INDEX: usize = 5 * Mlx90641::WIDTH + 8;
 
     pub(crate) fn datasheet_eeprom() -> Mlx90641Calibration {
-        let mut eeprom_bytes = mlx90641_datasheet_eeprom();
-        Mlx90641Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
+        let eeprom_bytes = mlx90641_datasheet_eeprom();
+        Mlx90641Calibration::from_data(&eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
     #[test]
@@ -461,7 +483,7 @@ pub(crate) mod test {
         assert_eq!(super::get_hamming_u16(&mut buf), Ok(0x0658));
         assert_eq!(super::get_hamming_u16(&mut buf), Ok(0x07FF));
         assert_eq!(super::get_hamming_u16(&mut buf), Ok(0x01e6));
-        assert_eq!(buf.remaining(), 0);
+        assert_eq!(buf.len(), 0);
     }
 
     #[test]
@@ -472,7 +494,7 @@ pub(crate) mod test {
         let mut buf = &data[..];
         assert_eq!(super::get_hamming_i16(&mut buf), Ok(-424));
         assert_eq!(super::get_hamming_i16(&mut buf), Ok(486));
-        assert_eq!(buf.remaining(), 0);
+        assert_eq!(buf.len(), 0);
     }
 
     #[test]
@@ -498,7 +520,7 @@ pub(crate) mod test {
             super::get_combined_word(&mut buf),
             Ok(65417u16.to_be_bytes())
         );
-        assert_eq!(buf.remaining(), 0);
+        assert_eq!(buf.len(), 0);
     }
 
     /// Check that it can even create itself from a buffer.
@@ -557,9 +579,9 @@ pub(crate) mod test {
     #[test]
     fn pixel_offset() {
         let e = datasheet_eeprom();
-        let offsets0: ArrayVec<i16, NUM_PIXELS> =
+        let offsets0: ArrayVec<i16, { Mlx90641::NUM_PIXELS }> =
             e.offset_reference_pixels(Subpage::Zero).copied().collect();
-        let offsets1: ArrayVec<i16, NUM_PIXELS> =
+        let offsets1: ArrayVec<i16, { Mlx90641::NUM_PIXELS }> =
             e.offset_reference_pixels(Subpage::One).copied().collect();
         assert_eq!(offsets0[TEST_PIXEL_INDEX], -673);
         // NOTE: This is a larger departure from the datasheet's worked example. At least as of
@@ -572,9 +594,9 @@ pub(crate) mod test {
     #[test]
     fn k_ta_pixels() {
         let e = datasheet_eeprom();
-        let k_ta_pixels0: ArrayVec<f32, NUM_PIXELS> =
+        let k_ta_pixels0: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
             e.k_ta_pixels(Subpage::Zero).copied().collect();
-        let k_ta_pixels1: ArrayVec<f32, NUM_PIXELS> =
+        let k_ta_pixels1: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
             e.k_ta_pixels(Subpage::One).copied().collect();
         // Subpage is ignored for K_Ta
         assert_eq!(k_ta_pixels0, k_ta_pixels1);
@@ -586,8 +608,10 @@ pub(crate) mod test {
     #[test]
     fn k_v_pixels() {
         let e = datasheet_eeprom();
-        let k_v_pixels0: ArrayVec<f32, NUM_PIXELS> = e.k_v_pixels(Subpage::Zero).copied().collect();
-        let k_v_pixels1: ArrayVec<f32, NUM_PIXELS> = e.k_v_pixels(Subpage::One).copied().collect();
+        let k_v_pixels0: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.k_v_pixels(Subpage::Zero).copied().collect();
+        let k_v_pixels1: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.k_v_pixels(Subpage::One).copied().collect();
         // Subpage is ignored for K_V
         assert_eq!(k_v_pixels0, k_v_pixels1);
         assert_eq!(k_v_pixels0[TEST_PIXEL_INDEX], 0.3251953);
@@ -651,8 +675,10 @@ pub(crate) mod test {
     #[test]
     fn pixel_alpha() {
         let e = datasheet_eeprom();
-        let alpha0: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::One).copied().collect();
-        let alpha1: ArrayVec<f32, NUM_PIXELS> = e.alpha_pixels(Subpage::Zero).copied().collect();
+        let alpha0: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.alpha_pixels(Subpage::One).copied().collect();
+        let alpha1: ArrayVec<f32, { Mlx90641::NUM_PIXELS }> =
+            e.alpha_pixels(Subpage::Zero).copied().collect();
         // MLX90641 doesn't vary alpha on subpage
         assert_eq!(alpha0, alpha1);
         let pixel = alpha0[TEST_PIXEL_INDEX];
@@ -685,5 +711,32 @@ pub(crate) mod test {
         assert_eq!(ct[5], 200);
         assert_eq!(ct[6], 400);
         assert_eq!(ct[7], 600);
+    }
+
+    #[test]
+    fn access_pattern_compensation() {
+        let e = datasheet_eeprom();
+        for compensation in e.access_pattern_compensation_pixels(AccessPattern::Interleave) {
+            assert!(
+                compensation.is_none(),
+                "There is no access pattern compensation for the 90641"
+            );
+        }
+        assert_eq!(
+            e.access_pattern_compensation_pixels(AccessPattern::Interleave)
+                .count(),
+            Mlx90641::NUM_PIXELS
+        );
+        for compensation in e.access_pattern_compensation_pixels(AccessPattern::Chess) {
+            assert!(
+                compensation.is_none(),
+                "There is no access pattern compensation for the 90641"
+            );
+        }
+        assert_eq!(
+            e.access_pattern_compensation_pixels(AccessPattern::Chess)
+                .count(),
+            Mlx90641::NUM_PIXELS
+        );
     }
 }

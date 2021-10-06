@@ -1,86 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
 //! Common functionality between MLX90640 and MLX90641 cameras.
-//!
-//! At first glance, the datasheets for these modules can be pretty intimidating, with nearly half
-//! the document taken up by pages of formulas. After reading through them though, it becomes
-//! pretty clear that the formulas are primarily performing manual conversion to signed integers
-//! and other bit twiddling that can be written much more clearly. Here's a bit of a decoder ring
-//! for some of the patterns:
-//!
-//! * If you see a line similar to
-//!   >  If K<sub>Foo</sub> &gt; *(2<sup>n</sup> - 1)* → K<sub>Foo</sub> = K<sub>Foo</sub> - *2<sup>n + 1</sup>*
-//!
-//!   It is converting an unsigned integer to a signed one. The *italicized* portions in the quote
-//!   are typically expanded, so instead of *2<sup>7</sup>&nbsp;-&nbsp;1* and *2<sup>8</sup* you'll
-//!   see 127 and 256.
-//! * Masking a value off with a logical AND, followed by a division by a power of 2. The division
-//!   can be easier to read as a right-shift by whatever power of two.
-//! * The datasheets are inconsistent between each other and within themselves whether to write
-//!   something as "Pix<sub>Foo</sub>(i, j)" or "Foo<sub>pix</sub>(i, j)".
-//!
-//! And a glossary:
-//! # Glossary
-//! <dl>
-//! <dt>
-//! α, alpha
-//! </dt><dd>
-//! Sensitivity coefficient
-//! </dd>
-//! <dt>
-//! CP
-//! </dt><dd>
-//! Compensation pixel
-//! </dd>
-//! <dt>
-//! ε, emissivity
-//! </dt><dd>
-//! This is a bit beyond a glossary entry, but basically how much IR radiation a surface emits
-//! relative to its temperature.
-//! </dd>
-//! <dt>
-//! K
-//! </dt><dd>
-//! Prefix for constants.
-//! </dd>
-//! <dt>
-//! PTAT
-//! </dt><dd>
-//! Proportional to ambient temperature
-//! </dd>
-//! <dt>
-//! T<sub>a</sub>
-//! </dt><dd>
-//! Ambient temperature
-//! </dd>
-//! <dt>
-//! T<sub>a<sub>0</sub></sub>
-//! </dt><dd>
-//! Ambient temperature reference, 25.0 ℃. If it looks like 0, it's probably "o" as this value is
-//! really only used in one place.
-//! </dd>
-//! <dt>
-//! T<sub>o</sub>
-//! </dt><dd>
-//! Object temperature, meaning the temperature an individual pixel has detected for an object.
-//! </dd>
-//! <dt>
-//! V<sub>DD</sub>
-//! </dt><dd>
-//! Pixel supply voltage
-//! </dd>
-//! <dt>
-//! V<sub>DD<sub>25</sub></sub>
-//! </dt><dd>
-//! Pixel supply voltage reference at 25.0 ℃
-//! </dd>
-//! </dl>
 use core::fmt;
 
 use arrayvec::ArrayVec;
 
 use crate::register::{AccessPattern, Subpage};
+use crate::util::Sealed;
 
+/// A trait for types that can be created by reading data from an I²C device.
 pub trait FromI2C<I2C> {
     type Error;
     type Ok;
@@ -98,18 +26,22 @@ pub trait FromI2C<I2C> {
 /// variables used in the formulas in the datasheet. Most users of this library can make use fo the
 /// provided implementations, but if you're trying to minimize memory usage or tweak performance
 /// for a specific use case, this might be a way to do it.
+#[doc = include_str!("katex.html")]
 pub trait CalibrationData {
-    /// Pixel supply voltage constant (K<sub>V<sub>DD</sub></sub>).
+    /// The camera model this caliberation data is for.
+    type Camera: MelexisCamera;
+
+    /// Pixel supply voltage constant ($K_{V_{DD}}$).
     fn k_v_dd(&self) -> i16;
 
-    /// Constant for pixel supply voltage at 25℃ (V<sub>DD<sub>25</sub></sub>).
+    /// Constant for pixel supply voltage at 25℃ ($K_{V_{DD_{25}}}$).
     fn v_dd_25(&self) -> i16;
 
     /// ADC resolution this camera was calibrated at.
     // TODO: Should this return `Resolution`?
     fn resolution(&self) -> u8;
 
-    /// Pixel supply voltage (V<sub>DD<sub>0</sub></sub>).
+    /// Pixel supply voltage ($K_{DD_0}$).
     ///
     /// This is the voltage supplied to the device, and should be 3.3V for the MLX90640 and
     /// MLX90641. The default implementation is hardcoded to return `3.3f32`, but if there's a
@@ -118,22 +50,22 @@ pub trait CalibrationData {
         3.3f32
     }
 
-    /// Voltage proportional to ambient temperature constant (K<sub>V<sub>PTAT</sub></sub>).
+    /// Voltage proportional to ambient temperature constant ($K_{V_{PTAT}}$).
     fn k_v_ptat(&self) -> f32;
 
-    /// Temperature proportional to ambient temperature constant (K<sub>T<sub>PTAT</sub></sub>).
+    /// Temperature proportional to ambient temperature constant ($K_{T_{PTAT}}$).
     fn k_t_ptat(&self) -> f32;
 
-    /// Voltage proportional to ambient temperature at 25℃ (V<sub>PTAT<sub>25</sub></sub>).
+    /// Voltage proportional to ambient temperature at 25℃ ($V_{PTAT_{25}}$).
     fn v_ptat_25(&self) -> f32;
 
-    /// Sensitivity proportional to ambient temperature (α<sub>PTAT</sub>).
+    /// Sensitivity proportional to ambient temperature ($\alpha_{PTAT}$).
     fn alpha_ptat(&self) -> f32;
 
     /// The gain constant. Usually written as <var>GAIN</var> in the datasheets.
     fn gain(&self) -> f32;
 
-    /// Sensitivity constant for ambient temperature (K<sub>S<sub>T<sub>a</sub></sub></sub>).
+    /// Sensitivity constant for ambient temperature ($K_{S_{T_{a}}}$).
     fn k_s_ta(&self) -> f32;
 
     /// A slice of the "corner temperatures".
@@ -143,19 +75,19 @@ pub trait CalibrationData {
     /// aware of the difference.
     fn corner_temperatures(&self) -> &[i16];
 
-    /// Constant for the object temperature sensitivity (K<sub>s<sub>T<sub>o</sub>(n)</sub></sub>)
+    /// Constant for the object temperature sensitivity ($K_{s_{T_{o}N}}$)
     /// depending on the temperature range.
     ///
     /// This is a slight variance from the datasheet's nomenclature. In the symbol above,
-    /// <var>n</sub> is the index of the temperature range, which the datasheet normally just
-    /// writes out (ex: K<sub>S<sub>T<sub>o</sub>1</sub></sub> through how every many temperature
+    /// <var>N</var> is the index of the temperature range, which the datasheet normally just
+    /// writes out (ex: $K_{S_{T_{o}1}}$ through how every many temperature
     /// ranges the camera has).
     ///
     /// This method returns a slice of values equal in length to
     /// [`corner_temperatures`](CalibrationData::corner_temperatures).
     fn k_s_to(&self) -> &[f32];
 
-    /// Temperature range sensitivity correction (α<sub>correction</sub>(n))
+    /// Temperature range sensitivity correction ($\alpha_{\text{correction}_{N}}$)
     ///
     /// Like [`k_s_to`], the name of this method is slightly different that the naming in the
     /// datasheet. Also like `k_s_to`, this method returns a slice of values with a length equal to
@@ -164,15 +96,6 @@ pub trait CalibrationData {
     ///
     /// [`k_s_to`]: CalibrationData::k_s_to
     fn alpha_correction(&self) -> &[f32];
-
-    /// The index of the basic temperature range.
-    ///
-    /// Temperature ranges (delimited by the control temperatures) outside of the basic range
-    /// are "extended temperature ranges" and require extra processing for accuracy. The datasheets
-    /// don't give a generic definition of the basic range, but for this library it is defined as
-    /// the temperature range with α<sub>correction</sub>(r) = 1. Also note that this library uses
-    /// 0-indexing as opposed to the datasheets that use 1-indexing.
-    fn basic_range(&self) -> usize;
 
     /// The emissivity stored on the device.
     ///
@@ -185,7 +108,7 @@ pub trait CalibrationData {
     type OffsetReferenceIterator<'a>: Iterator<Item = &'a i16>;
 
     /// An iterator over the per-pixel offset reference values for the given subpage
-    /// (Offset<sub>reference</sub>(i, j)).
+    /// ($\text{Offset}_\text{reference}(i, j)$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -193,12 +116,12 @@ pub trait CalibrationData {
     fn offset_reference_pixels<'a>(&'a self, subpage: Subpage) -> Self::OffsetReferenceIterator<'a>;
 
     /// The offset reference value for the compensation pixel corresponding to the given subpage
-    /// (Offset<sub>reference<sub>CP</sub></sub>).
+    /// ($\text{Offset}\_{\text{reference}\_{CP}}$).
     fn offset_reference_cp(&self, subpage: Subpage) -> i16;
 
     type AlphaIterator<'a>: Iterator<Item = &'a f32>;
 
-    /// An iterator over the per-pixel sensitivity calibration values (α<sub>pixel</sub>(i, j)).
+    /// An iterator over the per-pixel sensitivity calibration values ($\alpha_{pixel}(i, j)$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -206,12 +129,12 @@ pub trait CalibrationData {
     fn alpha_pixels<'a>(&'a self, subpage: Subpage) -> Self::AlphaIterator<'a>;
 
     /// The sensitivity calibration value for the compensation pixel for the given subpage
-    /// (α<sub>CP</sub>).
+    /// ($\alpha_{CP}$).
     fn alpha_cp(&self, subpage: Subpage) -> f32;
 
     type KvIterator<'a>: Iterator<Item = &'a f32>;
 
-    /// An iterator over the per-pixel voltage calibration constants (K<sub>V<sub>pixel</sub></sub>).
+    /// An iterator over the per-pixel voltage calibration constants ($K_{V_{pixel}}$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -219,12 +142,12 @@ pub trait CalibrationData {
     fn k_v_pixels<'a>(&'a self, subpage: Subpage) -> Self::KvIterator<'a>;
 
     /// The voltage calibration constant for the compensation pixel for the given subpage
-    /// (K<sub>V<sub>CP</sub></sub>).
+    /// ($K_{V_{CP}}$).
     fn k_v_cp(&self, subpage: Subpage) -> f32;
 
     type KtaIterator<'a>: Iterator<Item = &'a f32>;
 
-    /// The per pixel ambient temperature calibration constants (K<sub>T<sub>a</sub>pixel</sub>).
+    /// The per pixel ambient temperature calibration constants ($K_{T_{a}pixel}$).
     ///
     /// The iterator must yield pixels by row, then by columns, with the rows increasing from left
     /// to right and the columns increasing from top to bottom. The iterator must yield *all*
@@ -232,19 +155,47 @@ pub trait CalibrationData {
     fn k_ta_pixels<'a>(&'a self, subpage: Subpage) -> Self::KtaIterator<'a>;
 
     /// The ambient temperature calibration constant for the compensation pixel for the given
-    /// subpage (K<sub>T<sub>a</sub>CP</sub>).
+    /// subpage ($K_{T_{a}CP}$).
     fn k_ta_cp(&self, subpage: Subpage) -> f32;
 
-    /// Temperature gradient coefficient (TGC).
+    /// Temperature gradient coefficient (<var>TGC</var>).
     ///
     /// Some devices do not support a TGC (it can also be disabled manually on other devices).
     fn temperature_gradient_coefficient(&self) -> Option<f32>;
+
+    type AccessPatternCompensation<'a>: Iterator<Item = Option<&'a f32>>;
+
+    /// A sequence of per-pixel correction values that are added to the pixel gain value.
+    ///
+    /// The MLX90640 can be used in interleaved mode, but for optimal performance a correction
+    /// needs to be applied. This value is summed with the pixel gain value and reference offset
+    /// (the reference offset being scaled relative to the temperature difference).
+    fn access_pattern_compensation_pixels<'a>(
+        &'a self,
+        access_pattern: AccessPattern,
+    ) -> Self::AccessPatternCompensation<'a>;
+
+    /// Equivalent to [`Self::access_pattern_compensation_pixels`] for compensation pixels.
+    fn access_pattern_compensation_cp(
+        &self,
+        subpage: Subpage,
+        access_pattern: AccessPattern,
+    ) -> Option<f32>;
 }
 /// Marker newtype for addresses accessible over I<sup>2</sup>C.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Address(u16);
 
 impl Address {
+    /// Wrap the given address in an `Address`.
+    ///
+    /// This function is intended to be used in const contexts, in other cases the
+    /// [`From`][core::convert::From]/[`TryFrom`][core::convert::TryFrom] implementations are
+    /// probably easier to use.
+    pub const fn new(address: u16) -> Self {
+        Self(address)
+    }
+
     pub(crate) fn as_bytes(&self) -> [u8; 2] {
         self.0.to_be_bytes()
     }
@@ -258,7 +209,7 @@ impl fmt::Debug for Address {
 
 impl From<u16> for Address {
     fn from(raw_address: u16) -> Self {
-        Self(raw_address)
+        Self::new(raw_address)
     }
 }
 
@@ -274,8 +225,14 @@ impl From<Address> for usize {
     }
 }
 
-/// Define common addresses accessible within the camera's RAM.
-pub trait MelexisCamera {
+/// Define common constants specific to a camera model.
+///
+/// The values from this trait are common between all cameras of a single model, and do not depend
+/// on the calibration values from a specific camera.
+///
+/// This is a sealed trait, and can only be implemented by types defined within this crate.
+#[doc = include_str!("katex.html")]
+pub trait MelexisCamera: Sealed {
     type PixelRangeIterator: IntoIterator<Item = PixelAddressRange>;
 
     type PixelsInSubpageIterator: IntoIterator<Item = bool>;
@@ -284,7 +241,9 @@ pub trait MelexisCamera {
     ///
     /// Different cameras with different [access patterns][crate::AccessPattern] have different optimal
     /// ways of loading data from RAM. In some cases loading by row and then ignoring half the data
-    /// may be appropriate, in other loading individual pixels may be best.
+    /// may be appropriate, in other loading individual pixels may be more efficient.
+    ///
+    /// The returned iterator will yield at most [`Self::HEIGHT`] items.
     fn pixel_ranges(subpage: Subpage, access_pattern: AccessPattern) -> Self::PixelRangeIterator;
 
     /// Returns an iterator of booleans for whether or not a pixel should be considered for a
@@ -302,28 +261,59 @@ pub trait MelexisCamera {
         access_pattern: AccessPattern,
     ) -> Self::PixelsInSubpageIterator;
 
-    /// The address for T<sub>a<sub>V<sub>BE</sub></sub></sub>.
-    fn t_a_v_be() -> Address;
+    /// The address for $T_{a_{V_{BE}}}$.
+    const T_A_V_BE: Address;
 
-    /// The address for T<sub>a<sub>PTAT</sub></sub>
-    fn t_a_ptat() -> Address;
+    /// The address for $T_{a_{PTAT}}$.
+    const T_A_PTAT: Address;
 
     /// The address of the compensation pixel for the given subpage.
     fn compensation_pixel(subpage: Subpage) -> Address;
 
     /// The address of the current gain.
-    fn gain() -> Address;
+    const GAIN: Address;
 
-    /// The address for V<sub>DD<sub>pixel</sub></sub>.
-    fn v_dd_pixel() -> Address;
+    /// The address for $V_{DD_{pixel}}$.
+    const V_DD_PIXEL: Address;
 
     /// Calculate the ADC resolution correction factor
     fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32;
+
+    /// The index of the basic temperature range.
+    ///
+    /// Temperature ranges (delimited by the control temperatures) outside of the basic range
+    /// are "extended temperature ranges" and require extra processing for accuracy. The datasheets
+    /// don't give a generic definition of the basic range, but for this library it is defined as
+    /// the temperature range with α<sub>correction</sub>(r) = 1. Also note that this library uses
+    /// 0-indexing as opposed to the datasheets that use 1-indexing.
+    const BASIC_TEMPERATURE_RANGE: usize;
+
+    /// The expected amount of self-heating for this camera.
+    ///
+    /// In normal operation the camera generates some heat. If $T_r$ is not available, it
+    /// can be calculated by subtracting this value from $T_a$.
+    const SELF_HEATING: f32;
+
+    /// The height of the thermal image in pixels.
+    const HEIGHT: usize;
+
+    /// The width of the thermal image in pixels.
+    const WIDTH: usize;
+
+    /// The total number of pixels in the thermal image.
+    const NUM_PIXELS: usize;
 }
 
+/// A range of camera memory.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PixelAddressRange {
+    /// The address of memory to start reading from.
     pub(crate) start_address: Address,
+    /// The offset of this range of pixels in the larger image.
+    pub(crate) buffer_offset: usize,
+    /// The number of bytes in this range of pixels.
+    ///
+    /// Remember that each pixel is *two* bytes.
     pub(crate) length: usize,
 }
 

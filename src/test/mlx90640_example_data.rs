@@ -14,12 +14,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mlx90640::NUM_PIXELS;
+#![allow(clippy::excessive_precision)]
+
+use crate::{mlx90640, MelexisCamera};
 
 /// Raw EEPROM dump
 ///
 /// As given on the "Input data" sheet of the example data spreadsheet, on row 4.
-pub const EEPROM_DATA: &'static [u8] = b"\
+pub const EEPROM_DATA: &[u8] = b"\
     \x00\xAE\x49\x9A\x00\x00\x20\x61\x00\x05\x03\x20\x03\xE0\x17\x10\
     \xA2\x24\x01\x85\x04\x99\x00\x00\x19\x01\x00\x00\x00\x00\xB5\x33\
     \x42\x10\xFF\xC2\x02\x02\x02\x02\xF2\x02\xF1\xF2\xD1\xE1\xAF\xC0\
@@ -141,7 +143,7 @@ pub const OFFSET_CP: [i16; 2] = [-69, -65];
 pub const CORNER_TEMPERATURES: [i16; 4] = [-40, 0, 300, 500];
 pub const K_S_TO: [f32; 4] = [-0.000200f32; 4];
 
-pub const ALPHA_PIXELS: [f32; NUM_PIXELS] = [
+pub const ALPHA_PIXELS: [f32; mlx90640::Mlx90640::NUM_PIXELS] = [
     0.0000000364125298802,
     0.0000000368781911675,
     0.0000000379259290639,
@@ -912,7 +914,7 @@ pub const ALPHA_PIXELS: [f32; NUM_PIXELS] = [
     0.0000000287291186396,
 ];
 
-pub const OFFSET_REFERENCE_PIXELS: [i16; NUM_PIXELS] = [
+pub const OFFSET_REFERENCE_PIXELS: [i16; mlx90640::Mlx90640::NUM_PIXELS] = [
     -54, -56, -50, -60, -50, -56, -48, -60, -49, -57, -48, -61, -49, -59, -48, -63, -46, -59, -48,
     -65, -49, -61, -49, -66, -47, -64, -50, -69, -53, -66, -51, -75, -61, -64, -65, -61, -57, -63,
     -63, -61, -56, -63, -63, -62, -56, -65, -63, -64, -53, -65, -63, -65, -55, -66, -63, -66, -53,
@@ -956,7 +958,7 @@ pub const OFFSET_REFERENCE_PIXELS: [i16; NUM_PIXELS] = [
     -76, -89, -87, -90, -80, -90, -87, -93,
 ];
 
-pub const K_TA_PIXELS: [f32; NUM_PIXELS] = [
+pub const K_TA_PIXELS: [f32; mlx90640::Mlx90640::NUM_PIXELS] = [
     0.00671387, 0.00646973, 0.00720215, 0.00598145, 0.00671387, 0.00598145, 0.00671387, 0.00598145,
     0.00671387, 0.00598145, 0.00671387, 0.00598145, 0.00671387, 0.00598145, 0.00671387, 0.00598145,
     0.00671387, 0.00598145, 0.00720215, 0.00598145, 0.00671387, 0.00646973, 0.00720215, 0.00598145,
@@ -1055,7 +1057,7 @@ pub const K_TA_PIXELS: [f32; NUM_PIXELS] = [
     0.00732422, 0.00634766, 0.00634766, 0.00634766, 0.00683594, 0.00634766, 0.00634766, 0.00634766,
 ];
 
-pub const K_V_PIXELS: [f32; NUM_PIXELS] = [
+pub const K_V_PIXELS: [f32; mlx90640::Mlx90640::NUM_PIXELS] = [
     0.43750000, 0.37500000, 0.43750000, 0.37500000, 0.43750000, 0.37500000, 0.43750000, 0.37500000,
     0.43750000, 0.37500000, 0.43750000, 0.37500000, 0.43750000, 0.37500000, 0.43750000, 0.37500000,
     0.43750000, 0.37500000, 0.43750000, 0.37500000, 0.43750000, 0.37500000, 0.43750000, 0.37500000,
@@ -1375,7 +1377,7 @@ pub const FRAME_1_STATUS_REGISTER: &[u8] = b"\x00\x01";
 pub const CONTROL_REGISTER: &[u8] = b"\x19\x01";
 
 // This covers the temperatures after both frames have been processed
-pub const TEMPERATURES: [f32; NUM_PIXELS] = [
+pub const TEMPERATURES: [f32; mlx90640::Mlx90640::NUM_PIXELS] = [
     28.711, 27.792, 28.178, 28.268, 28.313, 28.450, 28.631, 28.353, 28.295, 28.221, 28.586, 28.024,
     28.336, 28.298, 28.683, 27.972, 28.248, 28.537, 28.573, 28.238, 29.127, 28.777, 28.629, 28.172,
     29.070, 28.718, 28.894, 28.509, 28.883, 29.076, 29.687, 29.163, 28.942, 28.618, 28.332, 28.134,

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
-use crate::mlx90641;
+use crate::{mlx90641, MelexisCamera};
 
-/// The size of the EEPROM for the MLX990640 and MLX909641 in bytes.
+/// The size of the EEPROM for the MLX990640 and MLX90641 in bytes.
 ///
 /// Both cameras (MLX90640 and MLX90641) have the same size EEPROM. 0x273F is the last address in
 /// the EEPROM, so add one to that to include it, while 0x2400 is the first address. Each address
@@ -12,7 +12,7 @@ pub(crate) const EEPROM_LENGTH: usize = (0x2740 - 0x2400) * 2;
 /// Example MLX90640 EEPROM data from the datasheet (from the worked example).
 // Each line is 8 bytes. The first two lines are empty, as that data is ignored for calibration
 // purposes. The next six lines are the shared calibration data.
-const MLX90640_EEPROM_HEADER: &'static [u8] = b"\
+const MLX90640_EEPROM_HEADER: &[u8] = b"\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x42\x10\xff\xbb\x02\x02\xf2\x02\xf2\xf2\xe2\xe2\xd1\xe1\xb1\xd1\
@@ -22,24 +22,23 @@ const MLX90640_EEPROM_HEADER: &'static [u8] = b"\
     \x18\xef\x2f\xf1\x59\x52\x9d\x68\x54\x54\x09\x94\x69\x56\x53\x54\
     \x23\x63\xe4\x46\xfb\xb5\x04\x4b\xf0\x20\x97\x97\x97\x97\x28\x89";
 
-/// Create a buffer with the example MLX909640 EEPROM data.
+/// Create a buffer with the example MLX90640 EEPROM data.
 pub(crate) fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     // Create the EEPROM data by starting with the header and then filling in the rest with the
     // pixel used in the worked example from the datasheet.
     let pixel_data = b"\x08\xa0";
     let mut eeprom_data = [0u8; EEPROM_LENGTH];
-    let header_slice = &MLX90640_EEPROM_HEADER[..];
-    eeprom_data[..header_slice.len()].copy_from_slice(header_slice);
-    eeprom_data[header_slice.len()..]
+    eeprom_data[..MLX90640_EEPROM_HEADER.len()].copy_from_slice(MLX90640_EEPROM_HEADER);
+    eeprom_data[MLX90640_EEPROM_HEADER.len()..]
         .iter_mut()
         .zip(pixel_data.iter().copied().cycle())
         .for_each(|(eeprom_byte, pixel_byte)| *eeprom_byte = pixel_byte);
     eeprom_data
 }
 
-/// Example MLX9909641 EEPROM data from the datasheet.
+/// Example MLX90641 EEPROM data from the datasheet.
 // Same structure as MLX90640_EEPROM_HEADER.
-const MLX90641_EEPROM_HEADER: &'static [u8] = b"\
+const MLX90641_EEPROM_HEADER: &[u8] = b"\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
     \x00\x00\xb7\xe8\xd0\x16\x00\x00\x00\x00\xc2\xfd\x1a\x43\xca\x9a\
@@ -60,11 +59,10 @@ pub(crate) fn mlx90641_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     // sensitivity for each pixel, then a combined K_ta and K_v for each pixel, then offsets for
     // subpage 1 for each pixel.
     let mut eeprom_data = [0u8; EEPROM_LENGTH];
-    let header_slice = &MLX90641_EEPROM_HEADER[..];
-    eeprom_data[..header_slice.len()].copy_from_slice(header_slice);
-    let mut offset = header_slice.len();
+    eeprom_data[..MLX90641_EEPROM_HEADER.len()].copy_from_slice(MLX90641_EEPROM_HEADER);
+    let mut offset = MLX90641_EEPROM_HEADER.len();
     // Multiply by two to get number of bytes
-    let pixel_data_length = mlx90641::NUM_PIXELS * 2;
+    let pixel_data_length = mlx90641::Mlx90641::NUM_PIXELS * 2;
     for single_pixel_data in [offset_0, sensitivity, k_ta_with_k_v, offset_1] {
         eeprom_data[offset..(offset + pixel_data_length)]
             .iter_mut()

@@ -1,29 +1,3 @@
-// This is a no-good-terrible hack that adds some HTML to the generated docs, but also doesn't
-// break using `cargo doc` as it only applies to this crate.
-// This technique attributed to Mara Bos, as shown at
-// https://github.com/m-ou-se/rust-horrible-katex-hack
-#![doc(html_favicon_url = r#"">
-<!-- Use KaTeX for rendering mathematical formulas -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.13.13/dist/katex.min.css" integrity="sha384-RZU/ijkSsFbcmivfdRBQDtwuwVqK7GMOw6IMvKyeWL2K5UAlyp6WonmB8m7Jd0Hn" crossorigin="anonymous">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.13.13/dist/katex.min.js" integrity="sha384-pK1WpvzWVBQiP0/GjnvRxV4mOb0oxFuyRxJlk6vVw146n3egcN5C925NCP7a7BY8" crossorigin="anonymous"></script>
-<!-- automatically render KaTeX -->
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.13.13/dist/contrib/auto-render.min.js" integrity="sha384-vZTG03m+2yp6N6BNi5iM4rW4oIwk5DfcNdFfxkk9ZWpDriOkXX8voJBFrAO7MpVl" crossorigin="anonymous"></script>
-<script>
-    document.addEventListener("DOMContentLoaded", function() {
-        renderMathInElement(document.body, {
-            delimiters: [
-                { left: "$$", right: "$$", display: true },
-                { left: "$", right: "$", display: false },
-                { left: "\\begin{align*}", right: "\\end{align*}", display: true },
-                { left: "\\begin{alignat*}", right: "\\end{alignat*}", display: true },
-            ],
-            macros: {
-                "\\eeprom": "\\text{EE}[\\text{#1}]",
-            },
-        });
-    });
-</script>"#)]
-
 //! A pure-Rust library for accessing the MLX90640 and MLX90641 (eventually!) thermal cameras over
 //! I²C.
 //!
@@ -84,36 +58,26 @@
 //! types available in the [`mlx90640`] and [`mlx90641`] modules.
 //!
 //! # Subpages and Access Patterns
-//! One of the key differences between these cameras and other common thermal cameras is that not
-//! all of the image is updated at once. The imaging area is divided into two [subpages][Subpage],
-//! each being updated in turn. The pixels are split into subpages depending on the current [access
-//! pattern][AccessPattern]. In chess board mode, the pixels alternate subpages in both the X and
-//! Y axes, resulting in a chess or checker board-like pattern:
-//! ```text
-//! 0 1 0 1 0 1 0 1
-//! 1 0 1 0 1 0 1 0
-//! 0 1 0 1 0 1 0 1
-//! 1 0 1 0 1 0 1 0
-//! ```
-//! The other access mode interleaves each row, so pixels will alternate subpages only on the Y
-//! axis. This is also referred to as "TV" mode in the manufacturer's datasheet.
-//! ```text
-//! 0 0 0 0 0 0 0 0
-//! 1 1 1 1 1 1 1 1
-//! 0 0 0 0 0 0 0 0
-//! 1 1 1 1 1 1 1 1
-//! ```
-//! The default mode is different between these two cameras, and the datasheet either strongly
-//! advises against changing the access mode (90640), or doesn't mention the impact of changing the
-//! access mode at all (90641).
-//!
+//! A significant difference between these Melexis cameras and other common thermal cameras is how
+//! the Melexis cameras update their image data. Each frame, one [subpage][Subpage] of data is
+//! updated. For the MLX90640 each subpage covers half of the pixels, and the [access
+//! pattern][AccessPattern] determines how the pixels are divided between the subpages. The
+//! MLX90641's subpages cover *all* of the pixels (and the access pattern should *not* be changed
+//! from [interleave][AccessPattern::Interleave]).
+
+#![feature(generic_associated_types)]
 
 #![no_std]
-#![feature(generic_associated_types)]
+#![allow(clippy::float_cmp)]
+
+#[cfg(not(any(feature = "std", feature = "libm")))]
+compile_error!("Either the 'std' or 'libm' feature must be enabled.");
 
 pub mod calculations;
 pub mod common;
+#[doc(hidden)]
 pub mod driver;
+#[doc(hidden)]
 pub mod error;
 pub mod mlx90640;
 pub mod mlx90641;
@@ -122,25 +86,29 @@ pub mod register;
 mod test;
 mod util;
 
-pub use common::{Address, CalibrationData};
+pub use common::{Address, CalibrationData, MelexisCamera};
+#[doc(inline)]
 pub use driver::CameraDriver;
-pub use error::Error;
+#[doc(inline)]
+pub use error::{Error, LibraryError};
 pub use register::*;
 
+/// High-level MLX90640 driver.
 pub type Mlx90640Driver<I2C> = CameraDriver<
     mlx90640::Mlx90640,
     mlx90640::Mlx90640Calibration,
     I2C,
-    { mlx90640::HEIGHT },
-    { mlx90640::WIDTH },
-    { mlx90640::NUM_PIXELS * 2 },
+    { mlx90640::Mlx90640::HEIGHT },
+    { mlx90640::Mlx90640::WIDTH },
+    { mlx90640::Mlx90640::NUM_PIXELS * 2 },
 >;
 
+/// High-level MLX90641 driver.
 pub type Mlx90641Driver<I2C> = CameraDriver<
     mlx90641::Mlx90641,
     mlx90641::Mlx90641Calibration,
     I2C,
-    { mlx90641::HEIGHT },
-    { mlx90641::WIDTH },
-    { mlx90641::NUM_PIXELS * 2 },
+    { mlx90641::Mlx90641::HEIGHT },
+    { mlx90641::Mlx90641::WIDTH },
+    { mlx90641::Mlx90641::NUM_PIXELS * 2 },
 >;

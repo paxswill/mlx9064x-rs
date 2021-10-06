@@ -1,5 +1,32 @@
 # Unreleased
 
+# v0.2.1
+* Fix for two bugs preventing interleave mode from working with the MLX90640.
+# v0.2.0
+
+* Unintended dependency on `alloc` has been removed.
+* T_r can now be specified to account for reflected radiation when emissivity is
+  <1.
+* The estimated self heating method for determining T_r is more accurate on 641s
+  (they self-heat less, ~5 degrees compared to ~8 for the 640).
+* Multiple functions on `MelexisCamera` are now associated constants.
+* Image size constants (`HEIGHT`, `WIDTH`, `NUM_PIXELS`) are now on the
+  `MelexisCamera` trait instead of free constants in the specific camera module.
+* The `address_enum_ops` and `expose_member` macros are no longer part of the
+  documented API.
+* The `MelexisCamera` trait is now sealed.
+* Interleave mode compensation for the MLX90640 is now implemented.
+
+# v0.1.1
+
+* Register access methods have been exposed for the low-level API.
+* Implemented `From` for `FrameRate` to `Duration`.
+* Reduced the number of I2C operations performed for common tasks.
+
+# v0.1.0
+
+* Improved/fixed MLX90641 support.
+
 # v0.0.4
 
 * Bug fixes to 90640 EEPROM handling

@@ -118,7 +118,7 @@ impl From<EepromAddress> for Address {
     }
 }
 
-/// Significant RAM addresses for the MLX909641.
+/// Significant RAM addresses for the MLX90641.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, IntoPrimitive, TryFromPrimitive)]
 #[repr(u16)]
 pub enum RamAddress {

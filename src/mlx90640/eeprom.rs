@@ -1,31 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
+use core::iter;
 use core::slice;
 
 use arrayvec::ArrayVec;
-use bytes::Buf;
 use embedded_hal::blocking::i2c;
+
+// Various floating point operations are not implemented in core, so we use libm to provide them as
+// needed.
+#[cfg_attr(feature = "std", allow(unused_imports))]
+use num_traits::Float;
 
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
-use crate::register::Subpage;
-use crate::util::i16_from_bits;
+use crate::register::{AccessPattern, Subpage};
+use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
-use super::{NUM_PIXELS, WIDTH};
+use super::Mlx90640;
 
 /// The number of corner temperatures an MLX90640 has.
 const NUM_CORNER_TEMPERATURES: usize = 4;
 
-/// The basic temperature range. See discussion on [CalibrationData::basic_range] for more details.
-// It's defined as 1 in the datasheet(well, 2, but 1-indexed, so 1 when 0-indexed).
-const BASIC_TEMPERATURE_RANGE: usize = 1;
-
 /// The word size of the MLX90640 in terms of 8-bit bytes.
 const WORD_SIZE: usize = 16 / 8;
 
-/// MLX990640-specific calibration processing.
+/// MLX90640-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640Calibration {
     k_v_dd: i16,
@@ -52,11 +53,11 @@ pub struct Mlx90640Calibration {
 
     alpha_correction: [f32; NUM_CORNER_TEMPERATURES],
 
-    alpha_pixels: [f32; NUM_PIXELS],
+    alpha_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     alpha_cp: [f32; 2],
 
-    offset_reference_pixels: [i16; NUM_PIXELS],
+    offset_reference_pixels: [i16; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     offset_reference_cp: [i16; 2],
 
@@ -64,11 +65,15 @@ pub struct Mlx90640Calibration {
 
     k_v_cp: f32,
 
-    k_ta_pixels: [f32; NUM_PIXELS],
+    k_ta_pixels: [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
 
     k_ta_cp: f32,
 
     temperature_gradient_coefficient: Option<f32>,
+
+    interleave_correction_pixels: [f32; 6],
+
+    interleave_correction_cp: f32,
 }
 
 impl Mlx90640Calibration {
@@ -79,16 +84,19 @@ impl Mlx90640Calibration {
     /// and remainder scaling factors.
     /// The calculated array, the remainder scaling factor, and the value occupying the 4 bits
     /// preceding the scaling factors are returned (in that order).
-    fn calculate_bulk_pixel_calibration<B: Buf>(data: &mut B) -> ([i16; NUM_PIXELS], u8, u8) {
+    fn calculate_bulk_pixel_calibration(
+        data: &mut &[u8],
+    ) -> ([i16; <Self as CalibrationData>::Camera::NUM_PIXELS], u8, u8) {
         let (extra_value, row_scale, column_scale, remainder_scale) = {
             let scales = word_to_u4s(data);
             (scales[0], scales[1], scales[2], scales[3])
         };
         let offset_average = data.get_i16();
-        let mut pixel_calibration = [offset_average; NUM_PIXELS];
+        let mut pixel_calibration = [offset_average; Mlx90640::NUM_PIXELS];
         const VALUES_PER_DATA_ROW: usize = 4;
         // Add row offsets
-        for row_chunks in pixel_calibration.chunks_exact_mut(WIDTH * VALUES_PER_DATA_ROW) {
+        for row_chunks in pixel_calibration.chunks_exact_mut(Mlx90640::WIDTH * VALUES_PER_DATA_ROW)
+        {
             let rows_coefficients = word_to_i4s(data);
             // Create a nice lazy iterator that converts the values to i16, scales them, and
             // reverses that order of the data (because the data is laid out backwards in the EEPROM).
@@ -96,12 +104,15 @@ impl Mlx90640Calibration {
                 .map(i16::from)
                 .map(|coeff| coeff << row_scale)
                 .rev();
-            for (row, coefficient) in row_chunks.chunks_exact_mut(WIDTH).zip(rows_coefficients) {
+            for (row, coefficient) in row_chunks
+                .chunks_exact_mut(Mlx90640::WIDTH)
+                .zip(rows_coefficients)
+            {
                 row.iter_mut().for_each(|element| *element += coefficient);
             }
         }
         // Add column offsets. Slightly more involved as the offsets are in row-major order.
-        for column_chunk_index in 0..(WIDTH / VALUES_PER_DATA_ROW) {
+        for column_chunk_index in 0..(Mlx90640::WIDTH / VALUES_PER_DATA_ROW) {
             // TODO: This could probably be optimized better
             let column_coefficients = word_to_i4s(data);
             // Same deal as the row coefficients, except cycle so that the same iterator can be
@@ -112,7 +123,7 @@ impl Mlx90640Calibration {
                 .map(i16::from)
                 .map(|coeff| coeff << column_scale)
                 .rev();
-            for row in pixel_calibration.chunks_exact_mut(WIDTH) {
+            for row in pixel_calibration.chunks_exact_mut(Mlx90640::WIDTH) {
                 let start_index = column_chunk_index * VALUES_PER_DATA_ROW;
                 let row_range = start_index..(start_index + VALUES_PER_DATA_ROW);
                 row[row_range]
@@ -149,11 +160,11 @@ impl Mlx90640Calibration {
         let even_row_pattern = core::array::IntoIter::new([row_even_col_even, row_even_col_odd]);
         let odd_row_pattern = core::array::IntoIter::new([row_odd_col_even, row_odd_col_odd]);
         // Repeat the pattern across the row
-        let even_row = even_row_pattern.cycle().take(WIDTH).map(T::from);
-        let odd_row = odd_row_pattern.cycle().take(WIDTH).map(T::from);
+        let even_row = even_row_pattern.cycle().take(Mlx90640::WIDTH).map(T::from);
+        let odd_row = odd_row_pattern.cycle().take(Mlx90640::WIDTH).map(T::from);
         // Then chain the two rows together, repeating to fill the array
         let repeating_rows = even_row.chain(odd_row).cycle();
-        repeating_rows.take(NUM_PIXELS)
+        repeating_rows.take(Mlx90640::NUM_PIXELS)
     }
 
     /// Calculate the per-pixel K<sub>T<sub>A</sub></sub> values.
@@ -164,10 +175,29 @@ impl Mlx90640Calibration {
     /// this value is chosen from four values, determined by if the row and column indices are even
     /// or odd. The rest of the calculation is performed later, with the rest of the per-pixel
     /// calculations.
-    fn generate_k_ta_pixels<B: Buf>(data: &mut B) -> impl Iterator<Item = i16> {
+    fn generate_k_ta_pixels(data: &mut &[u8]) -> impl Iterator<Item = i16> {
         let source_data: ArrayVec<i8, 4> = (0..4).map(|_| data.get_i8()).collect();
         let source_data = source_data.into_inner().unwrap();
         Self::repeat_chessboard(source_data)
+    }
+
+    fn get_access_pattern_corrections(data: &mut &[u8]) -> (f32, [f32; 6]) {
+        let word = data.get_u16();
+        // The correction factors are 5 bits, 5 bits, then 6 bits, for factors 3, 2, 1.
+        let chess_1_raw = i16_from_bits(&(word & 0x003F).to_be_bytes(), 6);
+        let chess_2_raw = i16_from_bits(&((word & 0x07C0) >> 6).to_be_bytes(), 5);
+        let chess_3_raw = i16_from_bits(&((word & 0xF800) >> 11).to_be_bytes(), 5);
+        // factor 1 is scaled by 2^4
+        let chess_1 = f32::from(chess_1_raw) / 16f32;
+        // factor 2 is scaled by 2 (no exponent)
+        let chess_2 = f32::from(chess_2_raw) / 2f32;
+        // factor 3 is scaled by 2^3
+        let chess_3 = f32::from(chess_3_raw) / 8f32;
+        // See the docstring for InterleaveCorrectionIter for the explanation for this pattern
+        let b = chess_2 - chess_3;
+        let c = chess_2 + chess_3;
+        let pattern = [-chess_3, b, -c, chess_3, -b, c];
+        (chess_1, pattern)
     }
 
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
@@ -177,7 +207,7 @@ impl Mlx90640Calibration {
     pub fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
         let mut buf = data;
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
-        if buf.remaining() < eeprom_length {
+        if buf.len() < eeprom_length {
             return Err(LibraryError::Other(
                 "Not enough space left in buffer to be a full EEPROM dump",
             ));
@@ -190,10 +220,11 @@ impl Mlx90640Calibration {
         let alpha_ptat = alpha_ptat / 4 + 8;
         let (alpha_pixels, alpha_correction_remainder_scale, alpha_scale_exp) =
             Self::calculate_bulk_pixel_calibration(&mut buf);
-        let alpha_pixels: ArrayVec<f32, NUM_PIXELS> = core::array::IntoIter::new(alpha_pixels)
-            .map(f32::from)
-            .collect();
-        // Safe to unwrap as the length of pixel arrays are *all* NUM_PIXELS long.
+        let alpha_pixels: ArrayVec<f32, { Mlx90640::NUM_PIXELS }> =
+            core::array::IntoIter::new(alpha_pixels)
+                .map(f32::from)
+                .collect();
+        // Safe to unwrap as the length of pixel arrays are *all* Mlx90640::NUM_PIXELS long.
         let mut alpha_pixels = alpha_pixels.into_inner().unwrap();
         // Calculate the actual alpha scaling value from the exponent value. The alpha scaling
         // exponenet also has 30 added to it (not 27 like alpha_scale_cp).
@@ -212,8 +243,8 @@ impl Mlx90640Calibration {
         let v_dd_25 = ((buf.get_u8() as i16) - 256) * (1 << 5) - (1 << 13);
         // Keep this value around for actual processing once we have kv_scale.
         let k_v_avg = word_to_i4s(&mut buf);
-        // TODO: Add interleaved mode compensation. Until then, skip that data
-        buf.advance(WORD_SIZE);
+        let (interleave_correction_cp, interleave_correction_pixels) =
+            Self::get_access_pattern_corrections(&mut buf);
         let lazy_k_ta_pixels = Self::generate_k_ta_pixels(&mut buf);
         let unpacked_scales = word_to_u4s(&mut buf);
         // The resolution control calibration value is just two bits in the high half of the byte.
@@ -275,10 +306,11 @@ impl Mlx90640Calibration {
         let corner_temperatures = [-40i16, 0, ct2, ct3];
         // Now that we have k_s_to_scale, we can scale k_s_to properly:
         k_s_to.iter_mut().for_each(|k_s_to| *k_s_to /= k_s_to_scale);
+        let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
-            alpha_correction_coefficients(BASIC_TEMPERATURE_RANGE, &corner_temperatures, &k_s_to);
+            alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
         // Calculate the rest of the per-pixel data using the remainder/k_ta data
-        let mut k_ta_pixels = [0f32; NUM_PIXELS];
+        let mut k_ta_pixels = [0f32; Mlx90640::NUM_PIXELS];
         offset_reference_pixels
             .iter_mut()
             .zip(alpha_pixels.iter_mut())
@@ -325,6 +357,8 @@ impl Mlx90640Calibration {
             k_ta_pixels,
             k_ta_cp,
             temperature_gradient_coefficient,
+            interleave_correction_pixels,
+            interleave_correction_cp,
         })
     }
 }
@@ -349,6 +383,8 @@ where
 }
 
 impl CalibrationData for Mlx90640Calibration {
+    type Camera = Mlx90640;
+
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
     expose_member!(resolution, u8);
@@ -362,10 +398,6 @@ impl CalibrationData for Mlx90640Calibration {
     expose_member!(&corner_temperatures, [i16]);
     expose_member!(&k_s_to, [f32]);
     expose_member!(&alpha_correction, [f32]);
-
-    fn basic_range(&self) -> usize {
-        BASIC_TEMPERATURE_RANGE
-    }
 
     type OffsetReferenceIterator<'a> = slice::Iter<'a, i16>;
 
@@ -408,6 +440,32 @@ impl CalibrationData for Mlx90640Calibration {
     }
 
     expose_member!(temperature_gradient_coefficient, Option<f32>);
+
+    type AccessPatternCompensation<'a> = PixelAccessPatternCompensation<'a>;
+
+    /// A sequence of per-pixel correction values that are added to the pixl gain value.
+    ///
+    /// The MLX90640 can be used in interleaved mode, but for optimal performance a correction
+    /// needs to be applied. This value is summed with the pixel gain value and reference offset
+    /// (the reference offset being scaled relative to the temperature difference).
+    fn access_pattern_compensation_pixels<'a>(
+        &'a self,
+        access_pattern: AccessPattern,
+    ) -> Self::AccessPatternCompensation<'a> {
+        PixelAccessPatternCompensation::new(access_pattern, &self.interleave_correction_pixels[..])
+    }
+
+    /// Equivalent to [`Self::access_pattern_compensation_pixels`] for compensation pixels.
+    fn access_pattern_compensation_cp(
+        &self,
+        subpage: Subpage,
+        access_pattern: AccessPattern,
+    ) -> Option<f32> {
+        match (subpage, access_pattern) {
+            (Subpage::One, AccessPattern::Interleave) => Some(self.interleave_correction_cp),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -435,9 +493,9 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < NUM_PIXELS {
-            let row = self.index / WIDTH;
-            let column = self.index % WIDTH;
+        if self.index < Mlx90640::NUM_PIXELS {
+            let row = self.index / Mlx90640::WIDTH;
+            let column = self.index % Mlx90640::WIDTH;
             self.index += 1;
             Some(match (row % 2 == 0, column % 2 == 0) {
                 (true, true) => &self.source[0],
@@ -451,10 +509,109 @@ impl<'a, T: 'a> Iterator for ChessboardIter<'a, T> {
     }
 }
 
+/// An iterator for the interleaved reading pattern values
+///
+#[doc = include_str!("../katex.html")]
+///
+/// These values are only used if the interleaved access mode is being active. It's described in
+/// section 11.1.3.1 of the MLX90640 datasheet, but the formula is overly complicated:
+///
+/// $$
+/// \begin{split}
+/// IL\_{\textit{Pattern}} =& {} int\left(\frac{\mathtt{pixel\\_index} - 1}{32}\right) -
+/// int\left(\frac{int\left(\frac{\mathtt{pixel\\_index} - 1}{32}\right)}{2}\right) \* 2 \newline
+/// \textit{Conversion}\_{\textit{pattern}} =& \left(int\left(\frac{\mathtt{pixel\\_index} - 3}{4}\right)\right. \newline
+/// &\qquad {} - int\left(\frac{\mathtt{pixel\\_index} - 2}{4}\right) \newline
+/// &\qquad {} + int\left(\frac{\mathtt{pixel\\_index}}{4}\right) \newline
+/// &\qquad \left. {} - int\left(\frac{\mathtt{pixel\\_index} - 1}{4}\right)
+/// \right) * (1 - 2 * IL\_{\textit{Pattern}})
+/// \end{split}
+/// $$
+///
+/// Can be simplified to
+///
+/// $$
+/// \begin{split}
+/// IL\_{\textit{Pattern}} =& {} \mathtt{pixel\\_index} \bmod 2 \newline
+/// \textit{Conversion}\_{\textit{pattern}} =& \left(\mathtt{pixel\\_index} \bmod 2\right) \newline
+/// &\qquad {} * \left(\left(\mathtt{pixel\\_index} \bmod 4 \right) - 2\right) \newline
+/// &\qquad {} * \left(1 - \left(int\left(\frac{\mathtt{pixel\\_index}}{32}\right) \bmod 2 * 2\right)\right)
+/// \end{split}
+/// $$
+///
+/// Those values are used for the actual correction formula:
+///
+/// \begin{align*}
+/// \text{pix}\_{OS(i, j)} &= pix\_{gain(i, j)} \newline
+/// &\qquad \colorbox{yellow}{$ {} + IL\_{CHESS\_3} \* \left(2 * IL\_{\textit{Pattern}} - 1 \right)$} \newline
+/// &\qquad \colorbox{yellow}{${} - IL\_{CHESS\_2} \* \textit{Conversion}\_{\textit{pattern}}$} \newline
+/// &\qquad {} - \textit{offset}\_{(i, j)} \newline
+/// &\qquad {} \* (1 + K_{T\_{a}(i, j)} \* (T_a - T_{a_0})) \newline
+/// &\qquad {} \* (1 + K_{V(i, j)} \* (V_{DD} - V_{DD_0}))
+/// \end{align*}
+///
+/// This isn't stated in the datasheet, but if you actually calculate the values from
+/// section 11.2.3.1, you see that there are two, four element patterns. The patterns are
+/// alternated for each row, and the elements are repeated across the row.
+/// ```text
+/// -A  B -A -C
+///  A -B  A  C
+/// ```
+///
+/// Where $A = IL\_{CHESS\_3}$, $B = IL\_{CHESS\_2} - IL\_{CHESS\_3}$, and $C = IL\_{CHESS\_2} + IL\_{CHESS\_3}$
+#[derive(Clone, Debug)]
+pub enum PixelAccessPatternCompensation<'a> {
+    Chess(iter::Take<iter::Repeat<Option<&'a f32>>>),
+    Interleave {
+        index: usize,
+        /// The pattern values, split across two arrays of three elements
+        patterns: &'a [f32],
+    },
+}
+
+impl<'a> PixelAccessPatternCompensation<'a> {
+    /// Create a new interleaved correction iterator from a slice of correction constants
+    ///
+    /// The slice must be 6 elements long, with the values laid out as `[-A, B, -C, A, -B, C]`.
+    fn new(access_pattern: AccessPattern, patterns: &'a [f32]) -> Self {
+        match access_pattern {
+            AccessPattern::Chess => Self::Chess(iter::repeat(None).take(Mlx90640::NUM_PIXELS)),
+            AccessPattern::Interleave => Self::Interleave { index: 0, patterns },
+        }
+    }
+}
+
+impl<'a> Iterator for PixelAccessPatternCompensation<'a> {
+    type Item = Option<&'a f32>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            PixelAccessPatternCompensation::Chess(inner) => inner.next(),
+            PixelAccessPatternCompensation::Interleave { index, patterns } => {
+                if *index < Mlx90640::NUM_PIXELS {
+                    // We just need the even/odd-ness of the row index
+                    let row_sign = (*index / Mlx90640::WIDTH) % 2;
+                    let column_index = match *index % 4 {
+                        0 | 2 => 0,
+                        1 => 1,
+                        3 => 2,
+                        _ => unreachable!(),
+                    };
+                    let pattern_index = row_sign * 3 + column_index;
+                    *index += 1;
+                    Some(Some(&patterns[pattern_index]))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 /// Split a word into a 6-bit value and a 10-bit value.
 ///
 /// Further conversion for the second value is left to the caller.
-fn word_6_10_split<B: Buf>(data: &mut B) -> (i8, [u8; 2]) {
+fn word_6_10_split(data: &mut &[u8]) -> (i8, [u8; 2]) {
     let mut word = [data.get_u8(), data.get_u8()];
     // Copy out the 6-bit value, and shift it over. As signed right shifts are aritmetic, the sign
     // bit gets extended, and we get the value we wanted.
@@ -465,7 +622,7 @@ fn word_6_10_split<B: Buf>(data: &mut B) -> (i8, [u8; 2]) {
 }
 
 /// Extract four unsigned, 4-bit integers from a buffer
-fn word_to_u4s<B: Buf>(data: &mut B) -> [u8; 4] {
+fn word_to_u4s(data: &mut &[u8]) -> [u8; 4] {
     let high = data.get_u8();
     let low = data.get_u8();
     [(high & 0xF0) >> 4, high & 0xF, (low & 0xF0) >> 4, low & 0xF]
@@ -485,7 +642,7 @@ fn u8_to_i4s(byte: u8) -> [i8; 2] {
 }
 
 /// Split a word (2 bytes) from a buffer into four, 4-bit signed integers.
-fn word_to_i4s<B: Buf>(data: &mut B) -> [i8; 4] {
+fn word_to_i4s(data: &mut &[u8]) -> [i8; 4] {
     let high = data.get_u8();
     let low = data.get_u8();
     let high = u8_to_i4s(high);
@@ -494,6 +651,7 @@ fn word_to_i4s<B: Buf>(data: &mut B) -> [i8; 4] {
 }
 
 #[cfg(test)]
+#[allow(clippy::excessive_precision)]
 pub(crate) mod test {
     #[cfg(feature = "std")]
     extern crate std;
@@ -501,23 +659,22 @@ pub(crate) mod test {
     use std::{print, println};
 
     use arrayvec::ArrayVec;
-    use float_cmp::{approx_eq, ApproxEq};
+    use float_cmp::{assert_approx_eq, ApproxEq};
 
-    use crate::common::CalibrationData;
-    use crate::mlx90640::{HEIGHT, NUM_PIXELS, WIDTH};
-    use crate::register::Subpage;
+    use crate::common::{CalibrationData, MelexisCamera};
+    use crate::mlx90640::Mlx90640;
+    use crate::register::{AccessPattern, Subpage};
     use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
     use super::Mlx90640Calibration;
 
     fn datasheet_eeprom() -> Mlx90640Calibration {
-        let mut eeprom_bytes = mlx90640_datasheet_eeprom();
-        Mlx90640Calibration::from_data(&mut eeprom_bytes).expect("The EEPROM data to be parsed.")
+        let eeprom_bytes = mlx90640_datasheet_eeprom();
+        Mlx90640Calibration::from_data(&eeprom_bytes).expect("The EEPROM data to be parsed.")
     }
 
     fn example_eeprom() -> Mlx90640Calibration {
-        let mut example_bytes = &mlx90640_example_data::EEPROM_DATA[..];
-        Mlx90640Calibration::from_data(&mut example_bytes)
+        Mlx90640Calibration::from_data(mlx90640_example_data::EEPROM_DATA)
             .expect("The example data should be parseable")
     }
 
@@ -564,21 +721,21 @@ pub(crate) mod test {
     fn repeat_chessboard() {
         // The pattern order is (for row, column): EE, OE, EO, OO
         let pattern = [1, 2, 3, 4];
-        let test_pattern: ArrayVec<i8, NUM_PIXELS> =
+        let test_pattern: ArrayVec<i8, { Mlx90640::NUM_PIXELS }> =
             Mlx90640Calibration::repeat_chessboard(pattern).collect();
         // Print the test pattern (when std is available), as that makes it much easier to see
         // what's going on.
         #[cfg(feature = "std")]
-        for row in 0..HEIGHT {
-            for column in 0..WIDTH {
-                let index = row * WIDTH + column;
+        for row in 0..Mlx90640::HEIGHT {
+            for column in 0..Mlx90640::WIDTH {
+                let index = row * Mlx90640::WIDTH + column;
                 print!("{} ", test_pattern[index]);
             }
             println!();
         }
-        for column in 0..WIDTH {
-            for row in 0..HEIGHT {
-                let index = row * WIDTH + column;
+        for column in 0..Mlx90640::WIDTH {
+            for row in 0..Mlx90640::HEIGHT {
+                let index = row * Mlx90640::WIDTH + column;
                 let expected = match (row % 2, column % 2) {
                     (0, 0) => 1,
                     (1, 0) => 2,
@@ -632,28 +789,31 @@ pub(crate) mod test {
 
     #[test]
     fn k_v_ptat() {
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             datasheet_eeprom().k_v_ptat(),
-            0.0053710938,
-            epsilon = 0.000001
+            0.005371094,
+            epsilon = 0.000000001
         );
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             example_eeprom().k_v_ptat(),
             mlx90640_example_data::K_V_PTAT,
-            epsilon = 0.000001
+            epsilon = 0.00001
         );
     }
 
     #[test]
     fn k_t_ptat() {
+        // These values are scaled by 1/8 and are not too large so they can be exactly represented
+        // in an f32.
         assert_eq!(datasheet_eeprom().k_t_ptat(), 42.25);
         assert_eq!(example_eeprom().k_t_ptat(), mlx90640_example_data::K_T_PTAT);
     }
 
     #[test]
     fn v_ptat_25() {
+        // These values are integers for the 640.
         assert_eq!(datasheet_eeprom().v_ptat_25(), 12273f32);
         assert_eq!(
             example_eeprom().v_ptat_25(),
@@ -663,6 +823,7 @@ pub(crate) mod test {
 
     #[test]
     fn alpha_ptat() {
+        // The example values are both integers
         assert_eq!(datasheet_eeprom().alpha_ptat(), 9f32);
         assert_eq!(
             example_eeprom().alpha_ptat(),
@@ -672,15 +833,16 @@ pub(crate) mod test {
     #[test]
 
     fn gain() {
+        // The EEPROM gain value is an integer for the 640
         assert_eq!(datasheet_eeprom().gain(), 6383f32);
         assert_eq!(example_eeprom().gain(), mlx90640_example_data::GAIN_EE);
     }
 
     fn test_pixels_common<T: PartialEq + core::fmt::Debug + core::fmt::Display + Copy>(
-        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
-        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
+        example_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
         datasheet_expected: T,
-        example_expected: &[T; NUM_PIXELS],
+        example_expected: &[T; Mlx90640::NUM_PIXELS],
         subpage: Option<Subpage>,
         check: &dyn Fn(T, T) -> bool,
     ) {
@@ -689,10 +851,17 @@ pub(crate) mod test {
             assert_eq!(example_data[0], example_data[1]);
         }
         // Test the single pixel from the datasheet
-        let datasheet_index = 11 * WIDTH + 15;
+        let datasheet_index = 11 * Mlx90640::WIDTH + 15;
         let subpage_index: usize = subpage.unwrap_or(Subpage::Zero).into();
         let pixel = datasheet_data[subpage_index][datasheet_index];
-        assert!(check(pixel, datasheet_expected));
+        assert!(
+            check(pixel, datasheet_expected),
+            "[datasheet pixel]:\n{:>10}: `{:?}`,\n{:>10}: `{:?}`,",
+            "expected",
+            datasheet_expected,
+            "actual",
+            pixel
+        );
         // Check all the pixels from the full example
         let offset_pairs = example_data[subpage_index]
             .iter()
@@ -700,25 +869,27 @@ pub(crate) mod test {
         for (index, (actual, expected)) in offset_pairs.enumerate() {
             assert!(
                 check(*actual, *expected),
-                "[pixel {}]: Expected {}, Actual: {}",
+                "[pixel {:?}]:\n{:>10}: `{:?}`,\n{:>10}: `{:?}`,",
                 index,
+                "expected",
                 expected,
+                "actual",
                 actual
             );
         }
     }
 
     fn test_pixels_approx<T>(
-        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
-        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
+        example_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
         datasheet_expected: T,
-        example_expected: &[T; NUM_PIXELS],
+        example_expected: &[T; Mlx90640::NUM_PIXELS],
         subpage: Option<Subpage>,
+        margin: Option<<T as ApproxEq>::Margin>,
     ) where
         T: ApproxEq + PartialEq + core::fmt::Debug + core::fmt::Display + Copy,
-        <T as ApproxEq>::Margin: From<(f32, i32)>,
     {
-        let check = |actual: T, expected: T| actual.approx_eq(expected, (0.0000001f32, 0));
+        let check = |actual: T, expected: T| actual.approx_eq(expected, margin.unwrap_or_default());
         test_pixels_common(
             datasheet_data,
             example_data,
@@ -730,10 +901,10 @@ pub(crate) mod test {
     }
 
     fn test_pixels<T: PartialEq + core::fmt::Debug + core::fmt::Display + Copy>(
-        datasheet_data: [ArrayVec<T, NUM_PIXELS>; 2],
-        example_data: [ArrayVec<T, NUM_PIXELS>; 2],
+        datasheet_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
+        example_data: [ArrayVec<T, { Mlx90640::NUM_PIXELS }>; 2],
         datasheet_expected: T,
-        example_expected: &[T; NUM_PIXELS],
+        example_expected: &[T; Mlx90640::NUM_PIXELS],
         subpage: Option<Subpage>,
     ) {
         let check = |actual: T, expected: T| actual == expected;
@@ -750,7 +921,7 @@ pub(crate) mod test {
     #[test]
     fn pixel_offset() {
         let datasheet = datasheet_eeprom();
-        let datasheet_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
+        let datasheet_offsets: [ArrayVec<i16, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet
                 .offset_reference_pixels(Subpage::Zero)
                 .copied()
@@ -761,7 +932,7 @@ pub(crate) mod test {
                 .collect(),
         ];
         let example = example_eeprom();
-        let example_offsets: [ArrayVec<i16, NUM_PIXELS>; 2] = [
+        let example_offsets: [ArrayVec<i16, { Mlx90640::NUM_PIXELS }>; 2] = [
             example
                 .offset_reference_pixels(Subpage::Zero)
                 .copied()
@@ -784,12 +955,12 @@ pub(crate) mod test {
     #[test]
     fn pixel_k_ta() {
         let datasheet = datasheet_eeprom();
-        let datasheet_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let datasheet_k_ta: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet.k_ta_pixels(Subpage::Zero).copied().collect(),
             datasheet.k_ta_pixels(Subpage::One).copied().collect(),
         ];
         let example = example_eeprom();
-        let example_k_ta: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example_k_ta: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             example.k_ta_pixels(Subpage::Zero).copied().collect(),
             example.k_ta_pixels(Subpage::One).copied().collect(),
         ];
@@ -800,18 +971,20 @@ pub(crate) mod test {
             &mlx90640_example_data::K_TA_PIXELS,
             // MLX90640 doesn't vary k_ta on subpage
             None,
+            // The example spreadsheet goes out to eight decimal places
+            Some((10E-8, 2).into()),
         );
     }
 
     #[test]
     fn k_v_pixels() {
         let datasheet = datasheet_eeprom();
-        let datasheet_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let datasheet_k_v: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet.k_v_pixels(Subpage::Zero).copied().collect(),
             datasheet.k_v_pixels(Subpage::One).copied().collect(),
         ];
         let example = example_eeprom();
-        let example_k_v: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example_k_v: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             example.k_v_pixels(Subpage::Zero).copied().collect(),
             example.k_v_pixels(Subpage::One).copied().collect(),
         ];
@@ -821,6 +994,9 @@ pub(crate) mod test {
             0.5f32,
             &mlx90640_example_data::K_V_PIXELS,
             // MLX90640 doesn't vary k_v on subpage
+            None,
+            // The values in the datasheet are all exactly representable in a float, so no need for
+            // an explicit margin.
             None,
         );
     }
@@ -851,29 +1027,34 @@ pub(crate) mod test {
 
     #[test]
     fn k_ta_cp() {
+        // The 640 doesn't vary k_ta_cp on subpage.
         // datasheet
         let datasheet = datasheet_eeprom();
+        // This value is more precise than an f32, so skipping an explicit margin
         let expected = 0.00457763671875;
-        assert_eq!(datasheet.k_ta_cp(Subpage::Zero), expected);
-        assert_eq!(datasheet.k_ta_cp(Subpage::One), expected);
+        assert_approx_eq!(f32, datasheet.k_ta_cp(Subpage::Zero), expected);
+        assert_approx_eq!(f32, datasheet.k_ta_cp(Subpage::One), expected);
         // example
         let example = example_eeprom();
-        approx_eq!(
+        // The example value is only given to 6 decimal places
+        assert_approx_eq!(
             f32,
             example.k_ta_cp(Subpage::Zero),
             mlx90640_example_data::K_TA_CP,
-            epsilon = 0.000001
+            epsilon = 10E-6
         );
-        approx_eq!(
+        assert_approx_eq!(
             f32,
             example.k_ta_cp(Subpage::One),
             mlx90640_example_data::K_TA_CP,
-            epsilon = 0.000001
+            epsilon = 10E-6
         );
     }
 
     #[test]
     fn k_v_cp() {
+        // Both the datasheet and the example spreadsheet values are fractional powers of 2 and can
+        // be exactly represented by floats.
         // datasheet
         let datasheet = datasheet_eeprom();
         let expected = 0.5;
@@ -902,28 +1083,51 @@ pub(crate) mod test {
     fn alpha_cp() {
         // datasheet
         let datasheet = datasheet_eeprom();
-        assert_eq!(datasheet.alpha_cp(Subpage::Zero), 4.07453626394272E-9);
-        assert_eq!(datasheet.alpha_cp(Subpage::One), 3.851710062200835E-9);
+        // The datasheet values go out to 11 decimal places
+        assert_approx_eq!(
+            f32,
+            datasheet.alpha_cp(Subpage::Zero),
+            4.07453626394272E-9,
+            epsilon = 10E-11
+        );
+        assert_approx_eq!(
+            f32,
+            datasheet.alpha_cp(Subpage::One),
+            3.851710062200835E-9,
+            epsilon = 10E-11
+        );
         // example
         let example = example_eeprom();
-        assert_eq!(
+        // The example data goes out to 19 decimal places (but only 12 significant figures).
+        assert_approx_eq!(
+            f32,
             example.alpha_cp(Subpage::Zero),
             mlx90640_example_data::ALPHA_CP[0],
+            epsilon = 10E-19
         );
-        assert_eq!(
+        assert_approx_eq!(
+            f32,
             example.alpha_cp(Subpage::One),
             mlx90640_example_data::ALPHA_CP[1],
+            epsilon = 10E-19
         );
     }
 
     #[test]
     fn k_s_ta() {
-        assert_eq!(datasheet_eeprom().k_s_ta(), -0.001953125);
-        approx_eq!(
+        assert_approx_eq!(
+            f32,
+            datasheet_eeprom().k_s_ta(),
+            -0.001953125,
+            // The datasheet value is specified out to 9 decimal places
+            epsilon = 10E-9
+        );
+        assert_approx_eq!(
             f32,
             example_eeprom().k_s_ta(),
             mlx90640_example_data::K_S_TA,
-            epsilon = 0.00000001
+            // Example value is only specified out to 6 decimal places
+            epsilon = 10E-6
         );
     }
 
@@ -931,12 +1135,12 @@ pub(crate) mod test {
     fn pixel_alpha() {
         // MLX90640 doesn't vary alpha on subpage
         let datasheet = datasheet_eeprom();
-        let datasheet_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let datasheet_alpha: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             datasheet.alpha_pixels(Subpage::Zero).copied().collect(),
             datasheet.alpha_pixels(Subpage::One).copied().collect(),
         ];
         let example = example_eeprom();
-        let example_alpha: [ArrayVec<f32, NUM_PIXELS>; 2] = [
+        let example_alpha: [ArrayVec<f32, { Mlx90640::NUM_PIXELS }>; 2] = [
             example.alpha_pixels(Subpage::Zero).copied().collect(),
             example.alpha_pixels(Subpage::One).copied().collect(),
         ];
@@ -946,19 +1150,33 @@ pub(crate) mod test {
             1.262233122690854E-7,
             &mlx90640_example_data::ALPHA_PIXELS,
             None,
+            // The example data goes out to 19 decimal places (but only 12 significant figures).
+            Some((10E-19, 2).into()),
         );
     }
 
     #[test]
     fn k_s_to() {
-        assert_eq!(datasheet_eeprom().k_s_to()[1], -0.00080108642578125);
+        assert_approx_eq!(
+            f32,
+            datasheet_eeprom().k_s_to()[1],
+            -0.00080108642578125,
+            // Datasheet value is exactly reproduced above, so 17 decimal places
+            epsilon = 10E-17
+        );
         let example = example_eeprom();
         let example_pairs = example
             .k_s_to()
             .iter()
             .zip(mlx90640_example_data::K_S_TO.iter());
         for (actual, expected) in example_pairs {
-            approx_eq!(f32, *actual, *expected, epsilon = 0.0001);
+            assert_approx_eq!(
+                f32,
+                *actual,
+                *expected,
+                // The example values are only specified out to 6 decimal places
+                epsilon = 10E-6
+            );
         }
     }
 
@@ -978,5 +1196,57 @@ pub(crate) mod test {
             example_eeprom().corner_temperatures(),
             mlx90640_example_data::CORNER_TEMPERATURES
         );
+    }
+
+    #[test]
+    fn access_pattern_compensation_chess() {
+        let e = datasheet_eeprom();
+        for compensation in e.access_pattern_compensation_pixels(AccessPattern::Chess) {
+            assert!(
+                compensation.is_none(),
+                "There is no access pattern compensation in chess mode"
+            );
+        }
+    }
+
+    #[test]
+    fn access_pattern_compensation_interleave() {
+        let e = datasheet_eeprom();
+        // Using the variable names described in the `PixelAccessPatternCompensation` docstring.
+        const IL_CHESS_3: f32 = 0.125;
+        const IL_CHESS_2: f32 = 3.0;
+        const A: f32 = IL_CHESS_3;
+        const B: f32 = IL_CHESS_2 - IL_CHESS_3;
+        const C: f32 = IL_CHESS_2 + IL_CHESS_3;
+        let compensation_iter = e
+            .access_pattern_compensation_pixels(AccessPattern::Interleave)
+            .enumerate();
+        let mut count = 0;
+        for (pixel_index, compensation) in compensation_iter {
+            let row = pixel_index / Mlx90640::WIDTH;
+            let column = pixel_index % Mlx90640::WIDTH;
+            // Start with the expected values for an even row
+            let expected = if column % 2 == 0 {
+                -A
+            } else if column % 4 == 3 {
+                -C
+            } else {
+                B
+            };
+            // Negate the value for an odd row
+            let expected = if row % 2 == 0 { expected } else { -expected };
+            assert_eq!(
+                Some(&expected),
+                compensation,
+                "[pixel {:?}]:\n{:>10}: `{:?}`,\n{:>10}: `{:?}`,",
+                pixel_index,
+                "expected",
+                Some(expected),
+                "actual",
+                compensation
+            );
+            count += 1;
+        }
+        assert_eq!(count, Mlx90640::NUM_PIXELS);
     }
 }
