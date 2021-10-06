@@ -168,10 +168,7 @@ mod test {
             assert_eq!(expected, actual.0, "Every pixel is valid for MLX90641");
             count += 1;
         }
-        assert_eq!(
-            count,
-            Mlx90641::NUM_PIXELS,
-        );
+        assert_eq!(count, Mlx90641::NUM_PIXELS,);
     }
 
     #[test]
