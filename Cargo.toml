@@ -2,7 +2,7 @@
 authors = ["Will Ross <paxswill@paxswill.com>"]
 categories = ["embedded", "hardware-support"]
 description = "Library for interfacing with Melexis MLX9064* thermal cameras"
-edition = "2018"
+edition = "2021"
 keywords = ["embedded-hal", "thermal-camera", "thermopile", "mlx90640", "mlx90641"]
 license = "Apache-2.0"
 name = "mlx9064x"

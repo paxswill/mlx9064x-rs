@@ -99,8 +99,11 @@ impl Mlx90640Calibration {
         {
             let rows_coefficients = word_to_i4s(data);
             // Create a nice lazy iterator that converts the values to i16, scales them, and
-            // reverses that order of the data (because the data is laid out backwards in the EEPROM).
-            let rows_coefficients = core::array::IntoIter::new(rows_coefficients)
+            // reverses that order of the data (because the data is laid out backwards in the
+            // EEPROM).
+            let rows_coefficients = rows_coefficients
+                .into_iter()
+                //let rows_coefficients = core::array::IntoIter::new(rows_coefficients)
                 .map(i16::from)
                 .map(|coeff| coeff << row_scale)
                 .rev();
@@ -157,8 +160,8 @@ impl Mlx90640Calibration {
         let row_even_col_odd = source_values[2];
         let row_odd_col_odd = source_values[3];
         // Create a pattern for even or odd rows, starting from column 0
-        let even_row_pattern = core::array::IntoIter::new([row_even_col_even, row_even_col_odd]);
-        let odd_row_pattern = core::array::IntoIter::new([row_odd_col_even, row_odd_col_odd]);
+        let even_row_pattern = [row_even_col_even, row_even_col_odd].into_iter();
+        let odd_row_pattern = [row_odd_col_even, row_odd_col_odd].into_iter();
         // Repeat the pattern across the row
         let even_row = even_row_pattern.cycle().take(Mlx90640::WIDTH).map(T::from);
         let odd_row = odd_row_pattern.cycle().take(Mlx90640::WIDTH).map(T::from);
@@ -221,9 +224,7 @@ impl Mlx90640Calibration {
         let (alpha_pixels, alpha_correction_remainder_scale, alpha_scale_exp) =
             Self::calculate_bulk_pixel_calibration(&mut buf);
         let alpha_pixels: ArrayVec<f32, { Mlx90640::NUM_PIXELS }> =
-            core::array::IntoIter::new(alpha_pixels)
-                .map(f32::from)
-                .collect();
+            alpha_pixels.into_iter().map(f32::from).collect();
         // Safe to unwrap as the length of pixel arrays are *all* Mlx90640::NUM_PIXELS long.
         let mut alpha_pixels = alpha_pixels.into_inner().unwrap();
         // Calculate the actual alpha scaling value from the exponent value. The alpha scaling
@@ -258,7 +259,8 @@ impl Mlx90640Calibration {
         // operand directly.
         let k_ta_scale2_exp = unpacked_scales[3];
         // We have k_v_scale now, calculate k_v_pattern
-        let k_v_pattern: ArrayVec<f32, 4> = core::array::IntoIter::new(k_v_avg)
+        let k_v_pattern: ArrayVec<f32, 4> = k_v_avg
+            .into_iter()
             .map(|v| f32::from(v) / k_v_scale)
             .collect();
         // Safe to unwrap as the input was only four elements, and the array is only 4 elements.

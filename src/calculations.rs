@@ -651,7 +651,7 @@ pub fn raw_ir_to_temperatures<'a, Clb, Px>(
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
     let k_s_to_basic = calibration.k_s_to()[Clb::Camera::BASIC_TEMPERATURE_RANGE];
     let alpha_coefficient = sensitivity_correction_coefficient(calibration, t_a);
-    let t_r = t_r.unwrap_or_else(|| t_a - Clb::Camera::SELF_HEATING);
+    let t_r = t_r.unwrap_or(t_a - Clb::Camera::SELF_HEATING);
     let t_ar = t_ar(t_a, t_r, emissivity);
 
     destination
@@ -714,7 +714,7 @@ where
         .map(|tgc| calibration.alpha_cp(subpage) * tgc);
     let k_s_to_basic = calibration.k_s_to()[Clb::Camera::BASIC_TEMPERATURE_RANGE];
     let alpha_coefficient = sensitivity_correction_coefficient(calibration, common.t_a);
-    let t_r = t_r.unwrap_or_else(|| common.t_a - Clb::Camera::SELF_HEATING);
+    let t_r = t_r.unwrap_or(common.t_a - Clb::Camera::SELF_HEATING);
     let t_ar = t_ar(common.t_a, t_r, emissivity);
     // At this point, we're now going to start calculating and copying over the pixel data. It
     // will *not* be actual temperatures, but it can be used for some imaging purposes.
