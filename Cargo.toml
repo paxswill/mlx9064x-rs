@@ -1,2 +1,5 @@
 [workspace]
-members = ["mlx9064x"]
+members = [
+	"mlx9064x",
+	"mlx9064x-test-data",
+]

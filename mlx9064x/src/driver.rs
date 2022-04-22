@@ -616,8 +616,9 @@ mod test {
 
     use float_cmp::{approx_eq, assert_approx_eq};
 
-    use crate::{mlx90640, mlx90641};
-    use crate::{test::*, Subpage};
+    use mlx9064x_test_data::*;
+
+    use crate::{mlx90640, mlx90641, Subpage};
     use crate::{I2cRegister, MelexisCamera, Mlx90640Driver, Mlx90641Driver, StatusRegister};
 
     fn create_mlx90640() -> Mlx90640Driver<MockCameraBus<MLX90640_RAM_LENGTH>> {

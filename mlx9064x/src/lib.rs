@@ -80,8 +80,6 @@ pub mod error;
 pub mod mlx90640;
 pub mod mlx90641;
 pub mod register;
-#[cfg(test)]
-mod test;
 mod util;
 
 pub use common::{Address, CalibrationData, MelexisCamera};

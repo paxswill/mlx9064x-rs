@@ -457,12 +457,12 @@ fn get_6_5_split(buf: &mut &[u8]) -> Result<(u8, u8), LibraryError> {
 #[allow(clippy::excessive_precision)]
 pub(crate) mod test {
     use arrayvec::ArrayVec;
+    use mlx9064x_test_data::mlx90641_datasheet_eeprom;
 
     use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
     use crate::mlx90641::Mlx90641;
     use crate::register::{AccessPattern, Subpage};
-    use crate::test::mlx90641_datasheet_eeprom;
 
     use super::Mlx90641Calibration;
 

@@ -662,11 +662,11 @@ pub(crate) mod test {
 
     use arrayvec::ArrayVec;
     use float_cmp::{assert_approx_eq, ApproxEq};
+    use mlx9064x_test_data::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
     use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90640::Mlx90640;
     use crate::register::{AccessPattern, Subpage};
-    use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
     use super::Mlx90640Calibration;
 
