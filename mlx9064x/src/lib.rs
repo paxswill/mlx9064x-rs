@@ -56,7 +56,8 @@
 //!
 //! Most users of the low-level API will probably find the [`common`], [`register`], and
 //! [`calculations`] modules most relevant to their needs, with camera-model specific constants and
-//! types available in the [`mlx90640`] and [`mlx90641`] modules.
+//! types available in the [`mlx90640`] and [`mlx90641`] modules. The `raw_to_temperatures`
+//! benchmark is an example of using the low-level API (but without actually waiting for subpages).
 //!
 //! # Subpages and Access Patterns
 //! A significant difference between these Melexis cameras and other common thermal cameras is how
