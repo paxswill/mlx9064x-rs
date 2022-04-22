@@ -126,10 +126,8 @@ where
         // can't implement From<I2C:Error>
         let control = ControlRegister::from_i2c(&mut bus, address)?;
         // Cache these values
-        let resolution_correction = Cam::resolution_correction(
-            calibration.resolution(),
-            control.resolution().as_raw() as u8,
-        );
+        let resolution_correction =
+            Cam::resolution_correction(calibration.resolution(), control.resolution());
         let access_pattern = control.access_pattern();
         // Choose an emissivity value to start with.
         let emissivity = calibration.emissivity().unwrap_or(1f32);
@@ -160,7 +158,7 @@ where
         // Update the resolution as well
         let calibrated_resolution = self.calibration.resolution();
         self.resolution_correction =
-            Cam::resolution_correction(calibrated_resolution, register.resolution().as_raw() as u8);
+            Cam::resolution_correction(calibrated_resolution, register.resolution());
         self.access_pattern = register.access_pattern();
     }
 

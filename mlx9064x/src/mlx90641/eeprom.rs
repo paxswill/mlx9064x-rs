@@ -16,7 +16,7 @@ use num_traits::Float;
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
-use crate::register::{AccessPattern, Subpage};
+use crate::register::{AccessPattern, Resolution, Subpage};
 use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
@@ -36,7 +36,7 @@ pub struct Mlx90641Calibration {
 
     v_dd_25: i16,
 
-    resolution: u8,
+    resolution: Resolution,
 
     k_v_ptat: f32,
 
@@ -203,14 +203,15 @@ impl Mlx90641Calibration {
     /// The values are returned as a tuple, with the resolution first, followed by the thermal
     /// gradient compensation (TGC) value. The TGC is pre-scaled, and needs no further calculations
     /// applied.
-    fn get_resolution_with_tgc(buf: &mut &[u8]) -> Result<(u8, f32), LibraryError> {
+    fn get_resolution_with_tgc(buf: &mut &[u8]) -> Result<(Resolution, f32), LibraryError> {
         let word = get_hamming_u16(buf)?;
-        let resolution = (word & 0x0600) >> 9;
+        let resolution_raw = (word & 0x0600) >> 9;
+        let resolution = Resolution::from_raw(resolution_raw)?;
         let tgc_bytes = (word & 0x01FF).to_be_bytes();
         let tgc_unscaled = i16_from_bits(&tgc_bytes[..], 9);
         // Scaled by 2^6
         let tgc = f32::from(tgc_unscaled) / 64f32;
-        Ok((resolution as u8, tgc))
+        Ok((resolution, tgc))
     }
 
     /// Extract the corner temperatures and $K\_{s\_{T\_o}}$ values
@@ -342,7 +343,7 @@ impl<'a> CalibrationData<'a> for Mlx90641Calibration {
 
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
-    expose_member!(resolution, u8);
+    expose_member!(resolution, Resolution);
     expose_member!(k_v_ptat, f32);
     expose_member!(k_t_ptat, f32);
     expose_member!(v_ptat_25, f32);
@@ -462,7 +463,7 @@ pub(crate) mod test {
     use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
     use crate::mlx90641::Mlx90641;
-    use crate::register::{AccessPattern, Subpage};
+    use crate::register::{AccessPattern, Resolution, Subpage};
 
     use super::Mlx90641Calibration;
 
@@ -532,7 +533,7 @@ pub(crate) mod test {
     // Ordering these tests in the same order as the data sheet's worked example.
     #[test]
     fn resolution() {
-        assert_eq!(datasheet_eeprom().resolution(), 2);
+        assert_eq!(datasheet_eeprom().resolution(), Resolution::Eighteen);
     }
 
     #[test]

@@ -8,7 +8,7 @@ use embedded_hal::blocking::i2c;
 
 use crate::calculations::RamData;
 use crate::error::Error;
-use crate::register::{AccessPattern, Subpage};
+use crate::register::{AccessPattern, Resolution, Subpage};
 use crate::util::Sealed;
 
 /// A trait for types that can be created by reading data from an I²C device.
@@ -49,8 +49,7 @@ pub trait CalibrationData<'a> {
     fn v_dd_25(&self) -> i16;
 
     /// ADC resolution this camera was calibrated at.
-    // TODO: Should this return `Resolution`?
-    fn resolution(&self) -> u8;
+    fn resolution(&self) -> Resolution;
 
     /// Pixel supply voltage ($K_{DD_0}$).
     ///
@@ -288,7 +287,10 @@ pub trait MelexisCamera: Sealed {
     const V_DD_PIXEL: Address;
 
     /// Calculate the ADC resolution correction factor
-    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32;
+    fn resolution_correction(
+        calibrated_resolution: Resolution,
+        current_resolution: Resolution,
+    ) -> f32;
 
     /// The index of the basic temperature range.
     ///
