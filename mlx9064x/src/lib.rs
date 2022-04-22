@@ -1,5 +1,4 @@
-//! A pure-Rust library for accessing the MLX90640 and MLX90641 (eventually!) thermal cameras over
-//! I²C.
+//! A pure-Rust library for accessing the MLX90640 and MLX90641 thermal cameras over I²C.
 //!
 //! These cameras have a large amount of calibration data that must be pre-processed before use,
 //! and the output data also requires a somewhat complex process to turn it into temperature data.
