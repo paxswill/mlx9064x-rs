@@ -48,3 +48,7 @@ required-features = ["examples"]
 [[bench]]
 name = "raw_to_temperatures"
 harness = false
+
+[[bench]]
+name = "load_calibration"
+harness = false
