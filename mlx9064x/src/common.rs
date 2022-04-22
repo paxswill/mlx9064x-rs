@@ -4,7 +4,10 @@
 use core::fmt;
 
 use arrayvec::ArrayVec;
+use embedded_hal::blocking::i2c;
 
+use crate::calculations::RamData;
+use crate::error::Error;
 use crate::register::{AccessPattern, Subpage};
 use crate::util::Sealed;
 
@@ -352,4 +355,35 @@ fn alpha_corr_n(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32
                 * alpha_corr_n(n - 1, basic_range, ct, k_s_to)
         }
     }
+}
+
+/// Read a frame of data from the camera's memory.
+pub fn read_ram<Cam, I2C, const HEIGHT: usize>(
+    bus: &mut I2C,
+    i2c_address: u8,
+    access_pattern: AccessPattern,
+    subpage: Subpage,
+    pixel_data_buffer: &mut [u8],
+) -> Result<RamData, Error<I2C>>
+where
+    Cam: MelexisCamera,
+    I2C: i2c::WriteRead + i2c::Write,
+{
+    // Pick a maximum size of HEIGHT, as the worst access pattern is still by rows
+    let pixel_ranges: ArrayVec<PixelAddressRange, HEIGHT> =
+        Cam::pixel_ranges(subpage, access_pattern)
+            .into_iter()
+            .collect();
+    for range in pixel_ranges.iter() {
+        let offset = range.buffer_offset;
+        let address_bytes = range.start_address.as_bytes();
+        bus.write_read(
+            i2c_address,
+            &address_bytes[..],
+            &mut pixel_data_buffer[offset..(offset + range.length)],
+        )
+        .map_err(Error::I2cWriteReadError)?;
+    }
+    // And now to read the non-pixel information out
+    RamData::from_i2c::<I2C, Cam>(bus, i2c_address, subpage).map_err(Error::I2cWriteReadError)
 }
