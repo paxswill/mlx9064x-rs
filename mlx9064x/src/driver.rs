@@ -124,7 +124,7 @@ where
         // Grab the control register values first
         // Need to map from I2C::Error manually as it's an associated type without bounds, so we
         // can't implement From<I2C:Error>
-        let control: ControlRegister = read_register(&mut bus, address)?;
+        let control = ControlRegister::from_i2c(&mut bus, address)?;
         // Cache these values
         let resolution_correction = Cam::resolution_correction(
             calibration.resolution(),
@@ -148,12 +148,12 @@ where
     }
 
     fn status_register(&mut self) -> Result<StatusRegister, Error<I2C>> {
-        let register = read_register(&mut self.bus, self.address)?;
+        let register = StatusRegister::from_i2c(&mut self.bus, self.address)?;
         Ok(register)
     }
 
     fn set_status_register(&mut self, register: StatusRegister) -> Result<(), Error<I2C>> {
-        write_register(&mut self.bus, self.address, register)
+        register.to_i2c(&mut self.bus, self.address)
     }
 
     fn update_control_register(&mut self, register: &ControlRegister) {
@@ -165,7 +165,7 @@ where
     }
 
     fn control_register(&mut self) -> Result<ControlRegister, Error<I2C>> {
-        let register: ControlRegister = read_register(&mut self.bus, self.address)?;
+        let register = ControlRegister::from_i2c(&mut self.bus, self.address)?;
         // Update the resolution as well
         self.update_control_register(&register);
         Ok(register)
@@ -173,7 +173,7 @@ where
 
     fn set_control_register(&mut self, register: ControlRegister) -> Result<(), Error<I2C>> {
         self.update_control_register(&register);
-        write_register(&mut self.bus, self.address, register)?;
+        register.to_i2c(&mut self.bus, self.address)?;
         Ok(())
     }
 
@@ -472,7 +472,7 @@ where
         let address = self.address;
         let bus = &mut self.bus;
         let pixel_buffer = &mut self.pixel_buffer;
-        let mut status_register: StatusRegister = read_register(bus, address)?;
+        let mut status_register = StatusRegister::from_i2c(bus, address)?;
         if status_register.new_data() {
             let subpage = status_register.last_updated_subpage();
             let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
@@ -497,7 +497,7 @@ where
             );
             self.ambient_temperature = Some(ambient_temperature);
             status_register.reset_new_data();
-            write_register(bus, address, status_register)?;
+            status_register.to_i2c(bus, address)?;
             Ok(true)
         } else {
             Ok(false)
@@ -514,68 +514,14 @@ where
         status_register.reset_new_data();
         status_register.set_overwrite_enabled(true);
         status_register.set_start_measurement();
-        write_register(&mut self.bus, self.address, status_register)?;
+        status_register.to_i2c(&mut self.bus, self.address)?;
         // Spin while we wait for data
         while !status_register.new_data() {
-            status_register = read_register(&mut self.bus, self.address)?;
+            status_register = StatusRegister::from_i2c(&mut self.bus, self.address)?;
             core::hint::spin_loop();
         }
         Ok(())
     }
-}
-
-fn read_register<R, I2C>(bus: &mut I2C, address: u8) -> Result<R, Error<I2C>>
-where
-    I2C: i2c::WriteRead + i2c::Write,
-    R: Register,
-{
-    // Inner function to reduce the impact of monomorphization for Register. It'll still get
-    // duplicated, but it should just be duplicated on I2C, and there should only be one of those
-    // in an application (usually).
-    fn read_register<I2C: i2c::WriteRead>(
-        bus: &mut I2C,
-        i2c_address: u8,
-        register_address: Address,
-    ) -> Result<[u8; 2], I2C::Error> {
-        let register_address_bytes = register_address.as_bytes();
-        let mut register_bytes = [0u8; 2];
-        bus.write_read(i2c_address, &register_address_bytes, &mut register_bytes)?;
-        Ok(register_bytes)
-    }
-
-    let register_address = R::address();
-    let register_value =
-        read_register(bus, address, register_address).map_err(Error::I2cWriteReadError)?;
-    let register = R::from(&register_value[..]);
-    Ok(register)
-}
-
-fn write_register<R, I2C>(bus: &mut I2C, address: u8, register: R) -> Result<(), Error<I2C>>
-where
-    I2C: i2c::Write + i2c::WriteRead,
-    R: Register,
-{
-    let register_address = R::address();
-    let register_bytes: [u8; 2] = register.into();
-    write_raw_register(bus, address, register_address.as_bytes(), register_bytes)
-        .map_err(Error::I2cWriteError)?;
-    Ok(())
-}
-
-fn write_raw_register<I2C: i2c::Write>(
-    bus: &mut I2C,
-    i2c_address: u8,
-    register_address: [u8; 2],
-    register_data: [u8; 2],
-) -> Result<(), I2C::Error> {
-    let combined: [u8; 4] = [
-        register_address[0],
-        register_address[1],
-        register_data[0],
-        register_data[1],
-    ];
-    bus.write(i2c_address, &combined)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -587,6 +533,7 @@ mod test {
 
     use mlx9064x_test_data::*;
 
+    use crate::common::{FromI2C, ToI2C};
     use crate::{mlx90640, mlx90641, Subpage};
     use crate::{I2cRegister, MelexisCamera, Mlx90640Driver, Mlx90641Driver, StatusRegister};
 
@@ -620,7 +567,7 @@ mod test {
         let address = 0x10;
         let mut mock_bus = datasheet_mlx90640_at_address(address);
         mock_bus.clear_recent_operations();
-        let register: I2cRegister = super::read_register(&mut mock_bus, address).unwrap();
+        let register = I2cRegister::from_i2c(&mut mock_bus, address).unwrap();
         assert_eq!(register, I2cRegister::default());
         let ops = mock_bus.recent_operations();
         assert_eq!(
@@ -636,12 +583,11 @@ mod test {
         // Using the status register for this test as it has read-only sections at both ends.
         let mut mock_bus = datasheet_mlx90640_at_address(address);
         mock_bus.clear_recent_operations();
-        let mut status_register: StatusRegister =
-            super::read_register(&mut mock_bus, address).unwrap();
+        let mut status_register = StatusRegister::from_i2c(&mut mock_bus, address).unwrap();
         assert_eq!(mock_bus.recent_operations().len(), 1);
         assert!(!status_register.overwrite_enabled());
         status_register.set_overwrite_enabled(true);
-        super::write_register(&mut mock_bus, address, status_register).unwrap();
+        status_register.to_i2c(&mut mock_bus, address).unwrap();
         assert_eq!(mock_bus.recent_operations().len(), 2);
     }
 

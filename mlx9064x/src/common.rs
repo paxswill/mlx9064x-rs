@@ -20,6 +20,14 @@ pub trait FromI2C<I2C> {
     fn from_i2c(bus: &mut I2C, i2c_address: u8) -> Result<Self::Ok, Self::Error>;
 }
 
+/// A trait for types that can be written to an I²C device.
+pub trait ToI2C<I2C> {
+    type Error;
+
+    /// Write the value of this type to the specified I²C device.
+    fn to_i2c(&self, bus: &mut I2C, i2c_address: u8) -> Result<(), Self::Error>;
+}
+
 /// This trait provides access to the module-specific calibration data.
 ///
 /// Each MLX9064\* camera has calibration data from the factory stored on its EEPROM. The

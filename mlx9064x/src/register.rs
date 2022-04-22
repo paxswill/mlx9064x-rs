@@ -3,10 +3,11 @@
 use core::convert::{TryFrom, TryInto};
 use core::time::Duration;
 
+use embedded_hal::blocking::i2c;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::common::Address;
-use crate::error::LibraryError;
+use crate::common::{Address, FromI2C, ToI2C};
+use crate::error::{Error, LibraryError};
 use crate::util::is_bit_set;
 
 /// Trait for common register functionality.
@@ -20,6 +21,75 @@ pub(crate) trait Register: Into<[u8; 2]> + for<'a> From<&'a [u8]> {
 
     /// The address of this register in the camera's memory map.
     fn address() -> Address;
+}
+
+impl<I2C, R> FromI2C<I2C> for R
+where
+    R: Register,
+    I2C: i2c::WriteRead + i2c::Write,
+{
+    type Error = Error<I2C>;
+
+    type Ok = R;
+
+    fn from_i2c(bus: &mut I2C, i2c_address: u8) -> Result<Self::Ok, Self::Error> {
+        // Inner function to reduce the impact of monomorphization for Register. It'll still get
+        // duplicated, but it should just be duplicated on I2C, and there should only be one of those
+        // in an application (usually).
+        fn read_register<I2C: i2c::WriteRead>(
+            bus: &mut I2C,
+            address: u8,
+            register_address: Address,
+        ) -> Result<[u8; 2], I2C::Error> {
+            let register_address_bytes = register_address.as_bytes();
+            let mut register_bytes = [0u8; 2];
+            bus.write_read(address, &register_address_bytes, &mut register_bytes)?;
+            Ok(register_bytes)
+        }
+
+        let register_address = R::address();
+        let register_value =
+            read_register(bus, i2c_address, register_address).map_err(Error::I2cWriteReadError)?;
+        let register = R::from(&register_value[..]);
+        Ok(register)
+    }
+}
+
+impl<I2C, R> ToI2C<I2C> for R
+where
+    R: Copy + Register,
+    I2C: i2c::WriteRead + i2c::Write,
+{
+    type Error = Error<I2C>;
+
+    fn to_i2c(&self, bus: &mut I2C, i2c_address: u8) -> Result<(), Self::Error> {
+        fn write_raw_register<I2C: i2c::Write>(
+            bus: &mut I2C,
+            address: u8,
+            register_address: [u8; 2],
+            register_data: [u8; 2],
+        ) -> Result<(), I2C::Error> {
+            let combined: [u8; 4] = [
+                register_address[0],
+                register_address[1],
+                register_data[0],
+                register_data[1],
+            ];
+            bus.write(address, &combined)?;
+            Ok(())
+        }
+
+        let register_address = R::address();
+        let register_bytes: [u8; 2] = (*self).into();
+        write_raw_register(
+            bus,
+            i2c_address,
+            register_address.as_bytes(),
+            register_bytes,
+        )
+        .map_err(Error::I2cWriteError)?;
+        Ok(())
+    }
 }
 
 /// Expose the fields of the status register (0x8000).
