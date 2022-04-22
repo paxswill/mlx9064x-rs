@@ -23,11 +23,13 @@
 //! let i2c_bus = I2cdev::new("/dev/i2c-1").expect("/dev/i2c-1 needs to be an I2C controller");
 //! // Default address for these cameras is 0x33
 //! let mut camera = Mlx90640Driver::new(i2c_bus, 0x33)?;
+//! // Get the current frame rate of the camera
+//! let frame_rate = camera.frame_rate()?;
 //! // A buffer for storing the temperature "image"
 //! let mut temperatures = vec![0f32; camera.height() * camera.width()];
 //! camera.generate_image_if_ready(&mut temperatures)?;
-//! // Default frame rate is 2Hz
-//! sleep(Duration::from_millis(500));
+//! // FrameRate can be converted into a Duration
+//! sleep(Duration::from(frame_rate));
 //! camera.generate_image_if_ready(&mut temperatures)?;
 //! # Ok::<(), mlx9064x::Error<I2cdev>>(())
 //! ```
