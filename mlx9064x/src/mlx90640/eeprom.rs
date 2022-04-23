@@ -4,6 +4,8 @@ use core::iter;
 use core::slice;
 
 use arrayvec::ArrayVec;
+use bitvec::order::Msb0;
+use bitvec::slice::BitSlice;
 use embedded_hal::blocking::i2c;
 
 // Various floating point operations are not implemented in core, so we use libm to provide them as
@@ -15,7 +17,7 @@ use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::{AccessPattern, Resolution, Subpage};
-use crate::util::{i16_from_bits, Buffer};
+use crate::util::BitSliceExt;
 
 use super::address::EepromAddress;
 use super::Mlx90640;
@@ -76,6 +78,8 @@ pub struct Mlx90640Calibration {
     interleave_correction_cp: f32,
 }
 
+type BitBuffer = BitSlice<u8, Msb0>;
+
 impl Mlx90640Calibration {
     /// Calculate pixel calibration values based off of the row and column data.
     ///
@@ -85,19 +89,19 @@ impl Mlx90640Calibration {
     /// The calculated array, the remainder scaling factor, and the value occupying the 4 bits
     /// preceding the scaling factors are returned (in that order).
     fn calculate_bulk_pixel_calibration(
-        data: &mut &[u8],
+        data: &mut &BitBuffer,
     ) -> ([i16; <Self as CalibrationData>::Camera::NUM_PIXELS], u8, u8) {
         let (extra_value, row_scale, column_scale, remainder_scale) = {
-            let scales = word_to_u4s(data);
+            let scales: [u8; 4] = take_array(data, 4);
             (scales[0], scales[1], scales[2], scales[3])
         };
-        let offset_average = data.get_i16();
+        let offset_average: i16 = data.take_and_load(i16::BITS as usize);
         let mut pixel_calibration = [offset_average; Mlx90640::NUM_PIXELS];
         const VALUES_PER_DATA_ROW: usize = 4;
         // Add row offsets
         for row_chunks in pixel_calibration.chunks_exact_mut(Mlx90640::WIDTH * VALUES_PER_DATA_ROW)
         {
-            let rows_coefficients = word_to_i4s(data);
+            let rows_coefficients: [i8; 4] = take_array(data, 4);
             // Create a nice lazy iterator that converts the values to i16, scales them, and
             // reverses that order of the data (because the data is laid out backwards in the
             // EEPROM).
@@ -117,7 +121,7 @@ impl Mlx90640Calibration {
         // Add column offsets. Slightly more involved as the offsets are in row-major order.
         for column_chunk_index in 0..(Mlx90640::WIDTH / VALUES_PER_DATA_ROW) {
             // TODO: This could probably be optimized better
-            let column_coefficients = word_to_i4s(data);
+            let column_coefficients: [i8; 4] = take_array(data, 4);
             // Same deal as the row coefficients, except cycle so that the same iterator can be
             // re-used multiple times.
             let column_coefficients = column_coefficients
@@ -178,18 +182,16 @@ impl Mlx90640Calibration {
     /// this value is chosen from four values, determined by if the row and column indices are even
     /// or odd. The rest of the calculation is performed later, with the rest of the per-pixel
     /// calculations.
-    fn generate_k_ta_pixels(data: &mut &[u8]) -> impl Iterator<Item = i16> {
-        let source_data: ArrayVec<i8, 4> = (0..4).map(|_| data.get_i8()).collect();
-        let source_data = source_data.into_inner().unwrap();
+    fn generate_k_ta_pixels(data: &mut &BitBuffer) -> impl Iterator<Item = i16> {
+        let source_data: [i8; 4] = take_array(data, 8);
         Self::repeat_chessboard(source_data)
     }
 
-    fn get_access_pattern_corrections(data: &mut &[u8]) -> (f32, [f32; 6]) {
-        let word = data.get_u16();
+    fn get_access_pattern_corrections(data: &mut &BitBuffer) -> (f32, [f32; 6]) {
         // The correction factors are 5 bits, 5 bits, then 6 bits, for factors 3, 2, 1.
-        let chess_1_raw = i16_from_bits(&(word & 0x003F).to_be_bytes(), 6);
-        let chess_2_raw = i16_from_bits(&((word & 0x07C0) >> 6).to_be_bytes(), 5);
-        let chess_3_raw = i16_from_bits(&((word & 0xF800) >> 11).to_be_bytes(), 5);
+        let chess_3_raw: i16 = data.take_and_load(5);
+        let chess_2_raw: i16 = data.take_and_load(5);
+        let chess_1_raw: i16 = data.take_and_load(6);
         // factor 1 is scaled by 2^4
         let chess_1 = f32::from(chess_1_raw) / 16f32;
         // factor 2 is scaled by 2 (no exponent)
@@ -208,13 +210,13 @@ impl Mlx90640Calibration {
     ///
     /// The buffer must cover *all* of the EEPROM.
     pub fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
-        let mut buf = data;
         let eeprom_length = usize::from(EepromAddress::End - EepromAddress::Base);
-        if buf.len() < eeprom_length {
+        if data.len() < eeprom_length {
             return Err(LibraryError::Other(
                 "Not enough space left in buffer to be a full EEPROM dump",
             ));
         }
+        let mut buf = BitBuffer::from_slice(data);
         // Skip the first 16 words, they're irrelevant
         buf.advance(WORD_SIZE * 16);
         // alpha_PTAT and offset compensation correction scales
@@ -230,24 +232,24 @@ impl Mlx90640Calibration {
         // Calculate the actual alpha scaling value from the exponent value. The alpha scaling
         // exponenet also has 30 added to it (not 27 like alpha_scale_cp).
         let alpha_scale = f32::from(alpha_scale_exp + 30).exp2();
-        let gain = buf.get_i16();
-        let v_ptat_25 = buf.get_i16();
-        let (k_v_ptat, kt_ptat_bytes) = word_6_10_split(&mut buf);
+        let gain: i16 = buf.take_integral();
+        let v_ptat_25: i16 = buf.take_integral();
+        let k_v_ptat: i8 = buf.take_and_load(6);
         // k_v_ptat is scaled by 2^12
         let k_v_ptat = f32::from(k_v_ptat) / 4096f32;
         // k_t_ptat is scaled by 2^3
-        let k_t_ptat = f32::from(i16_from_bits(&kt_ptat_bytes, 10)) / 8f32;
-        let k_v_dd = (buf.get_i8() as i16) << 5;
+        let k_t_ptat = f32::from(buf.take_and_load::<i16>(10)) / 8f32;
+        let k_v_dd = buf.take_and_load::<i16>(8) << 5;
         // The data in EEPROM is unsigned, so we upgrade to a signed type as it's immediately sent
         // negative (by subtracting 256), then multipled by 2^5, and finally has 2^13 subtracted
         // from it.
-        let v_dd_25 = ((buf.get_u8() as i16) - 256) * (1 << 5) - (1 << 13);
+        let v_dd_25 = ((buf.take_integral::<u8>() as i16) - 256) * (1 << 5) - (1 << 13);
         // Keep this value around for actual processing once we have kv_scale.
-        let k_v_avg = word_to_i4s(&mut buf);
+        let k_v_avg: [i8; 4] = take_array(&mut buf, 4);
         let (interleave_correction_cp, interleave_correction_pixels) =
             Self::get_access_pattern_corrections(&mut buf);
         let lazy_k_ta_pixels = Self::generate_k_ta_pixels(&mut buf);
-        let unpacked_scales = word_to_u4s(&mut buf);
+        let unpacked_scales: [u8; 4] = take_array(&mut buf, 4);
         // The resolution control calibration value is just two bits in the high half of the byte.
         // The two other two bits are reserved, so we just drop them.
         let resolution_byte = unpacked_scales[0] & 0x3;
@@ -268,35 +270,37 @@ impl Mlx90640Calibration {
         let k_v_pattern = k_v_pattern.into_inner().unwrap();
         // Compensation pixel parameters
         let alpha_cp = {
-            let (alpha_cp_ratio, alpha_cp_bytes) = word_6_10_split(&mut buf);
+            let alpha_cp_ratio: i8 = buf.take_and_load(6);
             let alpha_cp_ratio = f32::from(alpha_cp_ratio) / 7f32.exp2();
             // NOTE: the alpha scale value read from EEPROM has 27 added to get alpha_scale_cp, but
             // 30 added for alpha_scale_pixel
             let alpha_scale_cp = f32::from(alpha_scale_exp + 27).exp2();
-            let alpha_cp0: f32 = f32::from(u16::from_be_bytes(alpha_cp_bytes)) / alpha_scale_cp;
+            let alpha_cp0 = f32::from(buf.take_and_load::<u16>(10)) / alpha_scale_cp;
             [alpha_cp0, alpha_cp0 * (1f32 + alpha_cp_ratio)]
         };
         let offset_reference_cp = {
-            let (offset_cp_delta, offset_cp_bytes) = word_6_10_split(&mut buf);
-            let offset_cp0 = i16_from_bits(&offset_cp_bytes, 10);
+            let offset_cp_delta: i8 = buf.take_and_load(6);
+            let offset_cp0: i16 = buf.take_and_load(10);
             [offset_cp0, offset_cp0 + i16::from(offset_cp_delta)]
         };
-        let k_v_cp = f32::from(buf.get_i8()) / k_v_scale;
-        let k_ta_cp = f32::from(buf.get_i8()) / k_ta_scale1;
-        let k_s_ta = f32::from(buf.get_i8()) / 13f32.exp2();
-        let temperature_gradient_coefficient = match buf.get_i8() {
+        let k_v_cp = f32::from(buf.take_integral::<i8>()) / k_v_scale;
+        let k_ta_cp = f32::from(buf.take_integral::<i8>()) / k_ta_scale1;
+        let k_s_ta = f32::from(buf.take_integral::<i8>()) / 13f32.exp2();
+        let temperature_gradient_coefficient = match buf.take_integral::<i8>() {
             0 => None,
             n => Some(f32::from(n) / 5f32.exp2()),
         };
         // k_s_to is unscaled until k_s_to_scale is unpacked.
-        let mut k_s_to_ranges: ArrayVec<f32, 4> = (0..4).map(|_| f32::from(buf.get_i8())).collect();
+        let mut k_s_to_ranges: ArrayVec<f32, 4> = (0..4)
+            .map(|_| f32::from(buf.take_integral::<i8>()))
+            .collect();
         // Fix the ordering of the elements from the EEPROM
         k_s_to_ranges.swap(0, 1);
         k_s_to_ranges.swap(2, 3);
         // Safe to unwrap as I'm just using ArrayVec to collect into an array.
         let mut k_s_to = k_s_to_ranges.into_inner().unwrap();
         // Very similar to the resolution and k_*_scale word a few lines above.
-        let unpacked_corner_temps = word_to_u4s(&mut buf);
+        let unpacked_corner_temps: [u8; 4] = take_array(&mut buf, 4);
         // Like before, the top two bits are reserved. This time though, the temperature step
         // is multipled by 10. Also convert to i16 for use in calculations.
         let corner_temperature_step = i16::from(unpacked_corner_temps[0] & 0x3) * 10;
@@ -322,8 +326,8 @@ impl Mlx90640Calibration {
             .for_each(|(((offset, alpha), k_ta_rc), k_ta)| {
                 // TODO: handle failed pixels (where the pixel data is 0x0000)
                 // TODO: outlier/deviant pixels
-                let high = buf.get_u8();
-                let low = buf.get_u8();
+                let high: u8 = buf.take_integral();
+                let low: u8 = buf.take_integral();
                 // Normal dance to extend the sign bit from an i6 to an i8
                 let offset_remainder = i16::from(i8::from_ne_bytes([high & 0xFC]) >> 2);
                 *offset += offset_remainder << offset_correction_remainder_scale;
@@ -611,46 +615,20 @@ impl<'a> Iterator for PixelAccessPatternCompensation<'a> {
     }
 }
 
-/// Split a word into a 6-bit value and a 10-bit value.
-///
-/// Further conversion for the second value is left to the caller.
-fn word_6_10_split(data: &mut &[u8]) -> (i8, [u8; 2]) {
-    let mut word = [data.get_u8(), data.get_u8()];
-    // Copy out the 6-bit value, and shift it over. As signed right shifts are aritmetic, the sign
-    // bit gets extended, and we get the value we wanted.
-    let six_bit = i8::from_ne_bytes([word[0]]) >> 2;
-    // Mask off the extra from the high byte
-    word[0] &= 0x03;
-    (six_bit, word)
-}
-
-/// Extract four unsigned, 4-bit integers from a buffer
-fn word_to_u4s(data: &mut &[u8]) -> [u8; 4] {
-    let high = data.get_u8();
-    let low = data.get_u8();
-    [(high & 0xF0) >> 4, high & 0xF, (low & 0xF0) >> 4, low & 0xF]
-}
-
-/// Split a byte into a pair of signed, four-bit integers.
-fn u8_to_i4s(byte: u8) -> [i8; 2] {
-    // Start by splitting the two numbers into a pair of bytes, with the MSB of the i4 all the way
-    // to the left.
-    let high = byte & 0xF0;
-    let low = (byte & 0xF) << 4;
-    // Create i8s from the pair of bytes, then arithmetic shift right by 4 to extend the sign.
-    // Endian-ness shouldn't matter as these are single bytes.
-    let high = i8::from_ne_bytes([high]);
-    let low = i8::from_ne_bytes([low]);
-    [high >> 4, low >> 4]
-}
-
-/// Split a word (2 bytes) from a buffer into four, 4-bit signed integers.
-fn word_to_i4s(data: &mut &[u8]) -> [i8; 4] {
-    let high = data.get_u8();
-    let low = data.get_u8();
-    let high = u8_to_i4s(high);
-    let low = u8_to_i4s(low);
-    [high[0], high[1], low[0], low[1]]
+/// Extract an array of integers from a bit buffer.
+fn take_array<I, const NUM_ELEMENTS: usize>(
+    data: &mut &BitBuffer,
+    element_len: usize,
+) -> [I; NUM_ELEMENTS]
+where
+    I: funty::Integral,
+{
+    let mut ret = ArrayVec::<I, NUM_ELEMENTS>::new();
+    for _ in 0..NUM_ELEMENTS {
+        ret.push(data.take_and_load(element_len));
+    }
+    ret.into_inner()
+        .expect("the ArrayVec has been filled by the for loop")
 }
 
 #[cfg(test)]
@@ -679,45 +657,6 @@ pub(crate) mod test {
     fn example_eeprom() -> Mlx90640Calibration {
         Mlx90640Calibration::from_data(mlx90640_example_data::EEPROM_DATA)
             .expect("The example data should be parseable")
-    }
-
-    #[test]
-    fn word_6_10_split() {
-        fn check(mut data: &[u8], little: i8, remainder: [u8; 2]) {
-            let split = super::word_6_10_split(&mut data);
-            assert_eq!(
-                split.0, little,
-                "word_6_10_split failed to split the upper 6 bits off"
-            );
-            assert_eq!(
-                split.1, remainder,
-                "word_6_10_split failed to split the lower 10 bits off"
-            );
-        }
-        // Start with basic premise, that the first 6 bits are split off
-        check(b"\xfc\x00", -1, [0x00, 0x00]);
-        // Then check the "reverse"
-        check(b"\x03\xff", 0, [0x03, 0xFF]);
-        // Negative max i6, with u10::MAX as well
-        check(b"\x83\xff", -32, [0x03, 0xFF]);
-    }
-
-    #[test]
-    fn word_to_u4s() {
-        let mut sequence: &[u8] = b"\x12\x34";
-        assert_eq!(super::word_to_u4s(&mut sequence), [1, 2, 3, 4]);
-        let mut max_min: &[u8] = b"\xf0\xf0";
-        assert_eq!(super::word_to_u4s(&mut max_min), [0xF, 0, 0xF, 0]);
-        let mut min_max: &[u8] = b"\x0f\x0f";
-        assert_eq!(super::word_to_u4s(&mut min_max), [0, 0xF, 0, 0xF]);
-    }
-
-    #[test]
-    fn u8_to_i4s() {
-        assert_eq!(super::u8_to_i4s(0x44), [4, 4]);
-        assert_eq!(super::u8_to_i4s(0x88), [-8, -8]);
-        assert_eq!(super::u8_to_i4s(0x48), [4, -8]);
-        assert_eq!(super::u8_to_i4s(0x84), [-8, 4]);
     }
 
     #[test]

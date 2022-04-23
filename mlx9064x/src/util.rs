@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
 
+use bitvec::field::BitField;
+use bitvec::order::Msb0;
+use bitvec::slice::BitSlice;
+use bitvec::store::BitStore;
+
 /// Define addition and subtraction for address enumerations.
 #[doc(hidden)]
 #[macro_export]
@@ -115,6 +120,46 @@ impl Buffer for &[u8] {
         let (bytes, rest) = self.split_at(2);
         *self = rest;
         i16::from_be_bytes([bytes[0], bytes[1]])
+    }
+}
+
+pub(crate) trait BitSliceExt {
+    fn advance(&mut self, cnt: usize);
+
+    fn take_first(&mut self, mid: usize) -> Self;
+
+    fn take_and_load<I: funty::Integral>(&mut self, len: usize) -> I;
+
+    fn take_integral<I: funty::Integral>(&mut self) -> I;
+}
+
+impl<T> BitSliceExt for &BitSlice<T, Msb0>
+where
+    T: BitStore,
+{
+    fn advance(&mut self, byte_count: usize) {
+        self.take_first(byte_count * 8);
+    }
+
+    fn take_first(&mut self, mid: usize) -> Self {
+        let (head, tail) = self.split_at(mid);
+        *self = tail;
+        head
+    }
+
+    fn take_and_load<I>(&mut self, len: usize) -> I
+    where
+        I: funty::Integral,
+    {
+        let head = self.take_first(len);
+        head.load_be()
+    }
+
+    fn take_integral<I>(&mut self) -> I
+    where
+        I: funty::Integral,
+    {
+        self.take_and_load(I::BITS as usize)
     }
 }
 
