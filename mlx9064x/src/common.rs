@@ -4,8 +4,11 @@
 use core::fmt;
 
 use arrayvec::ArrayVec;
+use embedded_hal::blocking::i2c;
 
-use crate::register::{AccessPattern, Subpage};
+use crate::calculations::RamData;
+use crate::error::Error;
+use crate::register::{AccessPattern, Resolution, Subpage};
 use crate::util::Sealed;
 
 /// A trait for types that can be created by reading data from an I²C device.
@@ -15,6 +18,14 @@ pub trait FromI2C<I2C> {
 
     /// Create an instance of a type using data retrieved over I²C.
     fn from_i2c(bus: &mut I2C, i2c_address: u8) -> Result<Self::Ok, Self::Error>;
+}
+
+/// A trait for types that can be written to an I²C device.
+pub trait ToI2C<I2C> {
+    type Error;
+
+    /// Write the value of this type to the specified I²C device.
+    fn to_i2c(&self, bus: &mut I2C, i2c_address: u8) -> Result<(), Self::Error>;
 }
 
 /// This trait provides access to the module-specific calibration data.
@@ -38,8 +49,7 @@ pub trait CalibrationData<'a> {
     fn v_dd_25(&self) -> i16;
 
     /// ADC resolution this camera was calibrated at.
-    // TODO: Should this return `Resolution`?
-    fn resolution(&self) -> u8;
+    fn resolution(&self) -> Resolution;
 
     /// Pixel supply voltage ($K_{DD_0}$).
     ///
@@ -277,7 +287,10 @@ pub trait MelexisCamera: Sealed {
     const V_DD_PIXEL: Address;
 
     /// Calculate the ADC resolution correction factor
-    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32;
+    fn resolution_correction(
+        calibrated_resolution: Resolution,
+        current_resolution: Resolution,
+    ) -> f32;
 
     /// The index of the basic temperature range.
     ///
@@ -352,4 +365,35 @@ fn alpha_corr_n(n: usize, basic_range: usize, ct: &[i16], k_s_to: &[f32]) -> f32
                 * alpha_corr_n(n - 1, basic_range, ct, k_s_to)
         }
     }
+}
+
+/// Read a frame of data from the camera's memory.
+pub fn read_ram<Cam, I2C, const HEIGHT: usize>(
+    bus: &mut I2C,
+    i2c_address: u8,
+    access_pattern: AccessPattern,
+    subpage: Subpage,
+    pixel_data_buffer: &mut [u8],
+) -> Result<RamData, Error<I2C>>
+where
+    Cam: MelexisCamera,
+    I2C: i2c::WriteRead + i2c::Write,
+{
+    // Pick a maximum size of HEIGHT, as the worst access pattern is still by rows
+    let pixel_ranges: ArrayVec<PixelAddressRange, HEIGHT> =
+        Cam::pixel_ranges(subpage, access_pattern)
+            .into_iter()
+            .collect();
+    for range in pixel_ranges.iter() {
+        let offset = range.buffer_offset;
+        let address_bytes = range.start_address.as_bytes();
+        bus.write_read(
+            i2c_address,
+            &address_bytes[..],
+            &mut pixel_data_buffer[offset..(offset + range.length)],
+        )
+        .map_err(Error::I2cWriteReadError)?;
+    }
+    // And now to read the non-pixel information out
+    RamData::from_i2c::<I2C, Cam>(bus, i2c_address, subpage).map_err(Error::I2cWriteReadError)
 }

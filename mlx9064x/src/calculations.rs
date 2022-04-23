@@ -770,8 +770,8 @@ where
 #[allow(clippy::excessive_precision)]
 mod test {
     use float_cmp::assert_approx_eq;
+    use mlx9064x_test_data::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom};
 
-    use crate::test::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom};
     use crate::{mlx90640, mlx90641, CalibrationData, MelexisCamera, Subpage};
 
     fn mlx90640_calibration() -> mlx90640::Mlx90640Calibration {

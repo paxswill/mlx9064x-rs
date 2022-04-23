@@ -16,7 +16,7 @@
 
 #![allow(clippy::excessive_precision)]
 
-use crate::{mlx90640, MelexisCamera};
+use mlx9064x::{mlx90640, MelexisCamera};
 
 /// Raw EEPROM dump
 ///

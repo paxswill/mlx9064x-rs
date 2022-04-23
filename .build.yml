@@ -26,18 +26,18 @@ tasks:
       source $HOME/.cargo/env
       RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-nono
       cd mlx9064x
-      cargo nono check --no-default-features
+      cargo nono check --package mlx9064x --no-default-features
   - test: |
       cd mlx9064x
       source $HOME/.cargo/env
       # Test with and without std
       cargo test
-      cargo test --no-default-features --features libm
+      cargo test --package mlx9064x --no-default-features --features libm
   - test-docs: |
       cd mlx9064x
       source $HOME/.cargo/env
       # Ensure all doc comments are well formed (even private ones)
-      cargo rustdoc -- \
+      cargo rustdoc --package mlx9064x -- \
         --document-private-items \
         --deny rustdoc::broken_intra_doc_links \
         --deny rustdoc::private_intra_doc_links \
@@ -48,4 +48,5 @@ tasks:
       source $HOME/.cargo/env
       cargo clippy -- -D warnings
       cargo clippy --tests -- -D warnings
+      cargo clippy --benches -- -D warnings
       cargo fmt -- --check

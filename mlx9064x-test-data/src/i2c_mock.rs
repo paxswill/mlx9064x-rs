@@ -10,24 +10,24 @@ use core::ops::RangeInclusive;
 
 use arrayvec::ArrayVec;
 use embedded_hal::blocking::i2c;
+use mlx9064x::{mlx90640, mlx90641, Address, MelexisCamera};
 
 use super::eeprom_data::{mlx90640_datasheet_eeprom, mlx90641_datasheet_eeprom, EEPROM_LENGTH};
 use super::mlx90640_example_data;
-use crate::{mlx90640, mlx90641, Address, MelexisCamera};
 
 /// The number of bytes the MLX90640 has of RAM.
 ///
 /// The MLX90640 has its RAM from 0x0400 through 0x07FF, but only uses up through 0x073F. The used
 /// range representing 768 pixels along with 64 other addresses (half of which are reserved). Each
 /// address corresponds to 16 bits of data.
-pub(crate) const MLX90640_RAM_LENGTH: usize = (0x0740 - 0x0400) * 2;
+pub const MLX90640_RAM_LENGTH: usize = (0x0740 - 0x0400) * 2;
 
 /// The number of bytes the MLX90641 has of RAM.
 ///
 /// The MLX90641 has its RAM from 0x0400 through 0x05BF, representing 192 pixels duplicated across
 /// two subpages along with 64 other addresses (half of which are reserved). Each address
 /// corresponds to 16 bits of data.
-pub(crate) const MLX90641_RAM_LENGTH: usize = (0x05C0 - 0x0400) * 2;
+pub const MLX90641_RAM_LENGTH: usize = (0x05C0 - 0x0400) * 2;
 
 const STATUS_REGISTER_ADDRESS: u16 = 0x8000;
 
@@ -61,7 +61,7 @@ enum EepromAddress {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub(crate) enum MockError {
+pub enum MockError {
     /// The given address shouldn't be accessed.
     IllegalAccess(Address),
 
@@ -89,13 +89,13 @@ pub(crate) enum MockError {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum I2cOperation {
+pub enum I2cOperation {
     Write { address: Address, length: usize },
     Read { address: Address, length: usize },
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct MockCameraBus<const RAM_LENGTH: usize> {
+pub struct MockCameraBus<const RAM_LENGTH: usize> {
     i2c_address: u8,
     rom_range: RangeInclusive<u16>,
     ram_range: RangeInclusive<u16>,
@@ -161,7 +161,7 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
     }
 
     /// Access a slice containing `count` 16-bit words, starting at the given address.
-    pub(crate) fn get(&self, address: Address, byte_count: usize) -> Result<Ref<[u8]>, MockError> {
+    pub fn get(&self, address: Address, byte_count: usize) -> Result<Ref<[u8]>, MockError> {
         let start_address: u16 = address.into();
         let end_address = start_address + (byte_count / 2) as u16;
         // classify the address and check if it's supposed to be read
@@ -221,7 +221,7 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
         }
     }
 
-    pub(crate) fn set(&mut self, address: Address, data: &[u8]) -> Result<(), MockError> {
+    pub fn set(&mut self, address: Address, data: &[u8]) -> Result<(), MockError> {
         let start_address: u16 = address.into();
         // Divide by two to get the number of words
         let end_address: u16 = start_address + (data.len() as u16 / 2);
@@ -320,7 +320,7 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
     /// This is to simulate a new frame of data being made available. This function does *not*
     /// explicitly set the "new data available" flag. The value in the given status register data
     /// is used as-is.
-    pub(crate) fn update_frame(&mut self, ram_data: &[u8], status_register: &[u8]) {
+    pub fn update_frame(&mut self, ram_data: &[u8], status_register: &[u8]) {
         self.ram_data.borrow_mut().copy_from_slice(ram_data);
         self.status_register
             .borrow_mut()
@@ -328,7 +328,7 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
     }
 
     /// Set the "new data available" flag in the status register to a new value
-    pub(crate) fn set_data_available(&mut self, available: bool) {
+    pub fn set_data_available(&mut self, available: bool) {
         if available {
             self.status_register.borrow_mut()[1] |= 0x8;
         } else {
@@ -342,11 +342,11 @@ impl<const RAM_LENGTH: usize> MockCameraBus<RAM_LENGTH> {
         recent_ops.truncate(RECENT_OPERATIONS_QUEUE_LENGTH);
     }
 
-    pub(crate) fn recent_operations(&self) -> Ref<VecDeque<I2cOperation>> {
+    pub fn recent_operations(&self) -> Ref<VecDeque<I2cOperation>> {
         self.recent_operations.borrow()
     }
 
-    pub(crate) fn clear_recent_operations(&self) {
+    pub fn clear_recent_operations(&self) {
         self.recent_operations.borrow_mut().clear()
     }
 }
@@ -403,7 +403,7 @@ fn check_new_against_mask(existing: u16, mask: u16, new: u16) -> bool {
     (new & !mask) == (existing & !mask)
 }
 
-pub(crate) fn datasheet_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
+pub fn datasheet_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
     let eeprom_data = mlx90640_datasheet_eeprom();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90640_RAM_LENGTH];
@@ -441,7 +441,7 @@ pub(crate) fn datasheet_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<ML
     )
 }
 
-pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX90641_RAM_LENGTH> {
+pub fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX90641_RAM_LENGTH> {
     let eeprom_data = mlx90641_datasheet_eeprom();
     // For the RAM, use the example data from the datasheet.
     let mut ram_data = [0u8; MLX90641_RAM_LENGTH];
@@ -484,7 +484,7 @@ pub(crate) fn mock_mlx90641_at_address(i2c_address: u8) -> MockCameraBus<MLX9064
     }
 }
 
-pub(crate) fn example_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
+pub fn example_mlx90640_at_address(i2c_address: u8) -> MockCameraBus<MLX90640_RAM_LENGTH> {
     MockCameraBus::new_mlx90640(
         i2c_address,
         mlx90640_example_data::EEPROM_DATA,

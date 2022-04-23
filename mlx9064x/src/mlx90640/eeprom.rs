@@ -14,7 +14,7 @@ use num_traits::Float;
 use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
-use crate::register::{AccessPattern, Subpage};
+use crate::register::{AccessPattern, Resolution, Subpage};
 use crate::util::{i16_from_bits, Buffer};
 
 use super::address::EepromAddress;
@@ -33,7 +33,7 @@ pub struct Mlx90640Calibration {
 
     v_dd_25: i16,
 
-    resolution: u8,
+    resolution: Resolution,
 
     k_v_ptat: f32,
 
@@ -250,7 +250,8 @@ impl Mlx90640Calibration {
         let unpacked_scales = word_to_u4s(&mut buf);
         // The resolution control calibration value is just two bits in the high half of the byte.
         // The two other two bits are reserved, so we just drop them.
-        let resolution = unpacked_scales[0] & 0x3;
+        let resolution_byte = unpacked_scales[0] & 0x3;
+        let resolution = Resolution::from_raw(resolution_byte as u16)?;
         // various scaling constants
         let k_v_scale = f32::from(unpacked_scales[1]).exp2();
         // k_ta_scale1 has 8 added to it.
@@ -389,7 +390,7 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
 
     expose_member!(k_v_dd, i16);
     expose_member!(v_dd_25, i16);
-    expose_member!(resolution, u8);
+    expose_member!(resolution, Resolution);
     expose_member!(k_v_ptat, f32);
     expose_member!(k_t_ptat, f32);
     expose_member!(v_ptat_25, f32);
@@ -662,11 +663,11 @@ pub(crate) mod test {
 
     use arrayvec::ArrayVec;
     use float_cmp::{assert_approx_eq, ApproxEq};
+    use mlx9064x_test_data::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
     use crate::common::{CalibrationData, MelexisCamera};
     use crate::mlx90640::Mlx90640;
-    use crate::register::{AccessPattern, Subpage};
-    use crate::test::{mlx90640_datasheet_eeprom, mlx90640_example_data};
+    use crate::register::{AccessPattern, Resolution, Subpage};
 
     use super::Mlx90640Calibration;
 
@@ -764,10 +765,10 @@ pub(crate) mod test {
     // Ordering these tests in the same order as the data sheet's worked example.
     #[test]
     fn resolution() {
-        assert_eq!(datasheet_eeprom().resolution(), 2);
+        assert_eq!(datasheet_eeprom().resolution(), Resolution::Eighteen);
         assert_eq!(
             example_eeprom().resolution(),
-            mlx90640_example_data::RESOLUTION_EE
+            Resolution::from_raw(mlx90640_example_data::RESOLUTION_EE as u16).unwrap()
         );
     }
 

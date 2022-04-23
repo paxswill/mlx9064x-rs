@@ -14,7 +14,7 @@ use core::cmp::Ordering;
 use core::iter;
 
 use crate::common::{Address, MelexisCamera, PixelAddressRange};
-use crate::register::{AccessPattern, Subpage};
+use crate::register::{AccessPattern, Resolution, Subpage};
 use crate::util::Sealed;
 
 pub use address::RamAddress;
@@ -62,9 +62,13 @@ impl MelexisCamera for Mlx90641 {
 
     const V_DD_PIXEL: Address = Address::new(RamAddress::PixelSupplyVoltage as u16);
 
-    fn resolution_correction(calibrated_resolution: u8, current_resolution: u8) -> f32 {
+    fn resolution_correction(
+        calibrated_resolution: Resolution,
+        current_resolution: Resolution,
+    ) -> f32 {
         // These values are safe to convert to i8, as they were originally 4-bit unsigned ints.
-        let resolution_exp: i8 = calibrated_resolution as i8 - current_resolution as i8;
+        let resolution_exp: i8 =
+            calibrated_resolution.as_raw() as i8 - current_resolution.as_raw() as i8;
         // Have to use an f32 here as resolution_exp may be negative.
         f32::from(resolution_exp).exp2()
     }
@@ -177,8 +181,8 @@ mod test {
             assert_eq!(
                 Mlx90641::resolution_correction(
                     // Using 18 as the calibration value as that's the default calibration value.
-                    Resolution::Eighteen as u8,
-                    register_resolution as u8
+                    Resolution::Eighteen,
+                    register_resolution
                 ),
                 expected,
             )

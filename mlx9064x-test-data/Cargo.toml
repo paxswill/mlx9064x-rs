@@ -1,0 +1,19 @@
+[package]
+authors = ["Will Ross <paxswill@paxswill.com>"]
+categories = ["embedded", "hardware-support"]
+description = "Test data for mlx9064x"
+edition = "2021"
+keywords = ["embedded-hal", "thermal-camera", "thermopile", "mlx90640", "mlx90641"]
+license = "Apache-2.0"
+name = "mlx9064x-test-data"
+version = "0.2.1"
+readme = "ReadMe.md"
+repository = "https://github.com/paxswill/mlx9064x-rs"
+publish = false
+
+[dependencies]
+arrayvec = { version = "0.7", default-features = false }
+embedded-hal = "0.2.5"
+
+[dependencies.mlx9064x]
+path = "../mlx9064x"

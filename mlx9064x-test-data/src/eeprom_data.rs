@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
-use crate::{mlx90641, MelexisCamera};
+use mlx9064x::{mlx90641, MelexisCamera};
 
 /// The size of the EEPROM for the MLX990640 and MLX90641 in bytes.
 ///
 /// Both cameras (MLX90640 and MLX90641) have the same size EEPROM. 0x273F is the last address in
 /// the EEPROM, so add one to that to include it, while 0x2400 is the first address. Each address
 /// contains a 16-bit value, so we multiply by two to get the number of 8-bit bytes.
-pub(crate) const EEPROM_LENGTH: usize = (0x2740 - 0x2400) * 2;
+pub const EEPROM_LENGTH: usize = (0x2740 - 0x2400) * 2;
 
 /// Example MLX90640 EEPROM data from the datasheet (from the worked example).
 // Each line is 8 bytes. The first two lines are empty, as that data is ignored for calibration
@@ -23,7 +23,7 @@ const MLX90640_EEPROM_HEADER: &[u8] = b"\
     \x23\x63\xe4\x46\xfb\xb5\x04\x4b\xf0\x20\x97\x97\x97\x97\x28\x89";
 
 /// Create a buffer with the example MLX90640 EEPROM data.
-pub(crate) fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
+pub fn mlx90640_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     // Create the EEPROM data by starting with the header and then filling in the rest with the
     // pixel used in the worked example from the datasheet.
     let pixel_data = b"\x08\xa0";
@@ -48,7 +48,7 @@ const MLX90641_EEPROM_HEADER: &[u8] = b"\
     \xa0\x09\xbb\x53\xf1\x94\xfc\x00\x78\x14\xed\x22\xed\x22\xed\x22\
     \xed\x22\xed\x22\x80\xc8\xed\x22\x41\x90\xed\x22\xda\x58\xed\x22";
 
-pub(crate) fn mlx90641_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
+pub fn mlx90641_datasheet_eeprom() -> [u8; EEPROM_LENGTH] {
     let offset_0 = b"\xf8\x49";
     let k_ta_with_k_v = b"\xb8\xc0";
     let sensitivity = b"\xff\xff";

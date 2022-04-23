@@ -1,5 +1,4 @@
-//! A pure-Rust library for accessing the MLX90640 and MLX90641 (eventually!) thermal cameras over
-//! I²C.
+//! A pure-Rust library for accessing the MLX90640 and MLX90641 thermal cameras over I²C.
 //!
 //! These cameras have a large amount of calibration data that must be pre-processed before use,
 //! and the output data also requires a somewhat complex process to turn it into temperature data.
@@ -24,11 +23,13 @@
 //! let i2c_bus = I2cdev::new("/dev/i2c-1").expect("/dev/i2c-1 needs to be an I2C controller");
 //! // Default address for these cameras is 0x33
 //! let mut camera = Mlx90640Driver::new(i2c_bus, 0x33)?;
+//! // Get the current frame rate of the camera
+//! let frame_rate = camera.frame_rate()?;
 //! // A buffer for storing the temperature "image"
 //! let mut temperatures = vec![0f32; camera.height() * camera.width()];
 //! camera.generate_image_if_ready(&mut temperatures)?;
-//! // Default frame rate is 2Hz
-//! sleep(Duration::from_millis(500));
+//! // FrameRate can be converted into a Duration
+//! sleep(Duration::from(frame_rate));
 //! camera.generate_image_if_ready(&mut temperatures)?;
 //! # Ok::<(), mlx9064x::Error<I2cdev>>(())
 //! ```
@@ -55,7 +56,8 @@
 //!
 //! Most users of the low-level API will probably find the [`common`], [`register`], and
 //! [`calculations`] modules most relevant to their needs, with camera-model specific constants and
-//! types available in the [`mlx90640`] and [`mlx90641`] modules.
+//! types available in the [`mlx90640`] and [`mlx90641`] modules. The `raw_to_temperatures`
+//! benchmark is an example of using the low-level API (but without actually waiting for subpages).
 //!
 //! # Subpages and Access Patterns
 //! A significant difference between these Melexis cameras and other common thermal cameras is how
@@ -80,8 +82,6 @@ pub mod error;
 pub mod mlx90640;
 pub mod mlx90641;
 pub mod register;
-#[cfg(test)]
-mod test;
 mod util;
 
 pub use common::{Address, CalibrationData, MelexisCamera};

@@ -1,41 +1,5 @@
-[package]
-authors = ["Will Ross <paxswill@paxswill.com>"]
-categories = ["embedded", "hardware-support"]
-description = "Library for interfacing with Melexis MLX9064* thermal cameras"
-edition = "2021"
-keywords = ["embedded-hal", "thermal-camera", "thermopile", "mlx90640", "mlx90641"]
-license = "Apache-2.0"
-name = "mlx9064x"
-version = "0.2.1"
-readme = "ReadMe.md"
-repository = "https://github.com/paxswill/mlx9064x-rs"
-autoexamples = false
-
-[dependencies]
-# anyhow is only required for examples
-anyhow = { version = "1.0", optional = true }
-arrayvec = { version = "0.7", default-features = false }
-embedded-hal = "0.2.5"
-# linux-embedded-hal is only required for examples
-linux-embedded-hal = { version = "0.3", optional = true }
-num_enum = { version = "0.5", default-features = false }
-num-traits = { version = "0.2", default-features = false }
-paste = "1"
-
-[dev-dependencies]
-float-cmp = "0.9.0"
-linux-embedded-hal = "0.3"
-
-[features]
-default = ["std"]
-examples = ["anyhow", "linux-embedded-hal", "std"]
-libm = ["num-traits/libm"]
-std = ["arrayvec/std", "num-traits/std"]
-
-[[example]]
-name = "true-frame-rate"
-required-features = ["examples"]
-
-[[example]]
-name = "terminal-temperatures"
-required-features = ["examples"]
+[workspace]
+members = [
+	"mlx9064x",
+	"mlx9064x-test-data",
+]

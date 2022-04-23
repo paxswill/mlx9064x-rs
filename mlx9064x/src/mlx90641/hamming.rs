@@ -161,10 +161,9 @@ pub fn validate_checksum(word: u16) -> Result<u16, LibraryError> {
 
 #[cfg(test)]
 mod test {
-    use core::convert::TryInto;
+    use mlx9064x_test_data::{mlx90641_datasheet_eeprom, EEPROM_LENGTH};
 
     use crate::error::LibraryError;
-    use crate::test::{mlx90641_datasheet_eeprom, EEPROM_LENGTH};
 
     // Check against all of the example values
     fn eeprom_values() -> [u16; EEPROM_LENGTH] {
