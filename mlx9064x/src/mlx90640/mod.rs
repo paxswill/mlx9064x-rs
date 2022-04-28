@@ -16,7 +16,8 @@ use crate::register::{AccessPattern, Resolution, Subpage};
 use crate::util::Sealed;
 
 pub use address::RamAddress;
-pub use eeprom::Mlx90640Calibration;
+// Expose PixelAccessPatternCompensation so that it is shown in the documentation.
+pub use eeprom::{Mlx90640Calibration, PixelAccessPatternCompensation};
 
 /// MLX90640-specific constants and supporting functions.
 ///
