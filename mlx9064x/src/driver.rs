@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
 
-use core::marker::PhantomData;
-
 use embedded_hal::blocking::i2c;
 use paste::paste;
 
@@ -47,15 +45,12 @@ macro_rules! set_register_field {
 ///
 /// The biggest impact to users of these modules is that one of the  `generate_image_*` functions
 /// will need to be called twice (once for each subpage) before a full image is available.
+
+// HEIGHT and NUM_BYTES are const generics until generic_const_expr is stabilized (maybe). After
+// that, point the associated constants on Clb::Camera (Clb::Camera::HEIGHT and {
+// Clb::Camera::HEIGHT * Clb::Camera::WIDTH * 2 } ) can be used instead.
 #[derive(Clone, Debug)]
-pub struct CameraDriver<
-    Cam,
-    Clb,
-    I2C,
-    const HEIGHT: usize,
-    const WIDTH: usize,
-    const NUM_BYTES: usize,
-> {
+pub struct CameraDriver<Clb, I2C, const HEIGHT: usize, const NUM_BYTES: usize> {
     /// The I²C bus this camera is accessible on.
     bus: I2C,
 
@@ -89,14 +84,11 @@ pub struct CameraDriver<
     /// This value is used as the "reflected temperature" for converting the observed IR data to
     /// actual temperatures.
     reflected_temperature: Option<f32>,
-
-    _camera: PhantomData<Cam>,
 }
 
-impl<'a, Cam, Clb, I2C, const HEIGHT: usize, const WIDTH: usize, const BUFFER_SIZE: usize>
-    CameraDriver<Cam, Clb, I2C, HEIGHT, WIDTH, BUFFER_SIZE>
+impl<'a, Clb, I2C, const HEIGHT: usize, const BUFFER_SIZE: usize>
+    CameraDriver<Clb, I2C, HEIGHT, BUFFER_SIZE>
 where
-    Cam: MelexisCamera,
     Clb: CalibrationData<'a>,
     I2C: i2c::WriteRead + i2c::Write,
 {
@@ -127,7 +119,7 @@ where
         let control = ControlRegister::from_i2c(&mut bus, address)?;
         // Cache these values
         let resolution_correction =
-            Cam::resolution_correction(calibration.resolution(), control.resolution());
+            Clb::Camera::resolution_correction(calibration.resolution(), control.resolution());
         let access_pattern = control.access_pattern();
         // Choose an emissivity value to start with.
         let emissivity = calibration.emissivity().unwrap_or(1f32);
@@ -141,7 +133,6 @@ where
             emissivity,
             access_pattern,
             reflected_temperature: None,
-            _camera: PhantomData,
         })
     }
 
@@ -158,7 +149,7 @@ where
         // Update the resolution as well
         let calibrated_resolution = self.calibration.resolution();
         self.resolution_correction =
-            Cam::resolution_correction(calibrated_resolution, register.resolution());
+            Clb::Camera::resolution_correction(calibrated_resolution, register.resolution());
         self.access_pattern = register.access_pattern();
     }
 
@@ -382,16 +373,16 @@ where
     /// The height of the thermal image, in pixels.
     pub fn height(&self) -> usize {
         // const generics make this silly.
-        Cam::HEIGHT
+        Clb::Camera::HEIGHT
     }
 
     /// The width of the thermal image, in pixels.
     pub fn width(&self) -> usize {
-        Cam::WIDTH
+        Clb::Camera::WIDTH
     }
 
     fn read_ram(&mut self, subpage: Subpage) -> Result<RamData, Error<I2C>> {
-        read_ram::<Cam, I2C, HEIGHT>(
+        read_ram::<Clb::Camera, I2C, HEIGHT>(
             &mut self.bus,
             self.address,
             self.access_pattern,
@@ -406,7 +397,8 @@ where
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
-        let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
+        let mut valid_pixels =
+            Clb::Camera::pixels_in_subpage(subpage, self.access_pattern).into_iter();
         let t_a = raw_pixels_to_ir_data(
             &self.calibration,
             self.emissivity,
@@ -428,7 +420,8 @@ where
         destination: &mut [f32],
     ) -> Result<(), Error<I2C>> {
         let ram = self.read_ram(subpage)?;
-        let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
+        let mut valid_pixels =
+            Clb::Camera::pixels_in_subpage(subpage, self.access_pattern).into_iter();
         let t_a = raw_pixels_to_temperatures(
             &self.calibration,
             self.emissivity,
@@ -473,8 +466,9 @@ where
         let mut status_register = StatusRegister::from_i2c(bus, address)?;
         if status_register.new_data() {
             let subpage = status_register.last_updated_subpage();
-            let mut valid_pixels = Cam::pixels_in_subpage(subpage, self.access_pattern).into_iter();
-            let ram = read_ram::<Cam, I2C, HEIGHT>(
+            let mut valid_pixels =
+                Clb::Camera::pixels_in_subpage(subpage, self.access_pattern).into_iter();
+            let ram = read_ram::<Clb::Camera, I2C, HEIGHT>(
                 bus,
                 address,
                 self.access_pattern,
