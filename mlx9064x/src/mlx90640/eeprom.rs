@@ -184,6 +184,11 @@ impl Mlx90640Calibration {
         Self::repeat_chessboard(source_data)
     }
 
+    /// Read and convert the chessboard to interlaced correction parameters
+    ///
+    /// There are three correction constants. The first is used for the compensation pixels, and
+    /// the last two are used to create a pattern of correction values used when calculating the
+    /// pixel offsets.
     fn get_access_pattern_corrections(data: &mut &[u8]) -> (f32, [f32; 6]) {
         let word = data.get_u16();
         // The correction factors are 5 bits, 5 bits, then 6 bits, for factors 3, 2, 1.
@@ -201,6 +206,37 @@ impl Mlx90640Calibration {
         let c = chess_2 + chess_3;
         let pattern = [-chess_3, b, -c, chess_3, -b, c];
         (chess_1, pattern)
+    }
+
+    /// Extract the temperature sensitivity range values.
+    fn get_temperature_range_data(
+        buf: &mut &[u8],
+    ) -> (
+        [i16; NUM_CORNER_TEMPERATURES],
+        [f32; NUM_CORNER_TEMPERATURES],
+    ) {
+        // k_s_to is unscaled until k_s_to_scale is unpacked.
+        let mut k_s_to_ranges: ArrayVec<f32, 4> = (0..4).map(|_| f32::from(buf.get_i8())).collect();
+        // Fix the ordering of the elements from the EEPROM
+        k_s_to_ranges.swap(0, 1);
+        k_s_to_ranges.swap(2, 3);
+        // Safe to unwrap as I'm just using ArrayVec to collect into an array.
+        let mut k_s_to = k_s_to_ranges.into_inner().unwrap();
+        // Very similar to the resolution and k_*_scale word a few lines above.
+        let unpacked_corner_temps = word_to_u4s(buf);
+        // Like before, the top two bits are reserved. This time though, the temperature step
+        // is multipled by 10. Also convert to i16 for use in calculations.
+        let corner_temperature_step = i16::from(unpacked_corner_temps[0] & 0x3) * 10;
+        // corner temperatures need to be multipled by the step and converted to i16
+        let ct2 = i16::from(unpacked_corner_temps[2]) * corner_temperature_step;
+        let ct3 = i16::from(unpacked_corner_temps[1]) * corner_temperature_step + ct2;
+        // k_s_to_scale needs 8 added to it, then take 2 raised to this value.
+        let k_s_to_scale = f32::from(unpacked_corner_temps[3] + 8).exp2();
+        // -40 and 0 are hard-coded values for CT0 and CT1 (labelled CT1 and CT2 in the datasheet)
+        let corner_temperatures = [-40i16, 0, ct2, ct3];
+        // Now that we have k_s_to_scale, we can scale k_s_to properly:
+        k_s_to.iter_mut().for_each(|k_s_to| *k_s_to /= k_s_to_scale);
+        (corner_temperatures, k_s_to)
     }
 
     /// Generate the constants needed for temperature calculations from a dump of the MLX90640
@@ -288,27 +324,7 @@ impl Mlx90640Calibration {
             0 => None,
             n => Some(f32::from(n) / 5f32.exp2()),
         };
-        // k_s_to is unscaled until k_s_to_scale is unpacked.
-        let mut k_s_to_ranges: ArrayVec<f32, 4> = (0..4).map(|_| f32::from(buf.get_i8())).collect();
-        // Fix the ordering of the elements from the EEPROM
-        k_s_to_ranges.swap(0, 1);
-        k_s_to_ranges.swap(2, 3);
-        // Safe to unwrap as I'm just using ArrayVec to collect into an array.
-        let mut k_s_to = k_s_to_ranges.into_inner().unwrap();
-        // Very similar to the resolution and k_*_scale word a few lines above.
-        let unpacked_corner_temps = word_to_u4s(&mut buf);
-        // Like before, the top two bits are reserved. This time though, the temperature step
-        // is multipled by 10. Also convert to i16 for use in calculations.
-        let corner_temperature_step = i16::from(unpacked_corner_temps[0] & 0x3) * 10;
-        // corner temperatures need to be multipled by the step and converted to i16
-        let ct2 = i16::from(unpacked_corner_temps[2]) * corner_temperature_step;
-        let ct3 = i16::from(unpacked_corner_temps[1]) * corner_temperature_step + ct2;
-        // k_s_to_scale needs 8 added to it, then take 2 raised to this value.
-        let k_s_to_scale = f32::from(unpacked_corner_temps[3] + 8).exp2();
-        // -40 and 0 are hard-coded values for CT0 and CT1 (labelled CT1 and CT2 in the datasheet)
-        let corner_temperatures = [-40i16, 0, ct2, ct3];
-        // Now that we have k_s_to_scale, we can scale k_s_to properly:
-        k_s_to.iter_mut().for_each(|k_s_to| *k_s_to /= k_s_to_scale);
+        let (corner_temperatures, k_s_to) = Self::get_temperature_range_data(&mut buf);
         let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
