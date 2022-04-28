@@ -440,7 +440,8 @@ where
 
     /// Generate a thermal "image" from the camera's current data.
     ///
-    /// This function does *not* check if there is new data, it just copies the
+    /// This function does *not* check if there is new data, it just copies the current frame of
+    /// data.
     pub fn generate_image_to<'b: 'a>(
         &'b mut self,
         destination: &mut [f32],
