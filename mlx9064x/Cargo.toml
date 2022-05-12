@@ -15,6 +15,7 @@ autoexamples = false
 # anyhow is only required for examples
 anyhow = { version = "1.0", optional = true }
 arrayvec = { version = "0.7", default-features = false }
+bitvec = { version = "1", default-features = false }
 embedded-hal = "0.2.5"
 # linux-embedded-hal is only required for examples
 linux-embedded-hal = { version = "0.3", optional = true }

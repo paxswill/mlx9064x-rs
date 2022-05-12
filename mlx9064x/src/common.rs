@@ -4,6 +4,9 @@
 use core::fmt;
 
 use arrayvec::ArrayVec;
+use bitvec::order::BitOrder;
+use bitvec::slice::{BitSlice, IterOnes};
+use bitvec::store::BitStore;
 use embedded_hal::blocking::i2c;
 
 use crate::calculations::RamData;
@@ -26,6 +29,33 @@ pub trait ToI2C<I2C> {
 
     /// Write the value of this type to the specified I²C device.
     fn to_i2c(&self, bus: &mut I2C, i2c_address: u8) -> Result<(), Self::Error>;
+}
+
+/// A trait for flagging individual pixels.
+pub trait FlaggedPixels {
+    /// Check if any pixels are flagged.
+    fn any(&self) -> bool;
+
+    type FlaggedIterator: Iterator<Item = usize>;
+
+    /// Iterate over the indexes of flagged pixels.
+    fn iter_flagged(&self) -> Self::FlaggedIterator;
+}
+
+impl<'a, T, O> FlaggedPixels for &'a BitSlice<T, O>
+where
+    T: BitStore,
+    O: BitOrder,
+{
+    fn any(&self) -> bool {
+        BitSlice::any(self)
+    }
+
+    type FlaggedIterator = IterOnes<'a, T, O>;
+
+    fn iter_flagged(&self) -> Self::FlaggedIterator {
+        self.iter_ones()
+    }
 }
 
 /// This trait provides access to the module-specific calibration data.
@@ -191,6 +221,20 @@ pub trait CalibrationData<'a> {
         subpage: Subpage,
         access_pattern: AccessPattern,
     ) -> Option<f32>;
+
+    type FailedPixels: FlaggedPixels;
+
+    /// Any pixels that have completely failed.
+    ///
+    /// These pixels should be skipped during temperature calculations.
+    fn failed_pixels(&'a self) -> Self::FailedPixels;
+
+    type OutlierPixels: FlaggedPixels;
+
+    /// Pixels that are outside specification during calibration.
+    ///
+    /// Pixels that might also drift over a long period of time are also flagged in this manner.
+    fn outlier_pixels(&'a self) -> Self::OutlierPixels;
 }
 /// Marker newtype for addresses accessible over I<sup>2</sup>C.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
