@@ -6,6 +6,8 @@ use core::iter;
 use core::slice;
 
 use arrayvec::ArrayVec;
+use bitvec::array::BitArray;
+use bitvec::slice::BitSlice;
 use embedded_hal::blocking::i2c;
 
 // Various floating point operations are not implemented in core, so we use libm to provide them as
@@ -25,6 +27,9 @@ use super::Mlx90641;
 
 /// The number of corner temperatures an MLX90641 has.
 const NUM_CORNER_TEMPERATURES: usize = 8;
+
+type FlagSlice = BitSlice<usize>;
+type FlagArray = BitArray<[usize; Mlx90641::NUM_PIXELS / usize::BITS as usize]>;
 
 /// MLX90641-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
@@ -72,25 +77,17 @@ pub struct Mlx90641Calibration {
     k_ta_cp: f32,
 
     temperature_gradient_coefficient: Option<f32>,
+
+    failed_pixels: FlagArray,
 }
 
 impl Mlx90641Calibration {
-    pub fn from_data(mut buf: &[u8]) -> Result<Self, LibraryError> {
+    pub fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
+        let mut buf = data;
         // Much like the MLX90640 implementation, this is a mess of a function as the data is
         // scattered across the EEPROM.
-        // Skip the first 16 words, they're not used for calibration data
-        buf.advance(WORD_SIZE * 16);
-        // Offset scale is the upper 6 bits. The other bits are reserved.
-        let (offset_scale, _) = get_6_5_split(&mut buf)?;
-        let offset_average_bytes = get_combined_word(&mut buf)?;
-        let offset_average = i16_from_bits(&offset_average_bytes[..], 11);
-        // the next two words are reserved.
-        buf.advance(WORD_SIZE * 2);
-        let k_ta_average = get_hamming_i16(&mut buf)?;
-        let k_ta_scales = get_6_5_split(&mut buf)?;
-        let k_v_average = get_hamming_i16(&mut buf)?;
-        let k_v_scales = get_6_5_split(&mut buf)?;
-        let alpha_reference = Self::get_sensitivity_reference(&mut buf)?;
+        // Skip past the per-pixel values
+        buf.advance(EepromAddress::KsTa.offset_from_base() * WORD_SIZE);
         let k_s_ta = f32::from(get_hamming_i16(&mut buf)?) / 15f32.exp2();
         let emissivity = f32::from(get_hamming_i16(&mut buf)?) / 9f32.exp2();
         let gain = u16::from_be_bytes(get_combined_word(&mut buf)?);
@@ -115,17 +112,8 @@ impl Mlx90641Calibration {
         let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
-        // TODO: false pixel detection
-        let pixel_offsets_0 = Self::get_pixel_offsets(&mut buf, offset_scale, offset_average)?;
-        let alpha_pixels = Self::get_pixel_sensitivities(&mut buf, alpha_reference)?;
-        let (k_ta_pixels, k_v_pixels) = Self::get_pixel_temperature_constants(
-            &mut buf,
-            k_ta_average,
-            k_ta_scales,
-            k_v_average,
-            k_v_scales,
-        )?;
-        let pixel_offsets_1 = Self::get_pixel_offsets(&mut buf, offset_scale, offset_average)?;
+
+        let per_pixel_values = PerPixelCalibration::from_data(data)?;
         Ok(Self {
             k_v_dd,
             v_dd_25,
@@ -140,45 +128,17 @@ impl Mlx90641Calibration {
             k_s_to,
             alpha_correction,
             emissivity: Some(emissivity),
-            alpha_pixels,
+            alpha_pixels: per_pixel_values.alpha_pixels,
             alpha_cp,
-            offset_reference_pixels: [pixel_offsets_0, pixel_offsets_1],
+            offset_reference_pixels: per_pixel_values.offset_reference_pixels,
             offset_reference_cp,
-            k_v_pixels,
+            k_v_pixels: per_pixel_values.k_v_pixels,
             k_v_cp,
-            k_ta_pixels,
+            k_ta_pixels: per_pixel_values.k_ta_pixels,
             k_ta_cp,
             temperature_gradient_coefficient: Some(tgc),
+            failed_pixels: per_pixel_values.failed_pixels,
         })
-    }
-
-    /// Calculate $\alpha\_{\textit{reference}}$ for each "row" of pixels
-    ///
-    /// $$
-    /// \alpha\_{\textit{reference}\_N} =
-    /// \frac{\textit{Row}\_{\textit{max}\_N}}{2^{\alpha\_{\textit{scale}\_N}}} \newline
-    /// $$
-    ///
-    /// The rows are defined as 32 contiguous pixels, so can better be thought of as pairs of rows.
-    /// The scale values are stored as unsigned integers, two per word, with the upper 6 bits being
-    /// the scale for the first row, then the lower 5 bits being the scale for the next row, and so
-    /// on for three words, starting at 0x2419. Each scale value also need to be added to 20.
-    /// $\textit{Row}\_{\textit{max}}$ is stored as an unsigned 11-bit integer, with one value per
-    /// word, starting at 0x241C.
-    #[doc = include_str!("../katex.html")]
-    fn get_sensitivity_reference(buf: &mut &[u8]) -> Result<[f32; 6], LibraryError> {
-        let mut scales: ArrayVec<u8, 6> = ArrayVec::new();
-        for _ in 0..3 {
-            let (first_scale, second_scale) = get_6_5_split(buf)?;
-            scales.push(first_scale + 20);
-            scales.push(second_scale + 20);
-        }
-        let mut a_reference = [0f32; 6];
-        for (dest, scale) in a_reference.iter_mut().zip(scales) {
-            let row_max = get_hamming_u16(buf)?;
-            *dest = f32::from(row_max) / f32::from(scale).exp2();
-        }
-        Ok(a_reference)
     }
 
     /// Calculate $K\_{V\_{CP}}$ or $K\_{T\_{a\_{CP}}}$ values
@@ -243,76 +203,6 @@ impl Mlx90641Calibration {
             *k_s_to = f32::from(unscaled) / scale;
         }
         Ok((corner_temperatures, k_s_to))
-    }
-
-    fn get_pixel_offsets(
-        buf: &mut &[u8],
-        offset_scale: u8,
-        offset_average: i16,
-    ) -> Result<[i16; <Self as CalibrationData>::Camera::NUM_PIXELS], LibraryError> {
-        let mut pixel_offsets = [0i16; <Self as CalibrationData>::Camera::NUM_PIXELS];
-        let scale = 2i16.pow(offset_scale as u32);
-        for pixel_offset in pixel_offsets.iter_mut() {
-            // NOTE: There's a chance this will overflow, if offset_scale is too large
-            let offset_raw = get_hamming_i16(buf)?;
-            let scaled_offset = offset_raw * scale;
-            *pixel_offset = offset_average + scaled_offset;
-        }
-        Ok(pixel_offsets)
-    }
-
-    fn get_pixel_sensitivities(
-        buf: &mut &[u8],
-        alpha_reference: [f32; 6],
-    ) -> Result<[f32; <Self as CalibrationData>::Camera::NUM_PIXELS], LibraryError> {
-        let mut pixel_sensitivites = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
-        // The sensitivity reference value is shared across a band of 32 pixels, so chunk the
-        // pixels by that, and xip the reference value in
-        let referenced_rows = alpha_reference
-            .iter()
-            .zip(pixel_sensitivites.chunks_exact_mut(32));
-        for (reference, row) in referenced_rows {
-            for pixel_sensitivity in row {
-                let raw_alpha = f32::from(get_hamming_u16(buf)?);
-                // The datasheet is a little hard to read for this, but alpha_EE is divided by
-                // (2^{11} - 1) = 2047
-                *pixel_sensitivity = (raw_alpha / 2047f32) * reference;
-            }
-        }
-        Ok(pixel_sensitivites)
-    }
-
-    fn get_pixel_temperature_constants(
-        buf: &mut &[u8],
-        k_ta_average: i16,
-        k_ta_scales: (u8, u8),
-        k_v_average: i16,
-        k_v_scales: (u8, u8),
-    ) -> Result<
-        (
-            [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
-            [f32; <Self as CalibrationData>::Camera::NUM_PIXELS],
-        ),
-        LibraryError,
-    > {
-        let mut k_ta_pixels = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
-        let mut k_v_pixels = [0f32; <Self as CalibrationData>::Camera::NUM_PIXELS];
-        let k_ta_scale1 = f32::from(k_ta_scales.0).exp2();
-        let k_ta_scale2 = f32::from(k_ta_scales.1).exp2();
-        let k_v_scale1 = f32::from(k_v_scales.0).exp2();
-        let k_v_scale2 = f32::from(k_v_scales.1).exp2();
-        let scale_fn = |raw_value: i8, avg: i16, scale1: f32, scale2: f32| {
-            let numerator = f32::from(raw_value) * scale2 + f32::from(avg);
-            numerator / scale1
-        };
-        for (k_ta, k_v) in k_ta_pixels.iter_mut().zip(k_v_pixels.iter_mut()) {
-            let (k_ta_raw, k_v_raw) = get_6_5_split(buf)?;
-            let k_ta_raw = i16_from_bits(&[k_ta_raw], 6) as i8;
-            let k_v_raw = i16_from_bits(&[k_v_raw], 5) as i8;
-            *k_ta = scale_fn(k_ta_raw, k_ta_average, k_ta_scale1, k_ta_scale2);
-            *k_v = scale_fn(k_v_raw, k_v_average, k_v_scale1, k_v_scale2);
-        }
-        Ok((k_ta_pixels, k_v_pixels))
     }
 }
 
@@ -416,6 +306,202 @@ impl<'a> CalibrationData<'a> for Mlx90641Calibration {
     ) -> Option<f32> {
         None
     }
+
+    type FailedPixels = &'a FlagSlice;
+
+    fn failed_pixels(&'a self) -> Self::FailedPixels {
+        &self.failed_pixels
+    }
+
+    type OutlierPixels = &'a FlagSlice;
+
+    /// The MLX90641 doesn't distinguish between failed and outlying pixels.
+    ///
+    /// This method returns the same value as [`Self::failed_pixels`].
+    fn outlier_pixels(&'a self) -> Self::OutlierPixels {
+        &self.failed_pixels
+    }
+}
+
+#[derive(Debug)]
+struct PerPixelCalibration {
+    alpha_pixels: [f32; Mlx90641::NUM_PIXELS],
+
+    offset_reference_pixels: [[i16; Mlx90641::NUM_PIXELS]; 2],
+
+    k_v_pixels: [f32; Mlx90641::NUM_PIXELS],
+
+    k_ta_pixels: [f32; Mlx90641::NUM_PIXELS],
+
+    failed_pixels: FlagArray,
+}
+
+impl PerPixelCalibration {
+    fn from_data(data: &[u8]) -> Result<Self, LibraryError> {
+        let mut buf = data;
+        // Read the scaling constants (which are at the beginning of the EEPROM) first.
+        buf.advance(EepromAddress::OffsetCompensationScale.offset_from_base() * WORD_SIZE);
+        // Offset scale is the upper 6 bits. The other bits are reserved.
+        let (offset_scale, _) = get_6_5_split(&mut buf)?;
+        let offset_scale = 2i16.pow(offset_scale as u32);
+        let offset_average_bytes = get_combined_word(&mut buf)?;
+        let offset_average = i16_from_i11(&offset_average_bytes[..]);
+        // the next two words are reserved.
+        buf.advance(WORD_SIZE * 2);
+        let k_ta_average = get_hamming_i16(&mut buf)?;
+        let k_ta_scales = get_6_5_split(&mut buf)?;
+        let k_v_average = get_hamming_i16(&mut buf)?;
+        let k_v_scales = get_6_5_split(&mut buf)?;
+        let k_ta_scale1 = f32::from(k_ta_scales.0).exp2();
+        let k_ta_scale2 = f32::from(k_ta_scales.1).exp2();
+        let k_v_scale1 = f32::from(k_v_scales.0).exp2();
+        let k_v_scale2 = f32::from(k_v_scales.1).exp2();
+        let alpha_reference = Self::get_sensitivity_reference(&mut buf)?;
+        // Both k_v and k_ta use the same calculation to get the per-pixel value from an average
+        // and two scaling values.
+        let scale_fn = |raw_value: i8, avg: i16, scale1: f32, scale2: f32| {
+            let numerator = f32::from(raw_value) * scale2 + f32::from(avg);
+            numerator / scale1
+        };
+        // Create slices covering each of the per-pixel data regions
+        let offsets_0 = &data[(EepromAddress::PixelOffsetSubpage0Start.offset_from_base()
+            * WORD_SIZE)
+            ..(EepromAddress::PixelSensitivityStart.offset_from_base() * WORD_SIZE)];
+        let sensitivities = &data[(EepromAddress::PixelSensitivityStart.offset_from_base()
+            * WORD_SIZE)
+            ..(EepromAddress::PixelConstantsStart.offset_from_base() * WORD_SIZE)];
+        let constants = &data[(EepromAddress::PixelConstantsStart.offset_from_base() * WORD_SIZE)
+            ..(EepromAddress::PixelOffsetSubpage1Start.offset_from_base() * WORD_SIZE)];
+        // The offsets for subpage 1 go to the end of the EEPROM
+        let offsets_1 =
+            &data[(EepromAddress::PixelOffsetSubpage1Start.offset_from_base() * WORD_SIZE)..];
+        // Chunk each slice into words, then convert the data into a tuple of the raw values for:
+        // (offset 0, offset 1, alpha, k_ta, k_v)
+        // Note that `constants` is split into `k_ta` and `k_v`.
+        let pixel_data_iter = offsets_0
+            .chunks_exact(WORD_SIZE)
+            .zip(offsets_1.chunks_exact(WORD_SIZE))
+            .zip(sensitivities.chunks_exact(WORD_SIZE))
+            .zip(constants.chunks_exact(WORD_SIZE))
+            .map(
+                |(
+                    ((mut offset_0_bytes, mut offset_1_bytes), mut sensitivity_bytes),
+                    mut constants_bytes,
+                )|
+                 -> Result<(i16, i16, u16, i8, i8), LibraryError> {
+                    let offset_0_raw = get_hamming_i16(&mut offset_0_bytes)?;
+                    let offset_1_raw = get_hamming_i16(&mut offset_1_bytes)?;
+                    let raw_alpha = get_hamming_u16(&mut sensitivity_bytes)?;
+                    let (k_ta_raw, k_v_raw) = get_6_5_split(&mut constants_bytes)?;
+                    let k_ta_raw = i16_from_bits(slice::from_ref(&k_ta_raw), 6) as i8;
+                    let k_v_raw = i16_from_bits(slice::from_ref(&k_v_raw), 5) as i8;
+                    Ok((offset_0_raw, offset_1_raw, raw_alpha, k_ta_raw, k_v_raw))
+                },
+            );
+        // Using ArrayVecs here so that we don't double-initialize the data.
+        // This is a tuple of ArrayVecs so that we can destructure and unwrap them. An array of
+        // ArrayVecs results in compiler errors.
+        let mut offset_reference_pixels = (
+            ArrayVec::<i16, { Mlx90641::NUM_PIXELS }>::new(),
+            ArrayVec::<i16, { Mlx90641::NUM_PIXELS }>::new(),
+        );
+        let mut alpha_pixels = ArrayVec::<f32, { Mlx90641::NUM_PIXELS }>::new();
+        let mut k_v_pixels = ArrayVec::<f32, { Mlx90641::NUM_PIXELS }>::new();
+        let mut k_ta_pixels = ArrayVec::<f32, { Mlx90641::NUM_PIXELS }>::new();
+        let mut failed_pixels = FlagArray::default();
+        for ((pixel_data, alpha_reference), mut failed_flag) in pixel_data_iter
+            .zip(alpha_reference)
+            .zip(failed_pixels.iter_mut())
+        {
+            let (offset_0_raw, offset_1_raw, alpha_raw, k_ta_raw, k_v_raw) = pixel_data?;
+            if offset_0_raw == 0
+                && offset_1_raw == 0
+                && alpha_raw == 0
+                && k_ta_raw == 0
+                && k_v_raw == 0
+            {
+                failed_flag.set(true);
+                // Need to push default data to the arrayvecs to keep them in sync
+                offset_reference_pixels.0.push(Default::default());
+                offset_reference_pixels.1.push(Default::default());
+                alpha_pixels.push(Default::default());
+                k_ta_pixels.push(Default::default());
+                k_v_pixels.push(Default::default());
+            } else {
+                // NOTE: There's a chance this will overflow, if offset_scale is too large
+                let offset_delta_0 = offset_0_raw * offset_scale;
+                let offset_delta_1 = offset_1_raw * offset_scale;
+                // The contents of the offset pixels are initialized to offset_average
+                offset_reference_pixels
+                    .0
+                    .push(offset_average + offset_delta_0);
+                offset_reference_pixels
+                    .1
+                    .push(offset_average + offset_delta_1);
+                // The datasheet is a little hard to read for this, but alpha_EE is divided by
+                // (2^{11} - 1) = 2047
+                alpha_pixels.push((f32::from(alpha_raw) / 2047f32) * alpha_reference);
+                k_ta_pixels.push(scale_fn(k_ta_raw, k_ta_average, k_ta_scale1, k_ta_scale2));
+                k_v_pixels.push(scale_fn(k_v_raw, k_v_average, k_v_scale1, k_v_scale2));
+            }
+        }
+        let arrayvec_err = LibraryError::Other("the ArrayVec should be filled with EEPROM data");
+        Ok(Self {
+            alpha_pixels: alpha_pixels
+                .into_inner()
+                .map_err(|_| arrayvec_err.clone())?,
+            offset_reference_pixels: [
+                offset_reference_pixels
+                    .0
+                    .into_inner()
+                    .map_err(|_| arrayvec_err.clone())?,
+                offset_reference_pixels
+                    .1
+                    .into_inner()
+                    .map_err(|_| arrayvec_err.clone())?,
+            ],
+            k_v_pixels: k_v_pixels.into_inner().map_err(|_| arrayvec_err.clone())?,
+            k_ta_pixels: k_ta_pixels.into_inner().map_err(|_| arrayvec_err.clone())?,
+            failed_pixels,
+        })
+    }
+
+    /// Calculate $\alpha\_{\textit{reference}}$ for each pixel.
+    ///
+    /// The actual data is organized by row, with all pixels in a row sharing a value.
+    ///
+    /// $$
+    /// \alpha\_{\textit{reference}\_N} =
+    /// \frac{\textit{Row}\_{\textit{max}\_N}}{2^{\alpha\_{\textit{scale}\_N}}} \newline
+    /// $$
+    ///
+    /// The rows are defined as 32 contiguous pixels, so can better be thought of as pairs of rows.
+    /// The scale values are stored as unsigned integers, two per word, with the upper 6 bits being
+    /// the scale for the first row, then the lower 5 bits being the scale for the next row, and so
+    /// on for three words, starting at 0x2419. Each scale value also need to be added to 20.
+    /// $\textit{Row}\_{\textit{max}}$ is stored as an unsigned 11-bit integer, with one value per
+    /// word, starting at 0x241C.
+    #[doc = include_str!("../katex.html")]
+    fn get_sensitivity_reference(
+        buf: &mut &[u8],
+    ) -> Result<impl Iterator<Item = f32>, LibraryError> {
+        let mut scales: ArrayVec<u8, 6> = ArrayVec::new();
+        for _ in 0..3 {
+            let (first_scale, second_scale) = get_6_5_split(buf)?;
+            scales.push(first_scale + 20);
+            scales.push(second_scale + 20);
+        }
+        let mut a_reference = [0f32; 6];
+        for (dest, scale) in a_reference.iter_mut().zip(scales) {
+            let row_max = get_hamming_u16(buf)?;
+            *dest = f32::from(row_max) / f32::from(scale).exp2();
+        }
+        // Repeat the value for each pixel in a row
+        Ok(a_reference.into_iter().flat_map(|row_value| {
+            // Multiply by 2 as each "row" covers 2 actual rows
+            iter::repeat(row_value).take(Mlx90641::WIDTH * 2)
+        }))
+    }
 }
 
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
@@ -427,7 +513,7 @@ fn get_hamming_u16(buf: &mut &[u8]) -> Result<u16, LibraryError> {
 /// Pop a word out of a buffer, decoding the checksum and then stripping it off
 fn get_hamming_i16(buf: &mut &[u8]) -> Result<i16, LibraryError> {
     let bytes = get_hamming_u16(buf)?.to_be_bytes();
-    Ok(i16_from_bits(&bytes[..], 11))
+    Ok(i16_from_i11(&bytes[..]))
 }
 
 /// Read two successive words from the buffer, combining them into one
@@ -443,12 +529,21 @@ fn get_combined_word(buf: &mut &[u8]) -> Result<[u8; 2], LibraryError> {
     Ok(combined.to_be_bytes())
 }
 
-/// Split a word into two values: the upper six bits and the lower five bits
-fn get_6_5_split(buf: &mut &[u8]) -> Result<(u8, u8), LibraryError> {
-    let word = get_hamming_u16(buf)?;
+/// Split a word into two values: the upper six bits and the lower five bits.
+fn split_6_5(word: u16) -> (u8, u8) {
     let upper = (word & 0x07E0) >> 5;
     let lower = word & 0x001F;
-    Ok((upper as u8, lower as u8))
+    (upper as u8, lower as u8)
+}
+
+/// Read a word from the EEPROM data, and split the upper 6 bits and the lower 5 bits.
+fn get_6_5_split(buf: &mut &[u8]) -> Result<(u8, u8), LibraryError> {
+    let word = get_hamming_u16(buf)?;
+    Ok(split_6_5(word))
+}
+
+fn i16_from_i11(bytes: &[u8]) -> i16 {
+    i16_from_bits(bytes, 11)
 }
 
 #[cfg(test)]
@@ -457,10 +552,12 @@ pub(crate) mod test {
     use arrayvec::ArrayVec;
     use mlx9064x_test_data::mlx90641_datasheet_eeprom;
 
-    use crate::common::{CalibrationData, MelexisCamera};
+    use crate::common::{CalibrationData, FlaggedPixels, MelexisCamera};
+    use crate::mlx90641::address::EepromAddress;
     use crate::mlx90641::eeprom::NUM_CORNER_TEMPERATURES;
     use crate::mlx90641::Mlx90641;
     use crate::register::{AccessPattern, Resolution, Subpage};
+    use crate::util::WORD_SIZE;
 
     use super::Mlx90641Calibration;
 
@@ -736,5 +833,54 @@ pub(crate) mod test {
                 .count(),
             Mlx90641::NUM_PIXELS
         );
+    }
+
+    #[test]
+    /// Test that *all* pixel data fields are required to be 0 for a pixel to be flagged
+    fn partial_flagged_pixels() {
+        const PIXEL_NUM: usize = 15;
+        const PIXEL_OFFSET: usize = PIXEL_NUM * WORD_SIZE;
+        let pixel_offsets = [
+            EepromAddress::PixelOffsetSubpage0Start.byte_offset() + PIXEL_OFFSET,
+            EepromAddress::PixelSensitivityStart.byte_offset() + PIXEL_OFFSET,
+            EepromAddress::PixelConstantsStart.byte_offset() + PIXEL_OFFSET,
+            EepromAddress::PixelOffsetSubpage1Start.byte_offset() + PIXEL_OFFSET,
+        ];
+        // Only set one of each of the pixel data locations to 0 at a time
+        for offset in pixel_offsets {
+            let mut eeprom_bytes = mlx90641_datasheet_eeprom();
+            eeprom_bytes[offset] = 0;
+            eeprom_bytes[offset + 1] = 0;
+            let calibration = Mlx90641Calibration::from_data(&eeprom_bytes)
+                .expect("EEPROM data should be parsed.");
+            assert!(!calibration.failed_pixels().any());
+            assert!(!calibration.outlier_pixels().any());
+        }
+    }
+
+    #[test]
+    fn flagged_pixels() {
+        // The MLX90641 doesn't distinguish between failed and outlying pixels
+        const PIXEL_NUM: usize = 15;
+        const PIXEL_OFFSET: usize = PIXEL_NUM * WORD_SIZE;
+        let pixel_offsets = [
+            EepromAddress::PixelOffsetSubpage0Start.byte_offset() + PIXEL_OFFSET,
+            EepromAddress::PixelSensitivityStart.byte_offset() + PIXEL_OFFSET,
+            EepromAddress::PixelConstantsStart.byte_offset() + PIXEL_OFFSET,
+            EepromAddress::PixelOffsetSubpage1Start.byte_offset() + PIXEL_OFFSET,
+        ];
+        let mut eeprom_bytes = mlx90641_datasheet_eeprom();
+        for offset in pixel_offsets {
+            eeprom_bytes[offset] = 0;
+            eeprom_bytes[offset + 1] = 0;
+        }
+        let calibration =
+            Mlx90641Calibration::from_data(&eeprom_bytes).expect("EEPROM data should be parsed.");
+        assert_eq!(calibration.failed_pixels(), calibration.outlier_pixels());
+        let failures = calibration.failed_pixels();
+        assert!(failures.any());
+        let mut outlier_iter = failures.iter_flagged();
+        assert_eq!(outlier_iter.next(), Some(PIXEL_NUM));
+        assert_eq!(outlier_iter.next(), None);
     }
 }
