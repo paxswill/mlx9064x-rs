@@ -4,6 +4,8 @@ use core::iter;
 use core::slice;
 
 use arrayvec::ArrayVec;
+use bitvec::array::BitArray;
+use bitvec::slice::BitSlice;
 use embedded_hal::blocking::i2c;
 
 // Various floating point operations are not implemented in core, so we use libm to provide them as
@@ -23,7 +25,9 @@ use super::Mlx90640;
 /// The number of corner temperatures an MLX90640 has.
 const NUM_CORNER_TEMPERATURES: usize = 4;
 
-/// MLX90640-specific calibration processing.
+type FlagSlice = BitSlice<usize>;
+type FlagArray = BitArray<[usize; Mlx90640::NUM_PIXELS / usize::BITS as usize]>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mlx90640Calibration {
     k_v_dd: i16,
@@ -71,6 +75,10 @@ pub struct Mlx90640Calibration {
     interleave_correction_pixels: [f32; 6],
 
     interleave_correction_cp: f32,
+
+    failed_pixels: FlagArray,
+
+    outlier_pixels: FlagArray,
 }
 
 impl Mlx90640Calibration {
@@ -325,6 +333,8 @@ impl Mlx90640Calibration {
         let basic_range = <Self as CalibrationData>::Camera::BASIC_TEMPERATURE_RANGE;
         let alpha_correction =
             alpha_correction_coefficients(basic_range, &corner_temperatures, &k_s_to);
+        let mut failed_pixels = FlagArray::default();
+        let mut outlier_pixels = FlagArray::default();
         // Calculate the rest of the per-pixel data using the remainder/k_ta data
         let mut k_ta_pixels = [0f32; Mlx90640::NUM_PIXELS];
         offset_reference_pixels
@@ -332,25 +342,37 @@ impl Mlx90640Calibration {
             .zip(alpha_pixels.iter_mut())
             .zip(lazy_k_ta_pixels)
             .zip(k_ta_pixels.iter_mut())
-            .for_each(|(((offset, alpha), k_ta_rc), k_ta)| {
-                // TODO: handle failed pixels (where the pixel data is 0x0000)
-                // TODO: outlier/deviant pixels
-                let high = buf.get_u8();
-                let low = buf.get_u8();
-                // Normal dance to extend the sign bit from an i6 to an i8
-                let offset_remainder = i16::from(i8::from_ne_bytes([high & 0xFC]) >> 2);
-                *offset += offset_remainder << offset_correction_remainder_scale;
-                // alpha is going to be a little weird: not only is there the i6-shift-dance, but
-                // there's an extra shift right by 4 to drop the k_ta and outlier bits.
-                let alpha_remainder = (i16::from_be_bytes([high & 0x03, low]) << 6) >> 10;
-                *alpha += f32::from(alpha_remainder << alpha_correction_remainder_scale);
-                *alpha /= alpha_scale;
-                // To try to keep floating point errors down as long as possible, do all the
-                // operations for the numerator as ints, then convert to floats for the final division.
-                let k_ta_remainder = i16::from(i8::from_ne_bytes([low & 0x0E]) << 4 >> 5);
-                let k_ta_numerator = f32::from(k_ta_rc + (k_ta_remainder << k_ta_scale2_exp));
-                *k_ta = k_ta_numerator / k_ta_scale1;
-            });
+            .zip(failed_pixels.iter_mut())
+            .zip(outlier_pixels.iter_mut())
+            .for_each(
+                |(((((offset, alpha), k_ta_rc), k_ta), mut failed), mut outlier)| {
+                    let high = buf.get_u8();
+                    let low = buf.get_u8();
+                    // If both bytes are 0, this is a failed pixel
+                    if high == 0 && low == 0 {
+                        failed.set(true);
+                    } else {
+                        // Normal dance to extend the sign bit from an i6 to an i8
+                        let offset_remainder = i16::from(i8::from_ne_bytes([high & 0xFC]) >> 2);
+                        *offset += offset_remainder << offset_correction_remainder_scale;
+                        // alpha is going to be a little weird: not only is there the i6-shift-dance,
+                        // but there's an extra shift right by 4 to drop the k_ta and outlier bits.
+                        let alpha_remainder = (i16::from_be_bytes([high & 0x03, low]) << 6) >> 10;
+                        *alpha += f32::from(alpha_remainder << alpha_correction_remainder_scale);
+                        *alpha /= alpha_scale;
+                        // To try to keep floating point errors down as long as possible, do all the
+                        // operations for the numerator as ints, then convert to floats for the final
+                        // division.
+                        let k_ta_remainder = i16::from(i8::from_ne_bytes([low & 0x0E]) << 4 >> 5);
+                        let k_ta_numerator =
+                            f32::from(k_ta_rc + (k_ta_remainder << k_ta_scale2_exp));
+                        *k_ta = k_ta_numerator / k_ta_scale1;
+                        // If the last bit of the low byte is set, this is an outlier (or deviant)
+                        // pixel.
+                        outlier.set(is_bit_set(low, 0))
+                    }
+                },
+            );
         Ok(Self {
             k_v_dd,
             v_dd_25,
@@ -375,6 +397,8 @@ impl Mlx90640Calibration {
             temperature_gradient_coefficient,
             interleave_correction_pixels,
             interleave_correction_cp,
+            failed_pixels,
+            outlier_pixels,
         })
     }
 }
@@ -481,6 +505,18 @@ impl<'a> CalibrationData<'a> for Mlx90640Calibration {
             (Subpage::One, AccessPattern::Interleave) => Some(self.interleave_correction_cp),
             _ => None,
         }
+    }
+
+    type FailedPixels = &'a FlagSlice;
+
+    fn failed_pixels(&'a self) -> Self::FailedPixels {
+        &self.failed_pixels
+    }
+
+    type OutlierPixels = &'a FlagSlice;
+
+    fn outlier_pixels(&'a self) -> Self::OutlierPixels {
+        &self.outlier_pixels
     }
 }
 
@@ -678,11 +714,12 @@ pub(crate) mod test {
     use float_cmp::{assert_approx_eq, ApproxEq};
     use mlx9064x_test_data::{mlx90640_datasheet_eeprom, mlx90640_example_data};
 
-    use crate::common::{CalibrationData, MelexisCamera};
+    use crate::common::{CalibrationData, FlaggedPixels, MelexisCamera};
+    use crate::mlx90640::address::EepromAddress;
     use crate::mlx90640::Mlx90640;
     use crate::register::{AccessPattern, Resolution, Subpage};
 
-    use super::Mlx90640Calibration;
+    use super::{Mlx90640Calibration, WORD_SIZE};
 
     fn datasheet_eeprom() -> Mlx90640Calibration {
         let eeprom_bytes = mlx90640_datasheet_eeprom();
@@ -1264,5 +1301,62 @@ pub(crate) mod test {
             count += 1;
         }
         assert_eq!(count, Mlx90640::NUM_PIXELS);
+    }
+
+    #[test]
+    fn failed_pixels_example() {
+        // The worked example has no failed pixels
+        let example = example_eeprom();
+        assert!(!example.failed_pixels().any());
+    }
+
+    #[test]
+    fn failed_pixels_induced() {
+        // Starting with the datasheet EEPROM, mark pixel 10 as failed
+        let mut eeprom_bytes = mlx90640_datasheet_eeprom();
+        const PIXEL_NUM: usize = 10;
+        const PIXEL_OFFSET: usize =
+            EepromAddress::PixelCalibrationStart.byte_offset() + PIXEL_NUM * WORD_SIZE;
+        eeprom_bytes[PIXEL_OFFSET] = 0;
+        // both bytes need to be 0 for it to be a failed pixel
+        eeprom_bytes[PIXEL_OFFSET + 1] = 0;
+        let datasheet =
+            Mlx90640Calibration::from_data(&eeprom_bytes).expect("The EEPROM data to be parsed.");
+        let failures = datasheet.failed_pixels();
+        assert!(failures.any());
+        let mut failed_iter = failures.iter_flagged();
+        assert_eq!(failed_iter.next(), Some(10));
+        assert_eq!(failed_iter.next(), None);
+        // A failed pixel is not marked as an outlier
+        let outliers = datasheet.outlier_pixels();
+        assert!(!outliers.any());
+    }
+
+    #[test]
+    fn outlier_pixels_example() {
+        // The worked example has no outlying pixels
+        let example = example_eeprom();
+        assert!(!example.failed_pixels().any());
+    }
+
+    #[test]
+    fn outlier_pixels_induced() {
+        // Starting with the datasheet EEPROM, mark pixel 10 as an outlier
+        let mut eeprom_bytes = mlx90640_datasheet_eeprom();
+        const PIXEL_NUM: usize = 10;
+        const PIXEL_OFFSET: usize =
+            EepromAddress::PixelCalibrationStart.byte_offset() + PIXEL_NUM * WORD_SIZE;
+        // Only the last bit of the lower byte is set for an outlier
+        eeprom_bytes[PIXEL_OFFSET + 1] |= 1;
+        let datasheet =
+            Mlx90640Calibration::from_data(&eeprom_bytes).expect("The EEPROM data to be parsed.");
+        let outliers = datasheet.outlier_pixels();
+        assert!(outliers.any());
+        let mut outlier_iter = outliers.iter_flagged();
+        assert_eq!(outlier_iter.next(), Some(PIXEL_NUM));
+        assert_eq!(outlier_iter.next(), None);
+        // An outlier pixel is not marked as a failure
+        let failures = datasheet.failed_pixels();
+        assert!(!failures.any());
     }
 }
