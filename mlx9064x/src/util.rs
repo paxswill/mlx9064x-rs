@@ -59,6 +59,17 @@ macro_rules! address_enum_ops {
                 *self as u16 - *other as u16
             }
         }
+        impl $typ {
+            #[allow(dead_code)]
+            pub(crate) const fn offset_from_base(&self) -> usize {
+                *self as usize - Self::Base as usize
+            }
+
+            #[allow(dead_code)]
+            pub(crate) const fn byte_offset(&self) -> usize {
+                self.offset_from_base() * crate::util::WORD_SIZE
+            }
+        }
     };
 }
 
