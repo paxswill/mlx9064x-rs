@@ -1,7 +1,23 @@
 # Unreleased
 
+* Updated edition to 2021
+* Improved low-level API ergonomics:
+    * The `common::read_ram()` function can read all of the necessary data from
+      RAM for each frame's calculations.
+    * Register access (using the types in the `register` module) is simpler with
+      the `FromI2C` and `ToI2C` traits.
+* ADC resolution is now consistently handled as a `register::Resolution` instead
+  of sometimes being a `u8`.
+* The generic parameters for `CameraDriver` have been simplified (from `Camera,
+  Calibration, I2C, height, width, num_bytes` to `Calibration, I2C, height,
+  num_bytes`). They can be further simplified as const generic support is
+  stabilized and released in rustc.
+* Added failed pixel flagging.
+
 # v0.2.1
+
 * Fix for two bugs preventing interleave mode from working with the MLX90640.
+
 # v0.2.0
 
 * Unintended dependency on `alloc` has been removed.
