@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright © 2021 Will Ross
 
+/// The word size of the camera in terms of 8-bit bytes.
+pub(crate) const WORD_SIZE: usize = (u16::BITS / u8::BITS) as usize;
+
 /// Define addition and subtraction for address enumerations.
 #[doc(hidden)]
 #[macro_export]

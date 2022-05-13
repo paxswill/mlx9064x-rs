@@ -15,16 +15,13 @@ use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::{AccessPattern, Resolution, Subpage};
-use crate::util::{i16_from_bits, Buffer};
+use crate::util::{i16_from_bits, is_bit_set, Buffer, WORD_SIZE};
 
 use super::address::EepromAddress;
 use super::Mlx90640;
 
 /// The number of corner temperatures an MLX90640 has.
 const NUM_CORNER_TEMPERATURES: usize = 4;
-
-/// The word size of the MLX90640 in terms of 8-bit bytes.
-const WORD_SIZE: usize = 16 / 8;
 
 /// MLX90640-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]

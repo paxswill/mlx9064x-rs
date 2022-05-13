@@ -17,7 +17,7 @@ use crate::common::*;
 use crate::error::{Error, LibraryError};
 use crate::expose_member;
 use crate::register::{AccessPattern, Resolution, Subpage};
-use crate::util::{i16_from_bits, Buffer};
+use crate::util::{i16_from_bits, Buffer, WORD_SIZE};
 
 use super::address::EepromAddress;
 use super::hamming::validate_checksum;
@@ -25,9 +25,6 @@ use super::Mlx90641;
 
 /// The number of corner temperatures an MLX90641 has.
 const NUM_CORNER_TEMPERATURES: usize = 8;
-
-/// The word size of the MLX90641 in terms of 8-bit bytes.
-const WORD_SIZE: usize = 16 / 8;
 
 /// MLX90641-specific calibration processing.
 #[derive(Clone, Debug, PartialEq)]
